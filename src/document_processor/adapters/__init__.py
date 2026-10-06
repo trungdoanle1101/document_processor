@@ -1,0 +1,1 @@
+from document_processor.adapters.plain_text import PlainTextAdapter
