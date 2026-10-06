@@ -15,6 +15,7 @@ class BlockType(Enum):
     PARAGRAPH = "paragraph"
     LIST_ITEM = "list_item"
     IMAGE = "image"
+    TABLE = "table"
 
 
 class Region(Enum):
