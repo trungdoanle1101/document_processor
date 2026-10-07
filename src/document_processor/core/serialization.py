@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from enum import Enum
 from dataclasses import asdict
 from typing import Any
@@ -106,3 +107,24 @@ def physical_document_from_dict(d: dict[str, Any]) -> PhysicalDocument:
         blocks=tuple(_physical_block_from_dict(b) for b in document_dict["blocks"]),
     )
     return document
+
+
+def save_physical_document(doc: PhysicalDocument, file_path: str | Path) -> None:
+    """Save a PhysicalDocument as JSON format at file_path.
+    Will create parent folders if they don't exist.
+    """
+    file_path = Path(file_path)
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    doc_dict = physical_document_to_dict(doc)
+    with file_path.open("w", encoding="utf-8") as f:
+        json.dump(doc_dict, f, indent=2, ensure_ascii=False)
+
+
+def load_physical_document(file_path: str | Path) -> PhysicalDocument:
+    """Load a PhysicalDocument from a JSON file.
+    """
+    file_path = Path(file_path)
+    with file_path.open("r", encoding="utf-8") as f:
+        doc_dict = json.load(f)
+    return physical_document_from_dict(doc_dict)    
+
