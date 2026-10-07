@@ -1,0 +1,108 @@
+import json
+from enum import Enum
+from dataclasses import asdict
+from typing import Any
+from document_processor.core.models.physical import (
+    PhysicalDocument,
+    PhysicalBlock,
+    DocSourceFormat,
+    BlockType,
+    Region,
+    ParagraphFormat,
+    CharSpan,
+    SpanStyle,
+    ListInfo,
+    ParagraphAlignment,
+)
+from document_processor.core.models.ranges import TextRange
+
+PHYSICAL_SCHEMA_VERSION = 1
+
+
+def _unwrap_enum_factory(kv_pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    return {k: (v.value if isinstance(v, Enum) else v) for k, v in kv_pairs}
+
+
+def physical_document_to_dict(doc: PhysicalDocument) -> dict[str, Any]:
+    d = {
+        "kind": "physical_document",
+        "schema_version": PHYSICAL_SCHEMA_VERSION,
+        "document": asdict(doc, dict_factory=_unwrap_enum_factory),
+    }
+    return d
+
+
+def _paragraph_format_from_dict(d: dict[str, Any]) -> ParagraphFormat:
+    paragraph_format = ParagraphFormat(
+        alignment=ParagraphAlignment(d["alignment"]) if d["alignment"] is not None else None,
+        style_name=d["style_name"]
+    )
+    return paragraph_format
+
+
+def _text_range_from_dict(d: dict[str, int]) -> TextRange:
+    text_range = TextRange(
+        start=d["start"],
+        end=d["end"],
+    )
+    return text_range
+
+
+def _char_span_from_dict(d: dict[str, Any]) -> CharSpan:
+    char_span = CharSpan(
+        style=SpanStyle(d["style"]), text_range=_text_range_from_dict(d["text_range"])
+    )
+    return char_span
+
+
+def _list_info_from_dict(d: dict[str, Any]) -> ListInfo:
+    list_info = ListInfo(
+        id=d["id"],
+        is_ordered=d["is_ordered"],
+        displayed_marker=d["displayed_marker"],
+        nested_level=d["nested_level"],
+    )
+    return list_info
+
+
+def _physical_block_from_dict(d: dict[str, Any]) -> PhysicalBlock:
+    block = PhysicalBlock(
+        id=d["id"],
+        block_type=BlockType(d["block_type"]),
+        text=d["text"],
+        region=Region(d["region"]),
+        page=d["page"],
+        paragraph_format=_paragraph_format_from_dict(d["paragraph_format"]),
+        char_spans=tuple(_char_span_from_dict(cs) for cs in d["char_spans"]),
+        list_info=(
+            _list_info_from_dict(d["list_info"]) if d["list_info"] is not None else None
+        ),
+        source_reference=d["source_reference"],
+        changelog=tuple(d["changelog"]),
+    )
+    return block
+
+
+def physical_document_from_dict(d: dict[str, Any]) -> PhysicalDocument:
+    kind = d.get("kind")
+    if kind != "physical_document":
+        raise ValueError(
+            f"Unexpected dictionary kind: Expected: physical_document. Actual: {kind}"
+        )
+    schema_version = d.get("schema_version")
+    if schema_version != PHYSICAL_SCHEMA_VERSION:
+        raise ValueError(
+            f"Mismatched schema version: Expected {PHYSICAL_SCHEMA_VERSION}. Actual: {schema_version}"
+        )
+
+    document_dict = d["document"]
+    document = PhysicalDocument(
+        id=document_dict["id"],
+        source_filename=document_dict["source_filename"],
+        source_format=DocSourceFormat(document_dict["source_format"]),
+        adapter_name=document_dict["adapter_name"],
+        adapter_version=document_dict["adapter_version"],
+        file_hash=document_dict["file_hash"],
+        blocks=tuple(_physical_block_from_dict(b) for b in document_dict["blocks"]),
+    )
+    return document
