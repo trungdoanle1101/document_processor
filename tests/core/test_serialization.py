@@ -10,7 +10,6 @@ from document_processor.core.models.physical import (
     ImageInfo,
     ParagraphAlignment,
     ParagraphFormat,
-    PhysicalBlock,
     PhysicalDocument,
     Region,
     SpanStyle,
@@ -23,25 +22,9 @@ from document_processor.core.serialization import (
     save_physical_document,
     load_physical_document
 )
+from tests.factories import make_block
 
 
-def make_block(**overrides) -> PhysicalBlock:
-    """A plain body paragraph; tests override only the fields they care about."""
-    fields = dict(
-        id="pb1",
-        block_type=BlockType.PARAGRAPH,
-        text="Plain text",
-        region=Region.BODY,
-        page=None,
-        paragraph_format=ParagraphFormat(alignment=None, style_name=None),
-        char_spans=(),
-        list_info=None,
-        image_info=None,
-        source_reference="paragraph:0",
-        changelog=(),
-    )
-    fields.update(overrides)
-    return PhysicalBlock(**fields)
 
 
 @pytest.fixture

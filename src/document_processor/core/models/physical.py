@@ -7,7 +7,6 @@ from document_processor.core.text_utils import is_invisible
 from document_processor.core.identity import HASH_ALGORITHM
 
 
-
 class DocSourceFormat(Enum):
     DOCX = "docx"
     PDF = "pdf"
@@ -50,7 +49,9 @@ class ListInfo:
     displayed_marker: str | None
     nested_level: int  # Starting at 0
 
+
 IMAGE_MIME_TYPE_PATTERN = re.compile(r"image/[a-z0-9][a-z0-9.+-]*")
+
 
 @dataclass(frozen=True)
 class ImageInfo:
@@ -64,18 +65,23 @@ class ImageInfo:
         if is_invisible(self.source_path):
             raise ValueError(f"Invisible source_path: {self.source_path!r}")
         if IMAGE_MIME_TYPE_PATTERN.fullmatch(self.mime_type) is None:
-            raise ValueError(f"Invalid mime_type: {self.mime_type!r}: expected 'image/<subtype>'")
+            raise ValueError(
+                f"Invalid mime_type: {self.mime_type!r}: expected 'image/<subtype>'"
+            )
         if not self.content_hash.startswith(f"{HASH_ALGORITHM}:"):
             raise ValueError(
                 f"Invalid content_hash: {self.content_hash!r} - Must start with '{HASH_ALGORITHM}:'"
             )
 
         if self.displayed_height_pt is not None and self.displayed_height_pt <= 0:
-            raise ValueError(f"displayed_height_pt must be > 0, got {self.displayed_height_pt}")
-        
-        if self.displayed_width_pt is not None and self.displayed_width_pt <= 0:
-            raise ValueError(f"displayed_width_pt must be > 0, got {self.displayed_width_pt}")
+            raise ValueError(
+                f"displayed_height_pt must be > 0, got {self.displayed_height_pt}"
+            )
 
+        if self.displayed_width_pt is not None and self.displayed_width_pt <= 0:
+            raise ValueError(
+                f"displayed_width_pt must be > 0, got {self.displayed_width_pt}"
+            )
 
 
 @dataclass(frozen=True)
@@ -181,3 +187,13 @@ class PhysicalDocument:
 
     file_hash: str
     blocks: tuple[PhysicalBlock, ...]
+
+    def __post_init__(self) -> None:
+        # Check block ids uniqueness
+        seen_ids: set[str] = set()
+        for i, b in enumerate(self.blocks):
+            if b.id in seen_ids:
+                raise ValueError(
+                    f"PhysicalDocument {self.source_filename!r}: Duplicate block id {b.id!r} at position {i}"
+                )
+            seen_ids.add(b.id)
