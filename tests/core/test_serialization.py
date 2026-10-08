@@ -7,6 +7,7 @@ from document_processor.core.models.physical import (
     CharSpan,
     DocSourceFormat,
     ListInfo,
+    ImageInfo,
     ParagraphAlignment,
     ParagraphFormat,
     PhysicalBlock,
@@ -35,6 +36,7 @@ def make_block(**overrides) -> PhysicalBlock:
         paragraph_format=ParagraphFormat(alignment=None, style_name=None),
         char_spans=(),
         list_info=None,
+        image_info=None,
         source_reference="paragraph:0",
         changelog=(),
     )
@@ -85,6 +87,14 @@ def rich_document() -> PhysicalDocument:
             id="pb4", text="Trang 1", region=Region.FOOTER,
             source_reference="footer:0",
         ),
+        make_block(
+            id="pb5", text="", block_type=BlockType.IMAGE,
+            image_info=ImageInfo(
+                source_path="word/media/image1.png", mime_type="image/png",
+                content_hash="sha256:abvdg", displayed_width_pt=12.3, displayed_height_pt=None,
+            ),
+            source_reference="image:0"
+        )
     )
     return PhysicalDocument(
         id="sha256:abc",

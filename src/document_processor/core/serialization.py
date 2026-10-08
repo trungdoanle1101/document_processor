@@ -13,6 +13,7 @@ from document_processor.core.models.physical import (
     CharSpan,
     SpanStyle,
     ListInfo,
+    ImageInfo,
     ParagraphAlignment,
 )
 from document_processor.core.models.ranges import TextRange
@@ -66,6 +67,17 @@ def _list_info_from_dict(d: dict[str, Any]) -> ListInfo:
     return list_info
 
 
+def _image_info_from_dict(d: dict[str, Any]) -> ImageInfo:
+    image_info = ImageInfo(
+        source_path=d["source_path"],
+        mime_type=d["mime_type"],
+        content_hash=d["content_hash"],
+        displayed_height_pt=d["displayed_height_pt"],
+        displayed_width_pt=d["displayed_width_pt"]
+    )
+    return image_info
+
+
 def _physical_block_from_dict(d: dict[str, Any]) -> PhysicalBlock:
     block = PhysicalBlock(
         id=d["id"],
@@ -77,6 +89,9 @@ def _physical_block_from_dict(d: dict[str, Any]) -> PhysicalBlock:
         char_spans=tuple(_char_span_from_dict(cs) for cs in d["char_spans"]),
         list_info=(
             _list_info_from_dict(d["list_info"]) if d["list_info"] is not None else None
+        ),
+        image_info=(
+            _image_info_from_dict(d["image_info"]) if d["image_info"] is not None else None
         ),
         source_reference=d["source_reference"],
         changelog=tuple(d["changelog"]),
