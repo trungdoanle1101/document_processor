@@ -1,7 +1,7 @@
 import json
 
 import pytest
-
+from pathlib import Path
 from document_processor.core.models.physical import (
     BlockType,
     CharSpan,
@@ -19,6 +19,8 @@ from document_processor.core.serialization import (
     PHYSICAL_SCHEMA_VERSION,
     physical_document_from_dict,
     physical_document_to_dict,
+    save_physical_document,
+    load_physical_document
 )
 
 
@@ -129,3 +131,11 @@ def test_wrong_schema_version_is_rejected(rich_document):
     d["schema_version"] = PHYSICAL_SCHEMA_VERSION + 1
     with pytest.raises(ValueError, match="schema version"):
         physical_document_from_dict(d)
+
+
+def test_save_then_load_from_string_path(rich_document, tmp_path):
+    save_path = tmp_path / "out" / "doc.json"
+    save_physical_document(rich_document, save_path)
+    load_path = str(save_path)
+    loaded_doc = load_physical_document(load_path)
+    assert loaded_doc == rich_document
