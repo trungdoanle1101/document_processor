@@ -2,6 +2,7 @@
 
 The elements are built from small XML strings, so no .docx file is needed.
 """
+from docx.oxml.ns import qn
 
 import pytest
 from docx.oxml import parse_xml
@@ -13,6 +14,7 @@ from document_processor.adapters.docx._xml import (
     read_jc,
     xpath_int_or_none,
     xpath_str_or_none,
+    xpath_element_or_none
 )
 
 W = nsdecls("w")  # 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
@@ -133,3 +135,51 @@ def test_read_jc_works_on_a_style() -> None:
         "</w:style>"
     )
     assert read_jc(style) == "center"
+
+
+# ---------- xpath_element_or_none
+
+
+def numbering(inner: str) -> _Element:
+    """A <w:numbering> root, as in word/numbering.xml."""
+    return parse_xml(f"<w:numbering {W}>{inner}</w:numbering>")
+
+
+LVL_PATH = './w:abstractNum[@w:abstractNumId="3"]/w:lvl[@w:ilvl="1"]'
+
+
+def test_element_returns_the_single_element() -> None:
+    root = numbering(
+        '<w:abstractNum w:abstractNumId="3">'
+        '<w:lvl w:ilvl="0"><w:numFmt w:val="decimal"/></w:lvl>'
+        '<w:lvl w:ilvl="1"><w:numFmt w:val="lowerLetter"/></w:lvl>'
+        "</w:abstractNum>"
+    )
+    lvl = xpath_element_or_none(root, LVL_PATH)
+    assert lvl is not None
+    assert lvl.tag == qn("w:lvl")
+    # It is the right level, not just any level:
+    assert xpath_str_or_none(lvl, "./w:numFmt/@w:val") == "lowerLetter"
+
+
+def test_element_returns_none_when_missing() -> None:
+    root = numbering('<w:abstractNum w:abstractNumId="3"><w:lvl w:ilvl="0"/></w:abstractNum>')
+    assert xpath_element_or_none(root, LVL_PATH) is None
+
+
+def test_element_rejects_multiple_results() -> None:
+    # Two definitions of the same level: invalid, and ambiguous.
+    root = numbering(
+        '<w:abstractNum w:abstractNumId="3">'
+        '<w:lvl w:ilvl="1"/><w:lvl w:ilvl="1"/>'
+        "</w:abstractNum>"
+    )
+    with pytest.raises(ValueError, match="Expected 0 or 1 results, got 2"):
+        xpath_element_or_none(root, LVL_PATH)
+
+
+def test_element_rejects_a_path_that_selects_an_attribute() -> None:
+    # The mirror image of the str helper's test: "/@w:ilvl" selects a value.
+    root = numbering('<w:abstractNum w:abstractNumId="3"><w:lvl w:ilvl="1"/></w:abstractNum>')
+    with pytest.raises(TypeError, match="Expected an _Element, got '1'"):
+        xpath_element_or_none(root, f"{LVL_PATH}/@w:ilvl")
