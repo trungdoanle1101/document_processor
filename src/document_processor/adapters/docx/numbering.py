@@ -1,6 +1,9 @@
 import re
 from dataclasses import dataclass, replace
+
 from lxml.etree import _Element
+
+from document_processor.core.models.physical import ListInfo
 
 from ._xml import xpath_element_or_none, xpath_int_or_none, xpath_str_or_none
 from .number_formats import format_number
@@ -25,7 +28,10 @@ LVL_OVERRIDE_XPATH_TEMPLATE = (
 START_OVERRIDE_XPATH = "./w:startOverride/@w:val"
 REPLACEMENT_LEVEL_XPATH = "./w:lvl"
 
+PLACEHOLDER_PATTERN = re.compile(r"%([1-9])")
 
+
+# --- readers
 def read_num_id(element: _Element) -> int | None:
     return xpath_int_or_none(element, NUM_ID_VAL_XPATH)
 
@@ -79,6 +85,7 @@ def find_replacement_level(level_override: _Element) -> _Element | None:
     return xpath_element_or_none(level_override, REPLACEMENT_LEVEL_XPATH)
 
 
+# --- level definitions
 @dataclass(frozen=True)
 class LevelDefinition:
     """One list level from numbering.xml, with the standard's defaults applied"""
@@ -86,6 +93,14 @@ class LevelDefinition:
     num_fmt: str
     lvl_text: str | None
     start: int
+
+    @property
+    def is_ordered(self) -> bool:
+        """ False for bullets, 'none', and levels without text
+        """
+        return not (
+            self.num_fmt == "bullet" or self.num_fmt == "none" or self.lvl_text is None
+        )
 
 
 def build_level_definition(level: _Element) -> LevelDefinition:
@@ -99,11 +114,7 @@ def build_level_definition(level: _Element) -> LevelDefinition:
     # ECMA-376: missing start means 0
     start = start if start is not None else 0
 
-    return LevelDefinition(
-        num_fmt=num_fmt,
-        lvl_text=lvl_text,
-        start=start,
-    )
+    return LevelDefinition(num_fmt=num_fmt, lvl_text=lvl_text, start=start)
 
 
 def _build_original_level_definition(
@@ -134,13 +145,13 @@ def resolve_level_definition(
     return definition
 
 
+# --- counting
 class ListCounter:
     def __init__(self) -> None:
         # Keys: num_id, ilvl
         self._counts: dict[int, dict[int, int]] = {}
 
     def advance(self, num_id: int, ilvl: int, start: int) -> dict[int, int]:
-
         if num_id not in self._counts:
             self._counts[num_id] = {}
 
@@ -158,16 +169,16 @@ class ListCounter:
         return dict(counts)
 
 
-PLACEHOLDER_PATTERN = re.compile(r"%([1-9])")
-
-
+# --- markers
 def resolve_marker(
     level_def: LevelDefinition, counts: dict[int, int], formats: dict[int, str]
-) -> str:
+) -> str | None:
     if level_def.num_fmt == "none" or level_def.lvl_text is None:
-        return ""
+        return None
 
     if level_def.num_fmt == "bullet":
+        # TODO: Symbol-font bullets come through as Private Use Area characters.
+        # Need to map them via w:lvl/w:rPr/w:rFonts
         return level_def.lvl_text
 
     def _fill(match: re.Match[str]) -> str:
@@ -175,14 +186,60 @@ def resolve_marker(
         try:
             num = counts[ilvl]
         except KeyError as e:
-            raise ValueError(f"lvlText {level_def.lvl_text!r}: no count for level {ilvl} (%{ilvl+1})") from e
+            raise ValueError(
+                f"lvlText {level_def.lvl_text!r}: no count for level {ilvl} (%{ilvl + 1})"
+            ) from e
 
         try:
             num_fmt = formats[ilvl]
         except KeyError as e:
-            raise ValueError(f"lvlText {level_def.lvl_text!r}: no format for level {ilvl} (%{ilvl+1})")
+            raise ValueError(
+                f"lvlText {level_def.lvl_text!r}: no format for level {ilvl} (%{ilvl + 1})"
+            ) from e
 
         return format_number(num=num, num_fmt=num_fmt)
 
     replaced = PLACEHOLDER_PATTERN.sub(repl=_fill, string=level_def.lvl_text)
     return replaced
+
+
+# --- numberer
+class Numberer:
+    def __init__(self, numbering_root: _Element) -> None:
+        self._counter = ListCounter()
+        self._root = numbering_root
+        self._level_defs: dict[tuple[int, int], LevelDefinition] = {}
+
+    def _get_level_def(self, num_id: int, ilvl: int) -> LevelDefinition:
+        key = (num_id, ilvl)
+
+        if key not in self._level_defs:
+            ld = resolve_level_definition(self._root, num_id, ilvl)
+            self._level_defs[key] = ld
+
+        return self._level_defs[key]
+
+    def next_list_info(self, num_id: int, ilvl: int) -> ListInfo:
+        level_def = self._get_level_def(num_id, ilvl)
+
+        formats: dict[int, str] = {}
+        if level_def.lvl_text is not None:
+            all_levels = [
+                int(lvl) - 1 for lvl in PLACEHOLDER_PATTERN.findall(level_def.lvl_text)
+            ]
+            for level in all_levels:
+                ld = self._get_level_def(num_id, level)
+                formats[level] = ld.num_fmt
+
+        counts = self._counter.advance(num_id, ilvl, level_def.start)
+
+        displayed_marker = resolve_marker(
+            level_def=level_def, counts=counts, formats=formats
+        )
+
+        return ListInfo(
+            id=str(num_id),
+            is_ordered=level_def.is_ordered,
+            displayed_marker=displayed_marker,
+            nested_level=ilvl,
+        )
