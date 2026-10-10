@@ -17,8 +17,6 @@ class Granularity(Enum):
     SUMMARY = "summary"
 
 
-
-
 @dataclass(frozen=True)
 class Chunk:
     text: str
@@ -27,7 +25,7 @@ class Chunk:
     # Context - usually the sections that make sense of the chunk text
     # Can be empty (e.g., for top-level nodes)
     context: str
-    
+
     # Node on which the chunk is derived
     node_id: str
     # The node's pre-order index
@@ -48,20 +46,17 @@ class Chunk:
     def __post_init__(self) -> None:
         if not self.text.strip():
             raise ValueError("chunk text cannot be empty")
-        
+
         if (not self.node_id) or (not self.logical_document_id):
-            raise ValueError("orphaned chunk: node_id and logical_document_id cannot be empty")
-        
+            raise ValueError(
+                "orphaned chunk: node_id and logical_document_id cannot be empty"
+            )
+
         if not self.node_level:
             raise ValueError("chunk level cannot be empty")
-        
+
         if not self.chunking_strategy:
             raise ValueError("chunking_strategy cannot be empty")
-        
+
         if self.node_position < 0:
             raise ValueError("chunk level cannot be negative")
-
-
-
-
-

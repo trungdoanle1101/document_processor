@@ -1,20 +1,21 @@
 import json
-from pathlib import Path
-from enum import Enum
 from dataclasses import asdict
+from enum import Enum
+from pathlib import Path
 from typing import Any
+
 from document_processor.core.models.physical import (
-    PhysicalDocument,
-    PhysicalBlock,
-    DocSourceFormat,
     BlockType,
-    Region,
-    ParagraphFormat,
     CharSpan,
-    SpanStyle,
-    ListInfo,
+    DocSourceFormat,
     ImageInfo,
+    ListInfo,
     ParagraphAlignment,
+    ParagraphFormat,
+    PhysicalBlock,
+    PhysicalDocument,
+    Region,
+    SpanStyle,
 )
 from document_processor.core.models.ranges import TextRange
 
@@ -36,8 +37,10 @@ def physical_document_to_dict(doc: PhysicalDocument) -> dict[str, Any]:
 
 def _paragraph_format_from_dict(d: dict[str, Any]) -> ParagraphFormat:
     paragraph_format = ParagraphFormat(
-        alignment=ParagraphAlignment(d["alignment"]) if d["alignment"] is not None else None,
-        style_name=d["style_name"]
+        alignment=ParagraphAlignment(d["alignment"])
+        if d["alignment"] is not None
+        else None,
+        style_name=d["style_name"],
     )
     return paragraph_format
 
@@ -73,7 +76,7 @@ def _image_info_from_dict(d: dict[str, Any]) -> ImageInfo:
         mime_type=d["mime_type"],
         content_hash=d["content_hash"],
         displayed_height_pt=d["displayed_height_pt"],
-        displayed_width_pt=d["displayed_width_pt"]
+        displayed_width_pt=d["displayed_width_pt"],
     )
     return image_info
 
@@ -91,7 +94,9 @@ def _physical_block_from_dict(d: dict[str, Any]) -> PhysicalBlock:
             _list_info_from_dict(d["list_info"]) if d["list_info"] is not None else None
         ),
         image_info=(
-            _image_info_from_dict(d["image_info"]) if d["image_info"] is not None else None
+            _image_info_from_dict(d["image_info"])
+            if d["image_info"] is not None
+            else None
         ),
         source_reference=d["source_reference"],
         changelog=tuple(d["changelog"]),
@@ -136,10 +141,8 @@ def save_physical_document(doc: PhysicalDocument, file_path: str | Path) -> None
 
 
 def load_physical_document(file_path: str | Path) -> PhysicalDocument:
-    """Load a PhysicalDocument from a JSON file.
-    """
+    """Load a PhysicalDocument from a JSON file."""
     file_path = Path(file_path)
     with file_path.open("r", encoding="utf-8") as f:
         doc_dict = json.load(f)
-    return physical_document_from_dict(doc_dict)    
-
+    return physical_document_from_dict(doc_dict)

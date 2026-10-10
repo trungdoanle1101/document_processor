@@ -12,7 +12,6 @@ from document_processor.core.models.physical import (
     SpanStyle,
     TextRange,
 )
-
 from tests.factories import (
     make_block,
     make_document,
@@ -30,7 +29,7 @@ def bold(start: int, end: int) -> CharSpan:
 
 @pytest.mark.parametrize(
     "text",
-    ["", " ", "\t\n", "​", "​ ﻿"],
+    ["", " ", "\t\n", "\u200b", "\u200b ﻿"],
     ids=["empty", "space", "tab-newline", "zero-width-space", "mixed-invisible"],
 )
 def test_block_rejects_invisible_text(text: str) -> None:
@@ -45,7 +44,9 @@ def test_error_message_names_the_block() -> None:
 
 
 def test_image_block_may_have_empty_text() -> None:
-    block = make_block(block_type=BlockType.IMAGE, text="", image_info=make_image_info())
+    block = make_block(
+        block_type=BlockType.IMAGE, text="", image_info=make_image_info()
+    )
     assert block.text == ""
 
 
@@ -132,7 +133,7 @@ def test_image_info_sizes_may_be_unknown() -> None:
     assert info.displayed_height_pt is None
 
 
-@pytest.mark.parametrize("source_path", ["", "   ", "​"])
+@pytest.mark.parametrize("source_path", ["", "   ", "\u200b"])
 def test_image_info_rejects_invisible_source_path(source_path: str) -> None:
     with pytest.raises(ValueError, match="source_path"):
         make_image_info(source_path=source_path)

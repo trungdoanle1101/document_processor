@@ -1,10 +1,13 @@
 from __future__ import annotations
+
 import re
 from dataclasses import dataclass
 from enum import Enum
-from .ranges import TextRange
-from document_processor.core.text_utils import is_invisible
+
 from document_processor.core.identity import HASH_ALGORITHM
+from document_processor.core.text_utils import is_invisible
+
+from .ranges import TextRange
 
 
 class DocSourceFormat(Enum):

@@ -1,13 +1,13 @@
 import json
 
 import pytest
-from pathlib import Path
+
 from document_processor.core.models.physical import (
     BlockType,
     CharSpan,
     DocSourceFormat,
-    ListInfo,
     ImageInfo,
+    ListInfo,
     ParagraphAlignment,
     ParagraphFormat,
     PhysicalDocument,
@@ -17,14 +17,12 @@ from document_processor.core.models.physical import (
 from document_processor.core.models.ranges import TextRange
 from document_processor.core.serialization import (
     PHYSICAL_SCHEMA_VERSION,
+    load_physical_document,
     physical_document_from_dict,
     physical_document_to_dict,
     save_physical_document,
-    load_physical_document
 )
 from tests.factories import make_block
-
-
 
 
 @pytest.fixture
@@ -67,17 +65,24 @@ def rich_document() -> PhysicalDocument:
         ),
         # Footer text: a non-body region, everything else unknown
         make_block(
-            id="pb4", text="Trang 1", region=Region.FOOTER,
+            id="pb4",
+            text="Trang 1",
+            region=Region.FOOTER,
             source_reference="footer:0",
         ),
         make_block(
-            id="pb5", text="", block_type=BlockType.IMAGE,
+            id="pb5",
+            text="",
+            block_type=BlockType.IMAGE,
             image_info=ImageInfo(
-                source_path="word/media/image1.png", mime_type="image/png",
-                content_hash="sha256:abvdg", displayed_width_pt=12.3, displayed_height_pt=None,
+                source_path="word/media/image1.png",
+                mime_type="image/png",
+                content_hash="sha256:abvdg",
+                displayed_width_pt=12.3,
+                displayed_height_pt=None,
             ),
-            source_reference="image:0"
-        )
+            source_reference="image:0",
+        ),
     )
     return PhysicalDocument(
         id="sha256:abc",
@@ -107,9 +112,9 @@ def test_saved_form_is_plain_json_data(rich_document):
     assert d["kind"] == "physical_document"
     assert d["schema_version"] == PHYSICAL_SCHEMA_VERSION
     block = d["document"]["blocks"][0]
-    assert block["block_type"] == "paragraph"            # enum written as its value
+    assert block["block_type"] == "paragraph"  # enum written as its value
     assert block["paragraph_format"]["alignment"] == "center"
-    json.dumps(d)                                         # must not raise
+    json.dumps(d)  # must not raise
 
 
 def test_wrong_kind_is_rejected(rich_document):

@@ -1,16 +1,15 @@
 import codecs
 from pathlib import Path
 
+from document_processor.core.identity import compute_hash
 from document_processor.core.models.physical import (
-    PhysicalDocument,
-    PhysicalBlock,
     BlockType,
-    Region,
     DocSourceFormat,
     ParagraphFormat,
+    PhysicalBlock,
+    PhysicalDocument,
+    Region,
 )
-
-from document_processor.core.identity import compute_hash
 from document_processor.core.text_utils import is_invisible
 
 
@@ -38,7 +37,6 @@ class PlainTextAdapter:
         blocks = []
         block_counter = 0
         for i, line_bytes in enumerate(lines, start=1):
-
             try:
                 decoded_line = line_bytes.decode(encoding="utf-8")
             except UnicodeDecodeError as e:

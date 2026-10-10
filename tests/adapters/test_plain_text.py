@@ -1,4 +1,5 @@
 import pytest
+
 from document_processor.adapters import PlainTextAdapter
 
 
@@ -34,7 +35,7 @@ def test_invalid_utf_names_file_and_line():
 
 
 def test_parse_file_matches_parse_bytes(tmp_path):
-    data = "Chương I\nĐiều 1. Phạm vi".encode("utf-8")
+    data = "Chương I\nĐiều 1. Phạm vi".encode()
     filename = "rule.txt"
     path = tmp_path / filename
     path.write_bytes(data)
@@ -50,7 +51,7 @@ def test_missing_file():
 
 
 def test_wrong_file_extension(tmp_path):
-    data = "Chương I\nĐiều 1. Phạm vi".encode("utf-8")
+    data = "Chương I\nĐiều 1. Phạm vi".encode()
     filename = "rule.md"
     path = tmp_path / filename
     path.write_bytes(data)

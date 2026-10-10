@@ -1,7 +1,6 @@
-from lxml.etree import _Element
-from lxml import etree
 from docx.oxml.ns import nsmap
-from typing import Any
+from lxml import etree
+from lxml.etree import _Element
 
 ALIGNMENT_MAPPING = {
     "left": "left",  # Word convention
@@ -32,7 +31,7 @@ def _xpath_one_or_none(element: _Element, path: str) -> object | None:
 
     if len(result) >= 2:
         raise ValueError(f"XPath: {path}. Expected 0 or 1 results, got {len(result)}")
-    
+
     value: object = result[0]
 
     return value
@@ -71,7 +70,7 @@ def xpath_int_or_none(element: _Element, path: str) -> int | None:
 
     if value is None:
         return None
-    
+
     try:
         return int(value)
     except ValueError as e:
