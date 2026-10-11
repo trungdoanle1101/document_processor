@@ -34,7 +34,7 @@ class PlainTextAdapter:
         data = data.removeprefix(codecs.BOM_UTF8)
 
         lines = data.splitlines()
-        blocks = []
+        blocks: list[PhysicalBlock] = []
         block_counter = 0
         for i, line_bytes in enumerate(lines, start=1):
             try:

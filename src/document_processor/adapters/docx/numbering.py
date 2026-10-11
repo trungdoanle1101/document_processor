@@ -96,8 +96,7 @@ class LevelDefinition:
 
     @property
     def is_ordered(self) -> bool:
-        """ False for bullets, 'none', and levels without text
-        """
+        """False for bullets, 'none', and levels without text"""
         return not (
             self.num_fmt == "bullet" or self.num_fmt == "none" or self.lvl_text is None
         )

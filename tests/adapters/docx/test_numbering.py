@@ -40,7 +40,9 @@ def numbering(inner: str) -> _Element:
     return parse_xml(f"<w:numbering {W}>{inner}</w:numbering>")
 
 
-def lvl(ilvl: int, num_fmt: str | None, lvl_text: str | None, start: int | None = 1) -> str:
+def lvl(
+    ilvl: int, num_fmt: str | None, lvl_text: str | None, start: int | None = 1
+) -> str:
     """One <w:lvl>; pass None to leave a child element out."""
     parts = [f'<w:lvl w:ilvl="{ilvl}">']
     if start is not None:
@@ -97,8 +99,12 @@ OVERRIDE_NUMBERING = numbering(
         7,
         3,
         '<w:lvlOverride w:ilvl="0"><w:startOverride w:val="5"/></w:lvlOverride>',
-        '<w:lvlOverride w:ilvl="1">' + lvl(1, "upperRoman", "%2.", start=4) + "</w:lvlOverride>",
-        '<w:lvlOverride w:ilvl="2">' + lvl(2, "lowerRoman", "(%3)") + "</w:lvlOverride>",
+        '<w:lvlOverride w:ilvl="1">'
+        + lvl(1, "upperRoman", "%2.", start=4)
+        + "</w:lvlOverride>",
+        '<w:lvlOverride w:ilvl="2">'
+        + lvl(2, "lowerRoman", "(%3)")
+        + "</w:lvlOverride>",
     )
     + num(9, 99)  # points to an abstractNum that does not exist
 )
@@ -119,7 +125,9 @@ MULTILEVEL_NUMBERING = numbering(
 
 
 def test_read_num_id_and_ilvl() -> None:
-    p = paragraph('<w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="3"/></w:numPr></w:pPr>')
+    p = paragraph(
+        '<w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="3"/></w:numPr></w:pPr>'
+    )
     assert read_num_id(p) == 3
     assert read_ilvl(p) == 1
 
@@ -177,7 +185,9 @@ def test_level_readers_return_none_when_not_written() -> None:
 
 def test_find_level_override() -> None:
     assert find_level_override(OVERRIDE_NUMBERING, 7, 0) is not None
-    assert find_level_override(OVERRIDE_NUMBERING, 8, 0) is None  # no override is normal
+    assert (
+        find_level_override(OVERRIDE_NUMBERING, 8, 0) is None
+    )  # no override is normal
 
 
 def test_override_readers() -> None:
@@ -198,7 +208,9 @@ def test_override_readers() -> None:
 
 
 def test_build_level_definition_reads_all_values() -> None:
-    definition = build_level_definition(level_element(lvl(1, "lowerLetter", "%2)", start=3)))
+    definition = build_level_definition(
+        level_element(lvl(1, "lowerLetter", "%2)", start=3))
+    )
     assert definition == LevelDefinition(num_fmt="lowerLetter", lvl_text="%2)", start=3)
 
 
@@ -210,7 +222,9 @@ def test_missing_num_fmt_means_decimal() -> None:
 
 def test_missing_start_means_zero() -> None:
     # ECMA-376 default: 0, not 1.
-    definition = build_level_definition(level_element(lvl(0, "decimal", "%1.", start=None)))
+    definition = build_level_definition(
+        level_element(lvl(0, "decimal", "%1.", start=None))
+    )
     assert definition.start == 0
 
 
@@ -337,7 +351,12 @@ def definition(num_fmt: str, lvl_text: str | None) -> LevelDefinition:
         ("%1.", {0: 3}, {0: "decimal"}, "3."),
         ("%2)", {0: 1, 1: 2}, {1: "lowerLetter"}, "b)"),
         ("%1.%2.", {0: 1, 1: 2}, {0: "decimal", 1: "decimal"}, "1.2."),
-        ("%1.%2.%3.", {0: 1, 1: 1, 2: 1}, {0: "decimal", 1: "lowerLetter", 2: "upperRoman"}, "1.a.I."),
+        (
+            "%1.%2.%3.",
+            {0: 1, 1: 1, 2: 1},
+            {0: "decimal", 1: "lowerLetter", 2: "upperRoman"},
+            "1.a.I.",
+        ),
         ("Điều %1.", {0: 7}, {0: "decimal"}, "Điều 7."),
         ("Chương %1", {0: 4}, {0: "upperRoman"}, "Chương IV"),
         ("(%1)", {0: 1}, {0: "decimal"}, "(1)"),
@@ -364,7 +383,9 @@ def test_resolve_marker_bullet_returns_its_character() -> None:
 
 def test_resolve_marker_missing_count() -> None:
     with pytest.raises(ValueError, match=r"no count for level 0 \(%1\)"):
-        resolve_marker(definition("decimal", "%1.%2."), {1: 1}, {0: "decimal", 1: "decimal"})
+        resolve_marker(
+            definition("decimal", "%1.%2."), {1: 1}, {0: "decimal", 1: "decimal"}
+        )
 
 
 def test_resolve_marker_missing_format() -> None:
@@ -376,7 +397,9 @@ def test_resolve_marker_missing_format() -> None:
 
 
 def markers(numberer: Numberer, calls: list[tuple[int, int]]) -> list[str | None]:
-    return [numberer.next_list_info(num_id, ilvl).displayed_marker for num_id, ilvl in calls]
+    return [
+        numberer.next_list_info(num_id, ilvl).displayed_marker for num_id, ilvl in calls
+    ]
 
 
 def test_numberer_sample_numbered_list() -> None:
@@ -392,7 +415,12 @@ def test_numberer_sample_numbered_list() -> None:
 
 def test_numberer_sample_lists_are_independent() -> None:
     numberer = Numberer(SAMPLE_NUMBERING)
-    assert markers(numberer, [(3, 0), (5, 0), (3, 0), (5, 0)]) == ["1.", "1.", "2.", "2."]
+    assert markers(numberer, [(3, 0), (5, 0), (3, 0), (5, 0)]) == [
+        "1.",
+        "1.",
+        "2.",
+        "2.",
+    ]
 
 
 def test_numberer_sample_bullets() -> None:
