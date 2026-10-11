@@ -10,7 +10,6 @@ from lxml import etree
 from lxml.etree import _Element
 
 from document_processor.adapters.docx._xml import (
-    read_jc,
     xpath_element_or_none,
     xpath_int_or_none,
     xpath_str_or_none,
@@ -116,30 +115,6 @@ def test_int_passes_on_multiple_results_error() -> None:
     )
     with pytest.raises(ValueError, match="Expected 0 or 1 results, got 2"):
         xpath_int_or_none(p, "./w:pPr/w:numPr/w:ilvl/@w:val")
-
-
-# ---------- read_jc
-
-
-@pytest.mark.parametrize("value", ["left", "start", "center", "both", "distribute"])
-def test_read_jc_returns_the_raw_value(value: str) -> None:
-    # Raw means raw: no mapping, so LibreOffice's "start" stays "start".
-    p = paragraph(f'<w:pPr><w:jc w:val="{value}"/></w:pPr>')
-    assert read_jc(p) == value
-
-
-def test_read_jc_returns_none_when_not_set() -> None:
-    assert read_jc(paragraph("<w:pPr/>")) is None
-
-
-def test_read_jc_works_on_a_style() -> None:
-    # Styles have a <w:pPr> too, so the same reader serves the style chain.
-    style = parse_xml(
-        f'<w:style {W} w:type="paragraph" w:styleId="Heading1">'
-        '<w:pPr><w:jc w:val="center"/></w:pPr>'
-        "</w:style>"
-    )
-    assert read_jc(style) == "center"
 
 
 # ---------- xpath_element_or_none

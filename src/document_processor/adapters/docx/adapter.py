@@ -3,8 +3,6 @@ from docx import Document as DocumentFactory
 from docx.document import Document
 from io import BytesIO
 from docx.text.paragraph import Paragraph
-
-# from docx.table import Table
 from docx.oxml.ns import qn
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from lxml.etree import _Element
@@ -14,7 +12,6 @@ from document_processor.core.models.physical import (
     PhysicalBlock,
     BlockType,
     Region,
-    ParagraphFormat,
     DocSourceFormat,
     ListInfo,
 )
@@ -22,6 +19,7 @@ from document_processor.core.text_utils import is_invisible
 from document_processor.core.identity import compute_hash
 
 from .numbering import Numberer, read_num_id, read_ilvl
+from .styles import Stylist
 
 
 class _DocxReader:
@@ -38,12 +36,28 @@ class _DocxReader:
             numbering_root = None
         except ValueError as e:
             raise ValueError(
-                f"File {filename!r}: multiple numbering relationship found"
+                f"File {filename!r}: multiple conflicting numbering relationship found"
             ) from e
 
         self._numberer = (
             Numberer(numbering_root) if numbering_root is not None else None
         )
+
+        try:
+            part = doc.part.part_related_by(RT.STYLES)
+            styles_root: _Element | None = part.element
+        except KeyError:
+            styles_root = None
+        except ValueError as e:
+            raise ValueError(
+                f"File {filename!r}: multiple conflicting styles relationship found"
+            ) from e
+
+        try:
+            self._stylist = Stylist(styles_root)
+        except ValueError as e:
+            raise ValueError(f"File {filename!r}: unable to create Stylist object") from e
+        
 
     def read_blocks(self) -> tuple[PhysicalBlock, ...]:
         blocks: list[PhysicalBlock] = []
@@ -99,8 +113,10 @@ class _DocxReader:
 
         self._block_count += 1
 
-        # TODO: Do alignment and char spans extraction
-        paragraph_format = ParagraphFormat(alignment=None, style_name=None)
+        try:
+            paragraph_format = self._stylist.resolve_paragraph_format(el)
+        except ValueError as e:
+            raise ValueError(f"File {self._filename!r}, at {ref}: unable to resolve paragraph format") from e
 
         char_spans = ()
 
@@ -167,8 +183,9 @@ class DocxAdapter:
 
 # if __name__ == "__main__":
 #     adapter = DocxAdapter()
-#     file = "data/no_list.docx"
+#     # file = "data/no_list.docx"
 #     # file = "data/simple_nested_list.docx"
+#     file = "data/headings.docx"
 #     phys_doc = adapter.parse_file(file)
 #     from document_processor.core.serialization import save_physical_document
 

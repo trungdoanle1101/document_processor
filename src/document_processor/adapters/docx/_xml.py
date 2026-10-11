@@ -2,19 +2,8 @@ from docx.oxml.ns import nsmap
 from lxml import etree
 from lxml.etree import _Element
 
-ALIGNMENT_MAPPING = {
-    "left": "left",  # Word convention
-    "start": "left",  # Libreoffice convention
-    "right": "right",  # Word convention
-    "end": "right",  # Libreoffice convention
-    "center": "center",
-    "both": "justified",
-}
 
 NAMESPACES = {"w": nsmap["w"]}
-
-
-JC_VAL_XPATH = "./w:pPr/w:jc/@w:val"
 
 
 def _xpath_one_or_none(element: _Element, path: str) -> object | None:
@@ -75,7 +64,3 @@ def xpath_int_or_none(element: _Element, path: str) -> int | None:
         return int(value)
     except ValueError as e:
         raise ValueError(f"XPath: {path}. Failed to convert {value!r} to int") from e
-
-
-def read_jc(element: _Element) -> str | None:
-    return xpath_str_or_none(element=element, path=JC_VAL_XPATH)
