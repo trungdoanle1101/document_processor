@@ -74,8 +74,10 @@ class _DocxReader:
 
             elif el.tag == qn("w:tbl"):
                 # Table
-                raise NotImplementedError("tables are not supported yet")
-
+                block = self._process_table_block(el, ref)
+                if block is None:
+                    continue
+                blocks.append(block)
             elif el.tag == qn("w:sectPr"):
                 # Skip sectPr intentionally
                 continue
@@ -136,6 +138,15 @@ class _DocxReader:
             changelog=(),
         )
 
+    
+    def _process_table_block(self, tbl_el: _Element, ref: str) -> PhysicalBlock:
+        for el in tbl_el:
+            if el.tag == qn("w:tr"):
+                for s in el:
+                    if s.tag == qn("w:tc"):
+                        for c in s:
+                            print(c)
+
 
 class DocxAdapter:
     name = "docx"
@@ -184,8 +195,8 @@ class DocxAdapter:
         return self.parse_bytes(file_bytes, filename)
 
 
-# if __name__ == "__main__":
-#     adapter = DocxAdapter()
+if __name__ == "__main__":
+    adapter = DocxAdapter()
 #     # file = "data/no_list.docx"
 #     # file = "data/simple_nested_list.docx"
 #     file = "data/headings.docx"
@@ -193,3 +204,8 @@ class DocxAdapter:
 #     from document_processor.core.serialization import save_physical_document
 
 #     save_physical_document(phys_doc, f"{file}.json")
+
+    reader = _DocxReader(DocumentFactory("data/simple_table.docx"), "simple_table.docx")
+    blocks = reader.read_blocks()
+
+
