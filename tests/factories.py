@@ -93,8 +93,8 @@ def make_table_cell(**overrides: Any) -> TableCell:
 def make_table_info(**overrides: Any) -> TableInfo:
     """A valid 2x2 table with one header row; override any field.
 
-        TT | Nội dung
-        1  | Phạm vi điều chỉnh
+    TT | Nội dung
+    1  | Phạm vi điều chỉnh
     """
     fields: dict[str, Any] = {
         "n_rows": 2,

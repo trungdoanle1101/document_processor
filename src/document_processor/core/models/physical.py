@@ -12,6 +12,7 @@ from .ranges import TextRange
 _TABLE_COL_SEP = "\t"
 _TABLE_ROW_SEP = "\n"
 
+
 class DocSourceFormat(Enum):
     DOCX = "docx"
     PDF = "pdf"
@@ -196,7 +197,6 @@ class TableInfo:
             )
         return tuple(grid_temp)
 
-
     def text(self) -> str:
         grid_ = self.grid()
         builder: list[str] = []
@@ -210,8 +210,6 @@ class TableInfo:
             row_str = _TABLE_COL_SEP.join(row_builder)
             builder.append(row_str)
         return _TABLE_ROW_SEP.join(builder)
-                
-    
 
 
 @dataclass(frozen=True)
@@ -295,7 +293,6 @@ class PhysicalBlock:
                 f"Block {self.id}: Non-IMAGE block must not contain image_info"
             )
 
-        
         if self.block_type == BlockType.TABLE:
             # Check orphaned TABLE block (no table_info)
             if self.table_info is None:
@@ -305,17 +302,13 @@ class PhysicalBlock:
             # Check block's text
             table_info_text = self.table_info.text()
             if self.text != table_info_text:
-                raise ValueError(
-                    f"Block {self.id}: a table block's text must match"
-                )
+                raise ValueError(f"Block {self.id}: a table block's text must match")
 
         # table_info must not be present in blocks that are not TABLE
         if self.block_type != BlockType.TABLE and self.table_info is not None:
             raise ValueError(
                 f"Block {self.id}: Non-TABLE block must not contain table_info"
             )
-        
-
 
         # Check spans length definition
         for i, span in enumerate(self.char_spans):

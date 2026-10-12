@@ -112,7 +112,9 @@ def test_cell_rejects_span_below_one(field: str, value: int) -> None:
         make_table_cell(**{field: value})
 
 
-@pytest.mark.parametrize("bad", ["", " ", "\t", "​"], ids=["empty", "space", "tab", "zwsp"])
+@pytest.mark.parametrize(
+    "bad", ["", " ", "\t", "​"], ids=["empty", "space", "tab", "zwsp"]
+)
 def test_cell_rejects_invisible_paragraph(bad: str) -> None:
     # An empty cell has exactly one form: paragraphs=().
     with pytest.raises(ValueError, match=r"TableCell \(2, 3\)\. Paragraph index 1"):
@@ -124,12 +126,22 @@ def test_cell_rejects_invisible_paragraph(bad: str) -> None:
     [
         ((), ""),
         (("Số CIF",), "Số CIF"),
-        (("Kiểm tra dữ liệu?", "Lưu ý: không tích hợp."), "Kiểm tra dữ liệu? Lưu ý: không tích hợp."),
+        (
+            ("Kiểm tra dữ liệu?", "Lưu ý: không tích hợp."),
+            "Kiểm tra dữ liệu? Lưu ý: không tích hợp.",
+        ),
         (("a\tb",), "a b"),
         (("dòng 1\ndòng 2",), "dòng 1 dòng 2"),
         (("x\r\ny", "z"), "x y z"),
     ],
-    ids=["empty", "one", "two-joined-by-space", "tab-cleaned", "newline-cleaned", "crlf-then-join"],
+    ids=[
+        "empty",
+        "one",
+        "two-joined-by-space",
+        "tab-cleaned",
+        "newline-cleaned",
+        "crlf-then-join",
+    ],
 )
 def test_cell_text(paragraphs: tuple[str, ...], expected: str) -> None:
     assert make_table_cell(paragraphs=paragraphs).text() == expected
@@ -179,27 +191,39 @@ def test_header_rows_out_of_range_rejected(value: int) -> None:
 
 
 def test_cell_past_last_row_rejected() -> None:
-    with pytest.raises(ValueError, match=r"TableCell \(1, 0\)\. Cell spanning out of row limit.*got 3 > 2"):
+    with pytest.raises(
+        ValueError,
+        match=r"TableCell \(1, 0\)\. Cell spanning out of row limit.*got 3 > 2",
+    ):
         table(2, 1, cell(0, 0, "a"), cell(1, 0, "b", rs=2))
 
 
 def test_cell_past_last_col_rejected() -> None:
-    with pytest.raises(ValueError, match=r"TableCell \(0, 1\)\. Cell spanning out of col limit.*got 3 > 2"):
+    with pytest.raises(
+        ValueError,
+        match=r"TableCell \(0, 1\)\. Cell spanning out of col limit.*got 3 > 2",
+    ):
         table(1, 2, cell(0, 0, "a"), cell(0, 1, "b", cs=2))
 
 
 def test_cells_out_of_order_rejected() -> None:
-    with pytest.raises(ValueError, match=r"reading order\. Got \(0, 1\) before \(0, 0\)"):
+    with pytest.raises(
+        ValueError, match=r"reading order\. Got \(0, 1\) before \(0, 0\)"
+    ):
         table(1, 2, cell(0, 1, "b"), cell(0, 0, "a"))
 
 
 def test_rows_out_of_order_rejected() -> None:
-    with pytest.raises(ValueError, match=r"reading order\. Got \(1, 0\) before \(0, 1\)"):
+    with pytest.raises(
+        ValueError, match=r"reading order\. Got \(1, 0\) before \(0, 1\)"
+    ):
         table(2, 2, cell(0, 0), cell(1, 0), cell(0, 1), cell(1, 1))
 
 
 def test_same_position_twice_rejected_as_order() -> None:
-    with pytest.raises(ValueError, match=r"reading order\. Got \(0, 0\) before \(0, 0\)"):
+    with pytest.raises(
+        ValueError, match=r"reading order\. Got \(0, 0\) before \(0, 0\)"
+    ):
         table(1, 1, cell(0, 0, "a"), cell(0, 0, "b"))
 
 
@@ -226,18 +250,24 @@ def test_vertical_overlap_rejected() -> None:
 
 
 def test_hole_rejected_with_count_and_first_position() -> None:
-    with pytest.raises(ValueError, match=r"3 positions not covered\. First missing position: \(0, 1\)"):
+    with pytest.raises(
+        ValueError, match=r"3 positions not covered\. First missing position: \(0, 1\)"
+    ):
         table(2, 2, cell(0, 0, "a"))
 
 
 def test_hole_inside_the_grid_rejected() -> None:
     # Only the middle of the bottom row is missing.
-    with pytest.raises(ValueError, match=r"1 positions not covered\. First missing position: \(1, 1\)"):
+    with pytest.raises(
+        ValueError, match=r"1 positions not covered\. First missing position: \(1, 1\)"
+    ):
         table(2, 3, cell(0, 0), cell(0, 1), cell(0, 2), cell(1, 0), cell(1, 2))
 
 
 def test_no_cells_at_all_rejected() -> None:
-    with pytest.raises(ValueError, match=r"4 positions not covered\. First missing position: \(0, 0\)"):
+    with pytest.raises(
+        ValueError, match=r"4 positions not covered\. First missing position: \(0, 0\)"
+    ):
         table(2, 2)
 
 
@@ -303,7 +333,14 @@ def test_text_block_merge_in_both_directions() -> None:
 
 
 def test_text_full_width_row() -> None:
-    t = table(2, 3, cell(0, 0, "Phụ lục I", cs=3), cell(1, 0, "a"), cell(1, 1, "b"), cell(1, 2, "c"))
+    t = table(
+        2,
+        3,
+        cell(0, 0, "Phụ lục I", cs=3),
+        cell(1, 0, "a"),
+        cell(1, 1, "b"),
+        cell(1, 2, "c"),
+    )
     assert t.text() == "Phụ lục I\t\t\na\tb\tc"
 
 
@@ -350,12 +387,16 @@ def test_table_block_is_valid() -> None:
 
 
 def test_table_block_requires_table_info() -> None:
-    with pytest.raises(ValueError, match=r"Block pb1: Invalid table block: Doesn't contain table_info"):
+    with pytest.raises(
+        ValueError, match=r"Block pb1: Invalid table block: Doesn't contain table_info"
+    ):
         make_block(block_type=BlockType.TABLE, text="TT\tNội dung")
 
 
 def test_non_table_block_rejects_table_info() -> None:
-    with pytest.raises(ValueError, match=r"Block pb1: Non-TABLE block must not contain table_info"):
+    with pytest.raises(
+        ValueError, match=r"Block pb1: Non-TABLE block must not contain table_info"
+    ):
         make_block(table_info=make_table_info())
 
 

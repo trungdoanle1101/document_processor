@@ -416,12 +416,131 @@ def test_broken_styles_name_the_file() -> None:
 # ---------- body elements
 
 
-def test_table_not_supported_yet() -> None:
-    table = (
-        "<w:tbl><w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"
+def tbl(*rows: list[str]) -> str:
+    """A body-level <w:tbl>; each row is a list of cell texts ("" = empty cell)."""
+    trs = []
+    for cells in rows:
+        tcs = "".join(f"<w:tc>{p(text)}</w:tc>" for text in cells)
+        trs.append(f"<w:tr>{tcs}</w:tr>")
+    return f"<w:tbl><w:tblPr/><w:tblGrid/>{''.join(trs)}</w:tbl>"
+
+
+def test_table_becomes_one_table_block() -> None:
+    doc = parse(p("Before") + tbl(["TT", "Nội dung"], ["1", "Phạm vi"]) + p("After"))
+
+    assert [b.block_type for b in doc.blocks] == [
+        BlockType.PARAGRAPH,
+        BlockType.TABLE,
+        BlockType.PARAGRAPH,
+    ]
+    table = doc.blocks[1]
+    assert table.text == "TT\tNội dung\n1\tPhạm vi"
+    assert table.table_info is not None
+    assert (table.table_info.n_rows, table.table_info.n_cols) == (2, 2)
+
+
+def test_table_block_ids_and_reference() -> None:
+    doc = parse(p("A") + tbl(["x"]) + p("B"))
+    assert [b.id for b in doc.blocks] == ["pb1", "pb2", "pb3"]
+    assert doc.blocks[1].source_reference == "/w:document/w:body/w:tbl"
+
+
+def test_table_paragraphs_are_not_body_blocks() -> None:
+    doc = parse(tbl(["cell text"]))
+    assert len(doc.blocks) == 1
+    assert doc.blocks[0].block_type is BlockType.TABLE
+
+
+def test_table_without_rows_produces_no_block() -> None:
+    doc = parse(p("A") + "<w:tbl><w:tblPr/><w:tblGrid/></w:tbl>" + p("B"))
+    assert [b.text for b in doc.blocks] == ["A", "B"]
+    assert [b.id for b in doc.blocks] == ["pb1", "pb2"]
+
+
+def test_table_of_empty_cells_produces_no_block() -> None:
+    doc = parse(p("A") + tbl(["", ""], ["", ""]))
+    assert [b.text for b in doc.blocks] == ["A"]
+
+
+def test_header_rows_reach_the_block() -> None:
+    header_row = f"<w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc>{p('TT')}</w:tc></w:tr>"
+    data_row = f"<w:tr><w:tc>{p('1')}</w:tc></w:tr>"
+    doc = parse(f"<w:tbl><w:tblPr/><w:tblGrid/>{header_row}{data_row}</w:tbl>")
+    info = doc.blocks[0].table_info
+    assert info is not None
+    assert info.n_header_rows == 1
+
+
+def test_merged_table_reaches_the_block() -> None:
+    rows = (
+        f'<w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr>{p("Trường hợp áp dụng")}</w:tc></w:tr>'
+        f"<w:tr><w:tc>{p('Báo cáo')}</w:tc><w:tc>{p('Kiểm thử')}</w:tc></w:tr>"
     )
-    with pytest.raises(NotImplementedError, match="tables are not supported yet"):
-        parse(p("A") + table)
+    doc = parse(f"<w:tbl><w:tblPr/><w:tblGrid/>{rows}</w:tbl>")
+    assert doc.blocks[0].text == "Trường hợp áp dụng\t\nBáo cáo\tKiểm thử"
+
+
+def test_cell_text_is_read_like_body_text() -> None:
+    # Cell paragraphs go through the same text reading as body paragraphs.
+    doc = parse(tbl(["a  b"]))
+    assert doc.blocks[0].text == "a  b"
+
+
+def test_list_inside_cell_shares_the_counter_with_the_body() -> None:
+    cell_item = f"<w:tbl><w:tblPr/><w:tblGrid/><w:tr><w:tc>{p('In cell', num_id=3)}</w:tc></w:tr></w:tbl>"
+    body = p("First", num_id=3) + cell_item + p("Third", num_id=3)
+    doc = parse(body, numbering=NUMBERING)
+
+    first, table, third = doc.blocks
+    assert first.list_info is not None and first.list_info.displayed_marker == "1."
+    # The cell item takes number 2, and its marker is kept in the cell text.
+    assert table.text == "2. In cell"
+    assert third.list_info is not None and third.list_info.displayed_marker == "3."
+
+
+def test_empty_list_item_in_cell_still_counts() -> None:
+    cell_item = f"<w:tbl><w:tblPr/><w:tblGrid/><w:tr><w:tc>{p('x')}{p(num_id=3)}</w:tc></w:tr></w:tbl>"
+    doc = parse(
+        p("One", num_id=3) + cell_item + p("Three", num_id=3), numbering=NUMBERING
+    )
+    assert doc.blocks[-1].list_info is not None
+    assert doc.blocks[-1].list_info.displayed_marker == "3."
+
+
+def test_list_in_cell_without_numbering_rejected() -> None:
+    cell_item = f"<w:tbl><w:tblPr/><w:tblGrid/><w:tr><w:tc>{p('x', num_id=3)}</w:tc></w:tr></w:tbl>"
+    with pytest.raises(
+        ValueError, match=r"File 'test\.docx', at /w:document/w:body/w:tbl"
+    ):
+        parse(cell_item)
+
+
+def test_broken_merge_names_file_and_table() -> None:
+    continue_cell = f"<w:tc><w:tcPr><w:vMerge/></w:tcPr>{p()}</w:tc>"
+    broken = f"<w:tbl><w:tblPr/><w:tblGrid/><w:tr>{continue_cell}</w:tr></w:tbl>"
+    with pytest.raises(
+        ValueError, match=r"File 'test\.docx', at /w:document/w:body/w:tbl"
+    ) as excinfo:
+        parse(p("A") + broken)
+    assert "without open cell" in str(excinfo.value.__cause__)
+
+
+def test_nested_table_not_supported_yet() -> None:
+    nested = f"<w:tc>{p('outer')}<w:tbl><w:tr><w:tc>{p('inner')}</w:tc></w:tr></w:tbl>{p()}</w:tc>"
+    with pytest.raises(NotImplementedError, match="Nested tables not supported"):
+        parse(f"<w:tbl><w:tblPr/><w:tblGrid/><w:tr>{nested}</w:tr></w:tbl>")
+
+
+def test_table_round_trips_through_json(tmp_path: Path) -> None:
+    from document_processor.core.serialization import (
+        load_physical_document,
+        save_physical_document,
+    )
+
+    doc = parse(p("A") + tbl(["TT", "Nội dung"], ["1", ""]))
+    path = tmp_path / "doc.json"
+    save_physical_document(doc, path)
+    assert load_physical_document(path) == doc
 
 
 def test_unknown_body_element_rejected() -> None:
