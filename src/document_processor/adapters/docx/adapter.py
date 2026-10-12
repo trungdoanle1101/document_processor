@@ -56,8 +56,9 @@ class _DocxReader:
         try:
             self._stylist = Stylist(styles_root)
         except ValueError as e:
-            raise ValueError(f"File {filename!r}: unable to create Stylist object") from e
-        
+            raise ValueError(
+                f"File {filename!r}: unable to create Stylist object"
+            ) from e
 
     def read_blocks(self) -> tuple[PhysicalBlock, ...]:
         blocks: list[PhysicalBlock] = []
@@ -116,7 +117,9 @@ class _DocxReader:
         try:
             paragraph_format = self._stylist.resolve_paragraph_format(el)
         except ValueError as e:
-            raise ValueError(f"File {self._filename!r}, at {ref}: unable to resolve paragraph format") from e
+            raise ValueError(
+                f"File {self._filename!r}, at {ref}: unable to resolve paragraph format"
+            ) from e
 
         char_spans = ()
 

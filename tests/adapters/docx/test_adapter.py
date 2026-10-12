@@ -42,8 +42,12 @@ PACKAGE_RELS = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
 </Relationships>"""
 
-REL_STYLES = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles"
-REL_NUMBERING = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering"
+REL_STYLES = (
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles"
+)
+REL_NUMBERING = (
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering"
+)
 
 SECT_PR = '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/></w:sectPr>'
 
@@ -61,9 +65,13 @@ def build_docx(
     """
     rels = []
     if styles is not None:
-        rels.append(f'<Relationship Id="rId1" Type="{REL_STYLES}" Target="styles.xml"/>')
+        rels.append(
+            f'<Relationship Id="rId1" Type="{REL_STYLES}" Target="styles.xml"/>'
+        )
     if numbering is not None:
-        rels.append(f'<Relationship Id="rId2" Type="{REL_NUMBERING}" Target="numbering.xml"/>')
+        rels.append(
+            f'<Relationship Id="rId2" Type="{REL_NUMBERING}" Target="numbering.xml"/>'
+        )
     document_rels = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
@@ -75,11 +83,16 @@ def build_docx(
         z.writestr("[Content_Types].xml", CONTENT_TYPES)
         z.writestr("_rels/.rels", PACKAGE_RELS)
         z.writestr("word/_rels/document.xml.rels", document_rels)
-        z.writestr("word/document.xml", f"<w:document {W}><w:body>{body}{SECT_PR}</w:body></w:document>")
+        z.writestr(
+            "word/document.xml",
+            f"<w:document {W}><w:body>{body}{SECT_PR}</w:body></w:document>",
+        )
         if styles is not None:
             z.writestr("word/styles.xml", f"<w:styles {W}>{styles}</w:styles>")
         if numbering is not None:
-            z.writestr("word/numbering.xml", f"<w:numbering {W}>{numbering}</w:numbering>")
+            z.writestr(
+                "word/numbering.xml", f"<w:numbering {W}>{numbering}</w:numbering>"
+            )
     return buf.getvalue()
 
 
@@ -163,7 +176,9 @@ def test_document_fields() -> None:
 
 def test_same_bytes_give_the_same_document() -> None:
     data = build_docx(p("A") + p("B"))
-    assert DocxAdapter().parse_bytes(data, FILENAME) == DocxAdapter().parse_bytes(data, FILENAME)
+    assert DocxAdapter().parse_bytes(data, FILENAME) == DocxAdapter().parse_bytes(
+        data, FILENAME
+    )
 
 
 def test_invalid_bytes_rejected() -> None:
@@ -177,7 +192,11 @@ def test_invalid_bytes_rejected() -> None:
 def test_plain_paragraphs() -> None:
     doc = parse(p("Chương I") + p("QUY ĐỊNH CHUNG") + p("Điều 1. Phạm vi điều chỉnh"))
 
-    assert [b.text for b in doc.blocks] == ["Chương I", "QUY ĐỊNH CHUNG", "Điều 1. Phạm vi điều chỉnh"]
+    assert [b.text for b in doc.blocks] == [
+        "Chương I",
+        "QUY ĐỊNH CHUNG",
+        "Điều 1. Phạm vi điều chỉnh",
+    ]
     assert all(b.block_type is BlockType.PARAGRAPH for b in doc.blocks)
     assert all(b.list_info is None for b in doc.blocks)
 
@@ -212,7 +231,9 @@ def test_source_reference_of_a_single_paragraph_has_no_index() -> None:
 
 
 def test_source_reference_finds_the_paragraph_again() -> None:
-    data = build_docx(p("A") + p() + p("B") + p("   ") + p("C", num_id=3), numbering=NUMBERING)
+    data = build_docx(
+        p("A") + p() + p("B") + p("   ") + p("C", num_id=3), numbering=NUMBERING
+    )
     doc = DocxAdapter().parse_bytes(data, FILENAME)
     root = document_root(data)
 
@@ -236,7 +257,11 @@ def test_nested_list_markers() -> None:
     )
     doc = parse(body, numbering=NUMBERING)
 
-    items = [(b.text, b.list_info.displayed_marker, b.list_info.nested_level) for b in doc.blocks if b.list_info]
+    items = [
+        (b.text, b.list_info.displayed_marker, b.list_info.nested_level)
+        for b in doc.blocks
+        if b.list_info
+    ]
     assert items == [
         ("First", "1.", 0),
         ("Sub a", "a)", 1),
@@ -277,8 +302,12 @@ def test_numbered_items_are_ordered() -> None:
 
 def test_empty_list_item_still_advances_the_counter() -> None:
     # Word shows "1.", "2." (empty) and "3."; the empty one is not emitted.
-    doc = parse(p("One", num_id=3) + p(num_id=3) + p("Three", num_id=3), numbering=NUMBERING)
-    assert [(b.id, b.list_info.displayed_marker) for b in doc.blocks if b.list_info] == [
+    doc = parse(
+        p("One", num_id=3) + p(num_id=3) + p("Three", num_id=3), numbering=NUMBERING
+    )
+    assert [
+        (b.id, b.list_info.displayed_marker) for b in doc.blocks if b.list_info
+    ] == [
         ("pb1", "1."),
         ("pb2", "3."),
     ]
@@ -288,7 +317,11 @@ def test_separate_num_ids_count_separately() -> None:
     numbering = NUMBERING + '<w:num w:numId="4"><w:abstractNumId w:val="0"/></w:num>'
     body = p("A1", num_id=3) + p("B1", num_id=4) + p("A2", num_id=3)
     doc = parse(body, numbering=numbering)
-    assert [b.list_info.displayed_marker for b in doc.blocks if b.list_info] == ["1.", "1.", "2."]
+    assert [b.list_info.displayed_marker for b in doc.blocks if b.list_info] == [
+        "1.",
+        "1.",
+        "2.",
+    ]
 
 
 def test_num_id_zero_is_not_a_list() -> None:
@@ -314,10 +347,18 @@ def test_list_paragraph_without_numbering_rejected() -> None:
 
 
 def test_paragraph_format_from_styles() -> None:
-    body = p("Plain") + p("Body", style="BodyText") + p("Heading", style="Title") + p("Direct", jc="right")
+    body = (
+        p("Plain")
+        + p("Body", style="BodyText")
+        + p("Heading", style="Title")
+        + p("Direct", jc="right")
+    )
     doc = parse(body, styles=STYLES)
 
-    formats = [(b.paragraph_format.style_name, b.paragraph_format.alignment) for b in doc.blocks]
+    formats = [
+        (b.paragraph_format.style_name, b.paragraph_format.alignment)
+        for b in doc.blocks
+    ]
     assert formats == [
         ("Normal", ParagraphAlignment.LEFT),
         ("Body Text", ParagraphAlignment.JUSTIFIED),
@@ -329,7 +370,10 @@ def test_paragraph_format_from_styles() -> None:
 def test_paragraph_format_without_styles() -> None:
     doc = parse(p("Plain") + p("Centered", jc="center") + p("Styled", style="Title"))
 
-    formats = [(b.paragraph_format.style_name, b.paragraph_format.alignment) for b in doc.blocks]
+    formats = [
+        (b.paragraph_format.style_name, b.paragraph_format.alignment)
+        for b in doc.blocks
+    ]
     assert formats == [
         (None, ParagraphAlignment.LEFT),
         (None, ParagraphAlignment.CENTER),
@@ -338,13 +382,20 @@ def test_paragraph_format_without_styles() -> None:
 
 
 def test_list_items_get_a_paragraph_format_too() -> None:
-    doc = parse(p("Item", style="BodyText", num_id=3), styles=STYLES, numbering=NUMBERING)
+    doc = parse(
+        p("Item", style="BodyText", num_id=3), styles=STYLES, numbering=NUMBERING
+    )
     fmt = doc.blocks[0].paragraph_format
-    assert (fmt.style_name, fmt.alignment) == ("Body Text", ParagraphAlignment.JUSTIFIED)
+    assert (fmt.style_name, fmt.alignment) == (
+        "Body Text",
+        ParagraphAlignment.JUSTIFIED,
+    )
 
 
 def test_unknown_alignment_names_file_and_paragraph() -> None:
-    with pytest.raises(ValueError, match=r"File 'test\.docx', at /w:document/w:body/w:p\[2\]") as excinfo:
+    with pytest.raises(
+        ValueError, match=r"File 'test\.docx', at /w:document/w:body/w:p\[2\]"
+    ) as excinfo:
         parse(p("A") + p("B", jc="numTab"), styles=STYLES)
     # The original reason is kept as the cause.
     assert "numTab" in str(excinfo.value.__cause__)
@@ -366,7 +417,9 @@ def test_broken_styles_name_the_file() -> None:
 
 
 def test_table_not_supported_yet() -> None:
-    table = "<w:tbl><w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"
+    table = (
+        "<w:tbl><w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"
+    )
     with pytest.raises(NotImplementedError, match="tables are not supported yet"):
         parse(p("A") + table)
 
@@ -391,7 +444,9 @@ def test_parse_file_matches_parse_bytes(tmp_path: Path) -> None:
     path = tmp_path / "nghi-dinh.docx"
     path.write_bytes(data)
 
-    assert DocxAdapter().parse_file(path) == DocxAdapter().parse_bytes(data, "nghi-dinh.docx")
+    assert DocxAdapter().parse_file(path) == DocxAdapter().parse_bytes(
+        data, "nghi-dinh.docx"
+    )
 
 
 def test_parse_file_accepts_a_str_path(tmp_path: Path) -> None:
@@ -431,7 +486,9 @@ def test_sample_file_invariants() -> None:
     root = document_root(data)
 
     assert doc.blocks, "expected at least one block"
-    assert [b.id for b in doc.blocks] == [f"pb{i}" for i in range(1, len(doc.blocks) + 1)]
+    assert [b.id for b in doc.blocks] == [
+        f"pb{i}" for i in range(1, len(doc.blocks) + 1)
+    ]
     for block in doc.blocks:
         assert block.paragraph_format.alignment is not None
         found = root.xpath(block.source_reference, namespaces={"w": W_NS})

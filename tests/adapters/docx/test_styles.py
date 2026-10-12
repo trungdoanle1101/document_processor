@@ -140,7 +140,9 @@ def test_read_p_style() -> None:
 
 
 def test_style_readers() -> None:
-    el = parse_xml(f"<w:styles {W}>{style('Dieu', name='heading 2', based_on='Normal')}</w:styles>")[0]
+    el = parse_xml(
+        f"<w:styles {W}>{style('Dieu', name='heading 2', based_on='Normal')}</w:styles>"
+    )[0]
     assert read_style_id(el) == "Dieu"
     assert read_style_name(el) == "heading 2"
     assert read_style_based_on(el) == "Normal"
@@ -222,8 +224,12 @@ def test_duplicate_style_ids_rejected() -> None:
 
 
 def test_style_without_id_is_ignored() -> None:
-    root = styles_root(style(None, name="orphan", jc="center"), style("Normal", default="1"))
-    assert resolve(root, paragraph()) == ParagraphFormat(alignment=LEFT, style_name="Normal")
+    root = styles_root(
+        style(None, name="orphan", jc="center"), style("Normal", default="1")
+    )
+    assert resolve(root, paragraph()) == ParagraphFormat(
+        alignment=LEFT, style_name="Normal"
+    )
 
 
 def test_unknown_doc_default_jc_rejected_at_construction() -> None:
@@ -339,7 +345,9 @@ def test_unknown_jc_on_style_raises() -> None:
 
 
 def test_style_name_from_p_style() -> None:
-    root = styles_root(style("Heading1", name="heading 1"), style("Normal", default="1"))
+    root = styles_root(
+        style("Heading1", name="heading 1"), style("Normal", default="1")
+    )
     assert resolve(root, paragraph(p_style="Heading1")).style_name == "heading 1"
 
 
@@ -390,7 +398,9 @@ def test_no_styles_uses_paragraph_jc() -> None:
 
 
 def test_no_styles_falls_back_to_left() -> None:
-    assert resolve(None, paragraph()) == ParagraphFormat(alignment=LEFT, style_name=None)
+    assert resolve(None, paragraph()) == ParagraphFormat(
+        alignment=LEFT, style_name=None
+    )
 
 
 def test_no_styles_ignores_p_style() -> None:
@@ -406,11 +416,21 @@ def test_no_styles_ignores_p_style() -> None:
 @pytest.mark.parametrize(
     ("p_style", "jc", "expected"),
     [
-        ("DieuHeading", "center", ParagraphFormat(alignment=CENTER, style_name="DieuHeading")),
-        ("DieuHeading", None, ParagraphFormat(alignment=JUSTIFIED, style_name="DieuHeading")),
+        (
+            "DieuHeading",
+            "center",
+            ParagraphFormat(alignment=CENTER, style_name="DieuHeading"),
+        ),
+        (
+            "DieuHeading",
+            None,
+            ParagraphFormat(alignment=JUSTIFIED, style_name="DieuHeading"),
+        ),
         (None, None, ParagraphFormat(alignment=LEFT, style_name="Normal")),
     ],
     ids=["direct-jc", "inherited-from-base", "default-style-then-left"],
 )
-def test_worked_example(p_style: str | None, jc: str | None, expected: ParagraphFormat) -> None:
+def test_worked_example(
+    p_style: str | None, jc: str | None, expected: ParagraphFormat
+) -> None:
     assert resolve(styles_root(*CHAIN), paragraph(p_style=p_style, jc=jc)) == expected

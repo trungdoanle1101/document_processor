@@ -5,10 +5,12 @@ from dataclasses import dataclass
 from enum import Enum
 
 from document_processor.core.identity import HASH_ALGORITHM
-from document_processor.core.text_utils import is_invisible
+from document_processor.core.text_utils import is_invisible, to_single_line
 
 from .ranges import TextRange
 
+_TABLE_COL_SEP = "\t"
+_TABLE_ROW_SEP = "\n"
 
 class DocSourceFormat(Enum):
     DOCX = "docx"
@@ -87,6 +89,131 @@ class ImageInfo:
             )
 
 
+@dataclass(frozen=True, kw_only=True)
+class TableCell:
+    row: int
+    col: int
+    row_span: int
+    col_span: int
+    paragraphs: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if self.row < 0:
+            raise ValueError(f"row must be >= 0, got {self.row}")
+        if self.col < 0:
+            raise ValueError(f"col must be >= 0, got {self.col}")
+        if self.row_span < 1:
+            raise ValueError(f"row_span must be >= 1, got {self.row_span}")
+        if self.col_span < 1:
+            raise ValueError(f"col_span must be >= 1, got {self.col_span}")
+        for i, p in enumerate(self.paragraphs):
+            if is_invisible(p):
+                raise ValueError(
+                    f"TableCell ({self.row}, {self.col}). Paragraph index {i} contains all invisible text."
+                )
+
+    def text(self) -> str:
+        return " ".join(to_single_line(p) for p in self.paragraphs)
+
+
+@dataclass(frozen=True, kw_only=True)
+class TableInfo:
+    n_rows: int
+    n_cols: int
+    n_header_rows: int
+    cells: tuple[TableCell, ...]
+
+    def __post_init__(self) -> None:
+        if self.n_rows <= 0:
+            raise ValueError(f"n_rows must be > 0, got {self.n_rows}")
+        if self.n_cols <= 0:
+            raise ValueError(f"n_cols must be > 0, got {self.n_cols}")
+        if not (0 <= self.n_header_rows <= self.n_rows):
+            raise ValueError(
+                f"Invalid number of header rows. Required: 0 <= n_header_rows <= n_rows, got {self.n_header_rows} with n_rows={self.n_rows}"
+            )
+
+        # Check valid spanning
+        for cell in self.cells:
+            if cell.row + cell.row_span > self.n_rows:
+                raise ValueError(
+                    f"TableCell ({cell.row}, {cell.col}). Cell spanning out of row limit: Required cell.row + cell.row_span <= n_rows, got {cell.row + cell.row_span} > {self.n_rows}"
+                )
+            if cell.col + cell.col_span > self.n_cols:
+                raise ValueError(
+                    f"TableCell ({cell.row}, {cell.col}). Cell spanning out of col limit: Required cell.col + cell.col_span <= n_cols, got {cell.col + cell.col_span} > {self.n_cols}"
+                )
+
+        # Check cells reading order
+        for i in range(len(self.cells) - 1):
+            cur = self.cells[i]
+            nxt = self.cells[i + 1]
+            if (nxt.row, nxt.col) <= (cur.row, cur.col):
+                raise ValueError(
+                    f"Cells must follow reading order. Got ({cur.row}, {cur.col}) before ({nxt.row}, {nxt.col})"
+                )
+
+        # Check coverage
+        self.grid()
+
+    def _build_grid(self) -> list[list[TableCell | None]]:
+        grid_: list[list[TableCell | None]] = [
+            [None for _ in range(self.n_cols)] for _ in range(self.n_rows)
+        ]
+
+        for cell in self.cells:
+            for i in range(cell.row_span):
+                for j in range(cell.col_span):
+                    r = cell.row + i
+                    c = cell.col + j
+                    existing = grid_[r][c]
+                    if existing is not None:
+                        raise ValueError(
+                            f"Overlap detected: cell ({cell.row}, {cell.col}) overlaps cell ({existing.row}, {existing.col}) at position ({r}, {c})"
+                        )
+                    grid_[r][c] = cell
+        return grid_
+
+    def grid(self) -> tuple[tuple[TableCell, ...], ...]:
+        grid_ = self._build_grid()
+        num_holes = 0
+        first_hole: tuple[int, int] | None = None
+        grid_temp: list[tuple[TableCell, ...]] = []
+        for i, row in enumerate(grid_):
+            temp_row: list[TableCell] = []
+            for j, slot in enumerate(row):
+                if slot is None:
+                    num_holes += 1
+                    if first_hole is None:
+                        first_hole = (i, j)
+                else:
+                    temp_row.append(slot)
+            grid_temp.append(tuple(temp_row))
+
+        if num_holes != 0:
+            raise ValueError(
+                f"{num_holes} positions not covered. First missing position: {first_hole}"
+            )
+        return tuple(grid_temp)
+
+
+    def text(self) -> str:
+        grid_ = self.grid()
+        builder: list[str] = []
+        for i, row in enumerate(grid_):
+            row_builder: list[str] = []
+            for j, cell in enumerate(row):
+                if cell.row == i and cell.col == j:
+                    row_builder.append(cell.text())
+                else:
+                    row_builder.append("")
+            row_str = _TABLE_COL_SEP.join(row_builder)
+            builder.append(row_str)
+        return _TABLE_ROW_SEP.join(builder)
+                
+    
+
+
 @dataclass(frozen=True)
 class ParagraphFormat:
     alignment: ParagraphAlignment | None
@@ -128,6 +255,9 @@ class PhysicalBlock:
     # Only if the block is an image
     image_info: ImageInfo | None = None
 
+    # Only if the block is a table
+    table_info: TableInfo | None = None
+
     # Provenance
     source_reference: str
 
@@ -164,6 +294,28 @@ class PhysicalBlock:
             raise ValueError(
                 f"Block {self.id}: Non-IMAGE block must not contain image_info"
             )
+
+        
+        if self.block_type == BlockType.TABLE:
+            # Check orphaned TABLE block (no table_info)
+            if self.table_info is None:
+                raise ValueError(
+                    f"Block {self.id}: Invalid {BlockType.TABLE.value} block: Doesn't contain table_info"
+                )
+            # Check block's text
+            table_info_text = self.table_info.text()
+            if self.text != table_info_text:
+                raise ValueError(
+                    f"Block {self.id}: a table block's text must match"
+                )
+
+        # table_info must not be present in blocks that are not TABLE
+        if self.block_type != BlockType.TABLE and self.table_info is not None:
+            raise ValueError(
+                f"Block {self.id}: Non-TABLE block must not contain table_info"
+            )
+        
+
 
         # Check spans length definition
         for i, span in enumerate(self.char_spans):

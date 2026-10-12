@@ -10,6 +10,8 @@ from document_processor.core.models.physical import (
     DocSourceFormat,
     ImageInfo,
     ListInfo,
+    TableInfo,
+    TableCell,
     ParagraphAlignment,
     ParagraphFormat,
     PhysicalBlock,
@@ -81,6 +83,27 @@ def _image_info_from_dict(d: dict[str, Any]) -> ImageInfo:
     return image_info
 
 
+def _table_cell_from_dict(d: dict[str, Any]) -> TableCell:
+    table_cell = TableCell(
+        row=d["row"],
+        col=d["col"],
+        row_span=d["row_span"],
+        col_span=d["col_span"],
+        paragraphs=tuple(d["paragraphs"]),
+    )
+    return table_cell
+
+
+def _table_info_from_dict(d: dict[str, Any]) -> TableInfo:
+    table_info = TableInfo(
+        n_rows=d["n_rows"],
+        n_cols=d["n_cols"],
+        n_header_rows=d["n_header_rows"],
+        cells=tuple(_table_cell_from_dict(cell) for cell in d["cells"]),
+    )
+    return table_info
+
+
 def _physical_block_from_dict(d: dict[str, Any]) -> PhysicalBlock:
     block = PhysicalBlock(
         id=d["id"],
@@ -96,6 +119,11 @@ def _physical_block_from_dict(d: dict[str, Any]) -> PhysicalBlock:
         image_info=(
             _image_info_from_dict(d["image_info"])
             if d["image_info"] is not None
+            else None
+        ),
+        table_info=(
+            _table_info_from_dict(d["table_info"])
+            if d["table_info"] is not None
             else None
         ),
         source_reference=d["source_reference"],
