@@ -20,6 +20,13 @@ from document_processor.core.models import (
     TableInfo,
 )
 
+from document_processor.core.models.logical import (
+    BlockSpan,
+    LogicalDocument,
+    LogicalNode,
+)
+from document_processor.core.models.ranges import TextRange
+
 
 def make_list_info(**overrides: Any) -> ListInfo:
     fields: dict[str, Any] = {
@@ -93,8 +100,8 @@ def make_table_cell(**overrides: Any) -> TableCell:
 def make_table_info(**overrides: Any) -> TableInfo:
     """A valid 2x2 table with one header row; override any field.
 
-    TT | Nội dung
-    1  | Phạm vi điều chỉnh
+        TT | Nội dung
+        1  | Phạm vi điều chỉnh
     """
     fields: dict[str, Any] = {
         "n_rows": 2,
@@ -121,3 +128,47 @@ def make_table_block(**overrides: Any) -> PhysicalBlock:
     }
     fields.update(overrides)
     return make_block(**fields)
+
+
+def make_block_span(**overrides: Any) -> BlockSpan:
+    fields: dict[str, Any] = {
+        "block_id": "pb1",
+        "text_range": TextRange(0, 7),
+    }
+    fields.update(overrides)
+    return BlockSpan(**fields)
+
+
+def make_logical_node(**overrides: Any) -> LogicalNode:
+    """A valid leaf node (Điều 1, no children); override any field."""
+    fields: dict[str, Any] = {
+        "id": "dieu-1",
+        "level": "dieu",
+        "number": "1",
+        "marker": make_block_span(),
+        "title": (),
+        "body": (),
+        "children_ids": (),
+    }
+    fields.update(overrides)
+    return LogicalNode(**fields)
+
+
+def make_logical_document(**overrides: Any) -> LogicalDocument:
+    """A valid document with no nodes; override any field.
+
+    Pass ``nodes`` and ``root_ids`` together, since they must agree.
+    """
+    fields: dict[str, Any] = {
+        "id": "ld1",
+        "physical_document_id": "pd1",
+        "source_file_hash": "hash1",
+        "profile_name": "vn_regulation",
+        "profile_version": "1.0.0",
+        "front_matter": (),
+        "root_ids": (),
+        "nodes": (),
+        "end_matter": (),
+    }
+    fields.update(overrides)
+    return LogicalDocument(**fields)
