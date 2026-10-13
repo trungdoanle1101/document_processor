@@ -19,18 +19,28 @@ from document_processor.core.models.physical import (
     Region,
     SpanStyle,
 )
+
+from document_processor.core.models.logical import (
+    LogicalNode,
+    LogicalDocument,
+    BlockSpan
+)
 from document_processor.core.models.ranges import TextRange
 
 PHYSICAL_SCHEMA_VERSION = 1
+LOGICAL_SCHEMA_VERSION = 1
+PHYSICAL_DOCUMENT_KIND = "physical_document"
+LOGICAL_DOCUMENT_KIND = "logical_document"
 
 
 def _unwrap_enum_factory(kv_pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return {k: (v.value if isinstance(v, Enum) else v) for k, v in kv_pairs}
 
+# === Physical
 
 def physical_document_to_dict(doc: PhysicalDocument) -> dict[str, Any]:
     d = {
-        "kind": "physical_document",
+        "kind": PHYSICAL_DOCUMENT_KIND,
         "schema_version": PHYSICAL_SCHEMA_VERSION,
         "document": asdict(doc, dict_factory=_unwrap_enum_factory),
     }
@@ -134,9 +144,9 @@ def _physical_block_from_dict(d: dict[str, Any]) -> PhysicalBlock:
 
 def physical_document_from_dict(d: dict[str, Any]) -> PhysicalDocument:
     kind = d.get("kind")
-    if kind != "physical_document":
+    if kind != PHYSICAL_DOCUMENT_KIND:
         raise ValueError(
-            f"Unexpected dictionary kind: Expected: physical_document. Actual: {kind}"
+            f"Unexpected dictionary kind: Expected: {PHYSICAL_DOCUMENT_KIND!r}. Actual: {kind!r}"
         )
     schema_version = d.get("schema_version")
     if schema_version != PHYSICAL_SCHEMA_VERSION:
@@ -174,3 +184,89 @@ def load_physical_document(file_path: str | Path) -> PhysicalDocument:
     with file_path.open("r", encoding="utf-8") as f:
         doc_dict = json.load(f)
     return physical_document_from_dict(doc_dict)
+
+# === Logical
+
+def logical_document_to_dict(doc: LogicalDocument) -> dict[str, Any]:
+    document_dict = {
+        "id": doc.id,
+        "physical_document_id": doc.physical_document_id,
+        "source_file_hash": doc.source_file_hash,
+        "profile_name": doc.profile_name,
+        "profile_version": doc.profile_version,
+        "front_matter": [asdict(b) for b in doc.front_matter],
+        "root_ids": list(doc.root_ids),
+        "nodes": [asdict(n) for n in doc.nodes],
+        "end_matter": [asdict(b) for b in doc.end_matter]
+    }
+
+    return {
+        "kind": LOGICAL_DOCUMENT_KIND,
+        "schema_version": LOGICAL_SCHEMA_VERSION,
+        "document": document_dict
+    }
+
+def _block_span_from_dict(d: dict[str, Any]) -> BlockSpan:
+    block_span = BlockSpan(
+        block_id=d["block_id"],
+        text_range=_text_range_from_dict(d["text_range"]) 
+    )
+    return block_span
+
+
+def _logical_node_from_dict(d: dict[str, Any]) -> LogicalNode:
+    logical_node = LogicalNode(
+        id=d["id"],
+        level=d["level"],
+        number=d["number"],
+        marker=_block_span_from_dict(d["marker"]) if d["marker"] is not None else None,
+        title=tuple(_block_span_from_dict(b) for b in d["title"]),
+        body=tuple(_block_span_from_dict(b) for b in d["body"]),
+        children_ids=tuple(d["children_ids"])
+    )
+    return logical_node
+
+
+def logical_document_from_dict(d: dict[str, Any]) -> LogicalDocument:
+    kind = d.get("kind")
+    if kind != LOGICAL_DOCUMENT_KIND:
+        raise ValueError(
+            f"Unexpected dictionary kind: Expected: {LOGICAL_DOCUMENT_KIND!r}. Actual: {kind!r}"
+        )
+    schema_version = d.get("schema_version")
+    if schema_version != LOGICAL_SCHEMA_VERSION:
+        raise ValueError(
+            f"Mismatched schema version: Expected: {LOGICAL_SCHEMA_VERSION}. Actual: {schema_version}"
+        )
+    document_dict = d["document"]
+    document = LogicalDocument(
+        id=document_dict["id"],
+        physical_document_id=document_dict["physical_document_id"],
+        source_file_hash=document_dict["source_file_hash"],
+        profile_name=document_dict["profile_name"],
+        profile_version=document_dict["profile_version"],
+        front_matter=tuple(_block_span_from_dict(b) for b in document_dict["front_matter"]),
+        root_ids=tuple(document_dict["root_ids"]),
+        nodes=tuple(_logical_node_from_dict(n) for n in document_dict["nodes"]),
+        end_matter=tuple(_block_span_from_dict(b) for b in document_dict["end_matter"])
+    )
+    return document
+
+
+def save_logical_document(doc: LogicalDocument, file_path: str | Path) -> None:
+    """Save a LogicalDocument as JSON format at file_path.
+    Will create parent folders if they don't exist.
+    """
+    file_path = Path(file_path)
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    doc_dict = logical_document_to_dict(doc)
+    with file_path.open("w", encoding="utf-8") as f:
+        json.dump(doc_dict, f, indent=2, ensure_ascii=False)
+
+
+def load_logical_document(file_path: str | Path) -> LogicalDocument:
+    """Load a LogicalDocument from a JSON file."""
+    file_path = Path(file_path)
+    with file_path.open("r", encoding="utf-8") as f:
+        doc_dict = json.load(f)
+    return logical_document_from_dict(doc_dict)
