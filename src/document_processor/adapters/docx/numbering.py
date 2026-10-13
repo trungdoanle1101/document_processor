@@ -191,7 +191,7 @@ def resolve_marker(
             raise ValueError(
                 f"lvlText {level_def.lvl_text!r}: no count or start values found for level {ilvl} (%{ilvl + 1})"
             )
-        
+
 
         try:
             num_fmt = formats[ilvl]
