@@ -114,8 +114,12 @@ class _DocxReader:
                 raise ValueError(
                     f"File {self._filename!r}, at {self._ref(p)}: has num_id {num_id!r} but the document has no numbering.xml"
                 )
-
-            list_info: ListInfo | None = self._numberer.next_list_info(num_id, ilvl)
+            try:
+                list_info: ListInfo | None = self._numberer.next_list_info(num_id, ilvl)
+            except ValueError as e:
+                raise ValueError(
+                    f"File {self._filename!r}, at {self._ref(p)}, num_id {num_id}, ilvl {ilvl}: error occurred: {e}"
+                )  from e
 
         else:
             list_info = None
@@ -251,15 +255,15 @@ class DocxAdapter:
         return self.parse_bytes(file_bytes, filename)
 
 
-# if __name__ == "__main__":
-#     #     # file = "data/no_list.docx"
-#     #     # file = "data/simple_nested_list.docx"
-#     file = "data/with_table.docx"
-#     adapter = DocxAdapter()
-#     phys_doc = adapter.parse_file(file)
-#     from document_processor.core.serialization import save_physical_document
+if __name__ == "__main__":
+    # file = "data/no_list.docx"
+    # file = "data/simple_nested_list.docx"
+    file = "data/2025_Quy dinh quan ly kien truc CNTT.docx"
+    adapter = DocxAdapter()
+    phys_doc = adapter.parse_file(file)
+    from document_processor.core.serialization import save_physical_document
 
-#     save_physical_document(phys_doc, f"{file}.json")
+    save_physical_document(phys_doc, f"{file}.json")
 
-#     # reader = _DocxReader(DocumentFactory("data/simple_table.docx"), "simple_table.docx")
-#     # blocks = reader.read_blocks()
+    # reader = _DocxReader(DocumentFactory("data/simple_table.docx"), "simple_table.docx")
+    # blocks = reader.read_blocks()

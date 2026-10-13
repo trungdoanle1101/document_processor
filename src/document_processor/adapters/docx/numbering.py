@@ -170,7 +170,7 @@ class ListCounter:
 
 # --- markers
 def resolve_marker(
-    level_def: LevelDefinition, counts: dict[int, int], formats: dict[int, str]
+    level_def: LevelDefinition, counts: dict[int, int], formats: dict[int, str], starts: dict[int, int]
 ) -> str | None:
     if level_def.num_fmt == "none" or level_def.lvl_text is None:
         return None
@@ -182,12 +182,16 @@ def resolve_marker(
 
     def _fill(match: re.Match[str]) -> str:
         ilvl = int(match.group(1)) - 1
-        try:
+        
+        if ilvl in counts:
             num = counts[ilvl]
-        except KeyError as e:
+        elif ilvl in starts:
+            num = starts[ilvl]
+        else:
             raise ValueError(
-                f"lvlText {level_def.lvl_text!r}: no count for level {ilvl} (%{ilvl + 1})"
-            ) from e
+                f"lvlText {level_def.lvl_text!r}: no count or start values found for level {ilvl} (%{ilvl + 1})"
+            )
+        
 
         try:
             num_fmt = formats[ilvl]
@@ -222,18 +226,21 @@ class Numberer:
         level_def = self._get_level_def(num_id, ilvl)
 
         formats: dict[int, str] = {}
+        starts: dict[int, int] = {}
         if level_def.lvl_text is not None:
             all_levels = [
                 int(lvl) - 1 for lvl in PLACEHOLDER_PATTERN.findall(level_def.lvl_text)
             ]
+            # Find all numFmt and start for levels before and including it
             for level in all_levels:
                 ld = self._get_level_def(num_id, level)
                 formats[level] = ld.num_fmt
+                starts[level] = ld.start
 
         counts = self._counter.advance(num_id, ilvl, level_def.start)
 
         displayed_marker = resolve_marker(
-            level_def=level_def, counts=counts, formats=formats
+            level_def=level_def, counts=counts, formats=formats, starts=starts
         )
 
         return ListInfo(

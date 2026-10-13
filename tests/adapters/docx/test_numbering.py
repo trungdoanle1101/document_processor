@@ -40,9 +40,7 @@ def numbering(inner: str) -> _Element:
     return parse_xml(f"<w:numbering {W}>{inner}</w:numbering>")
 
 
-def lvl(
-    ilvl: int, num_fmt: str | None, lvl_text: str | None, start: int | None = 1
-) -> str:
+def lvl(ilvl: int, num_fmt: str | None, lvl_text: str | None, start: int | None = 1) -> str:
     """One <w:lvl>; pass None to leave a child element out."""
     parts = [f'<w:lvl w:ilvl="{ilvl}">']
     if start is not None:
@@ -99,12 +97,8 @@ OVERRIDE_NUMBERING = numbering(
         7,
         3,
         '<w:lvlOverride w:ilvl="0"><w:startOverride w:val="5"/></w:lvlOverride>',
-        '<w:lvlOverride w:ilvl="1">'
-        + lvl(1, "upperRoman", "%2.", start=4)
-        + "</w:lvlOverride>",
-        '<w:lvlOverride w:ilvl="2">'
-        + lvl(2, "lowerRoman", "(%3)")
-        + "</w:lvlOverride>",
+        '<w:lvlOverride w:ilvl="1">' + lvl(1, "upperRoman", "%2.", start=4) + "</w:lvlOverride>",
+        '<w:lvlOverride w:ilvl="2">' + lvl(2, "lowerRoman", "(%3)") + "</w:lvlOverride>",
     )
     + num(9, 99)  # points to an abstractNum that does not exist
 )
@@ -121,13 +115,27 @@ MULTILEVEL_NUMBERING = numbering(
 )
 
 
+# A sub-list kept as its own list (one abstractNum per num): its level 0 never
+# appears, and starts at 2 so the sub-items read "2.1", "2.2" under heading "2.".
+# List 45 reuses abstractNum 44 with a start override on level 0.
+CONTINUED_SUBLIST_NUMBERING = numbering(
+    abstract_num(15, lvl(0, "decimal", "%1."))
+    + abstract_num(
+        44,
+        lvl(0, "decimal", "%1", start=2),
+        lvl(1, "decimal", "%1.%2", start=1),
+    )
+    + num(15, 15)
+    + num(44, 44)
+    + num(45, 44, '<w:lvlOverride w:ilvl="0"><w:startOverride w:val="7"/></w:lvlOverride>')
+)
+
+
 # ---------- paragraph readers
 
 
 def test_read_num_id_and_ilvl() -> None:
-    p = paragraph(
-        '<w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="3"/></w:numPr></w:pPr>'
-    )
+    p = paragraph('<w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="3"/></w:numPr></w:pPr>')
     assert read_num_id(p) == 3
     assert read_ilvl(p) == 1
 
@@ -185,9 +193,7 @@ def test_level_readers_return_none_when_not_written() -> None:
 
 def test_find_level_override() -> None:
     assert find_level_override(OVERRIDE_NUMBERING, 7, 0) is not None
-    assert (
-        find_level_override(OVERRIDE_NUMBERING, 8, 0) is None
-    )  # no override is normal
+    assert find_level_override(OVERRIDE_NUMBERING, 8, 0) is None  # no override is normal
 
 
 def test_override_readers() -> None:
@@ -208,9 +214,7 @@ def test_override_readers() -> None:
 
 
 def test_build_level_definition_reads_all_values() -> None:
-    definition = build_level_definition(
-        level_element(lvl(1, "lowerLetter", "%2)", start=3))
-    )
+    definition = build_level_definition(level_element(lvl(1, "lowerLetter", "%2)", start=3)))
     assert definition == LevelDefinition(num_fmt="lowerLetter", lvl_text="%2)", start=3)
 
 
@@ -222,9 +226,7 @@ def test_missing_num_fmt_means_decimal() -> None:
 
 def test_missing_start_means_zero() -> None:
     # ECMA-376 default: 0, not 1.
-    definition = build_level_definition(
-        level_element(lvl(0, "decimal", "%1.", start=None))
-    )
+    definition = build_level_definition(level_element(lvl(0, "decimal", "%1.", start=None)))
     assert definition.start == 0
 
 
@@ -351,12 +353,7 @@ def definition(num_fmt: str, lvl_text: str | None) -> LevelDefinition:
         ("%1.", {0: 3}, {0: "decimal"}, "3."),
         ("%2)", {0: 1, 1: 2}, {1: "lowerLetter"}, "b)"),
         ("%1.%2.", {0: 1, 1: 2}, {0: "decimal", 1: "decimal"}, "1.2."),
-        (
-            "%1.%2.%3.",
-            {0: 1, 1: 1, 2: 1},
-            {0: "decimal", 1: "lowerLetter", 2: "upperRoman"},
-            "1.a.I.",
-        ),
+        ("%1.%2.%3.", {0: 1, 1: 1, 2: 1}, {0: "decimal", 1: "lowerLetter", 2: "upperRoman"}, "1.a.I."),
         ("Điều %1.", {0: 7}, {0: "decimal"}, "Điều 7."),
         ("Chương %1", {0: 4}, {0: "upperRoman"}, "Chương IV"),
         ("(%1)", {0: 1}, {0: "decimal"}, "(1)"),
@@ -366,40 +363,74 @@ def definition(num_fmt: str, lvl_text: str | None) -> LevelDefinition:
 def test_resolve_marker(
     lvl_text: str, counts: dict[int, int], formats: dict[int, str], expected: str
 ) -> None:
-    assert resolve_marker(definition("decimal", lvl_text), counts, formats) == expected
+    # Every level is counted, so the start values are never used.
+    assert resolve_marker(definition("decimal", lvl_text), counts, formats, {}) == expected
 
 
 def test_resolve_marker_none_format_shows_nothing() -> None:
-    assert resolve_marker(definition("none", "%1."), {0: 1}, {0: "none"}) is None
+    assert resolve_marker(definition("none", "%1."), {0: 1}, {0: "none"}, {0: 1}) is None
 
 
 def test_resolve_marker_without_lvl_text_shows_nothing() -> None:
-    assert resolve_marker(definition("decimal", None), {0: 1}, {0: "decimal"}) is None
+    assert resolve_marker(definition("decimal", None), {0: 1}, {0: "decimal"}, {0: 1}) is None
 
 
 def test_resolve_marker_bullet_returns_its_character() -> None:
-    assert resolve_marker(definition("bullet", "◦"), {0: 1}, {}) == "◦"
+    assert resolve_marker(definition("bullet", "◦"), {0: 1}, {}, {}) == "◦"
 
 
-def test_resolve_marker_missing_count() -> None:
-    with pytest.raises(ValueError, match=r"no count for level 0 \(%1\)"):
-        resolve_marker(
-            definition("decimal", "%1.%2."), {1: 1}, {0: "decimal", 1: "decimal"}
-        )
+def test_resolve_marker_uncounted_level_shows_its_start() -> None:
+    # Level 0 has not appeared in this list yet: Word shows its start value.
+    marker = resolve_marker(
+        definition("decimal", "%1.%2."),
+        {1: 1},
+        {0: "decimal", 1: "decimal"},
+        {0: 2, 1: 1},
+    )
+    assert marker == "2.1."
+
+
+def test_resolve_marker_start_is_formatted() -> None:
+    marker = resolve_marker(
+        definition("decimal", "%1.%2"),
+        {1: 3},
+        {0: "upperRoman", 1: "decimal"},
+        {0: 4, 1: 1},
+    )
+    assert marker == "IV.3"
+
+
+def test_resolve_marker_count_wins_over_start() -> None:
+    marker = resolve_marker(
+        definition("decimal", "%1.%2."),
+        {0: 5, 1: 1},
+        {0: "decimal", 1: "decimal"},
+        {0: 2, 1: 1},
+    )
+    assert marker == "5.1."
+
+
+def test_resolve_marker_start_only_needed_when_uncounted() -> None:
+    # starts lacks level 0, but level 0 is counted, so it is never looked up.
+    marker = resolve_marker(
+        definition("decimal", "%1.%2."),
+        {0: 1, 1: 1},
+        {0: "decimal", 1: "decimal"},
+        {},
+    )
+    assert marker == "1.1."
 
 
 def test_resolve_marker_missing_format() -> None:
     with pytest.raises(ValueError, match=r"no format for level 1 \(%2\)"):
-        resolve_marker(definition("decimal", "%2."), {1: 1}, {})
+        resolve_marker(definition("decimal", "%2."), {1: 1}, {}, {1: 1})
 
 
 # ---------- Numberer
 
 
 def markers(numberer: Numberer, calls: list[tuple[int, int]]) -> list[str | None]:
-    return [
-        numberer.next_list_info(num_id, ilvl).displayed_marker for num_id, ilvl in calls
-    ]
+    return [numberer.next_list_info(num_id, ilvl).displayed_marker for num_id, ilvl in calls]
 
 
 def test_numberer_sample_numbered_list() -> None:
@@ -415,12 +446,7 @@ def test_numberer_sample_numbered_list() -> None:
 
 def test_numberer_sample_lists_are_independent() -> None:
     numberer = Numberer(SAMPLE_NUMBERING)
-    assert markers(numberer, [(3, 0), (5, 0), (3, 0), (5, 0)]) == [
-        "1.",
-        "1.",
-        "2.",
-        "2.",
-    ]
+    assert markers(numberer, [(3, 0), (5, 0), (3, 0), (5, 0)]) == ["1.", "1.", "2.", "2."]
 
 
 def test_numberer_sample_bullets() -> None:
@@ -457,10 +483,39 @@ def test_numberer_uses_overrides() -> None:
     assert markers(numberer, [(7, 0), (7, 1), (7, 0)]) == ["5.", "IV.", "6."]
 
 
-def test_numberer_list_starting_at_a_sub_level_raises() -> None:
-    # "%1.%2." needs a count for level 0 that does not exist yet.
-    with pytest.raises(ValueError, match="no count for level 0"):
-        Numberer(MULTILEVEL_NUMBERING).next_list_info(1, 1)
+def test_numberer_list_starting_at_a_sub_level_uses_parent_start() -> None:
+    # "%1.%2." before any level-0 paragraph: level 0 shows its start (1).
+    numberer = Numberer(MULTILEVEL_NUMBERING)
+    assert markers(numberer, [(1, 1), (1, 1)]) == ["1.a.", "1.b."]
+
+
+def test_numberer_sub_list_continues_parent_from_another_list() -> None:
+    # As in a real file: the heading "2." is level 0 of list 15, and its
+    # sub-items are a separate list 44 whose level 0 starts at 2 so that
+    # they display as "2.1", "2.2".
+    numberer = Numberer(CONTINUED_SUBLIST_NUMBERING)
+    assert markers(numberer, [(15, 0), (15, 0), (44, 1), (44, 1)]) == [
+        "1.",
+        "2.",
+        "2.1",
+        "2.2",
+    ]
+
+
+def test_numberer_parent_counted_after_fallback() -> None:
+    # The fallback is only displayed; a real level-0 paragraph counts from start.
+    numberer = Numberer(CONTINUED_SUBLIST_NUMBERING)
+    assert markers(numberer, [(44, 1), (44, 1), (44, 0), (44, 1)]) == [
+        "2.1",
+        "2.2",
+        "2",
+        "2.1",  # level 1 restarts under the new level 0
+    ]
+
+
+def test_numberer_fallback_respects_start_override() -> None:
+    numberer = Numberer(CONTINUED_SUBLIST_NUMBERING)
+    assert markers(numberer, [(45, 1)]) == ["7.1"]
 
 
 def test_numberers_do_not_share_counts() -> None:
