@@ -23,7 +23,9 @@ from document_processor.core.models.physical import (
 from document_processor.core.models.logical import (
     LogicalNode,
     LogicalDocument,
-    BlockSpan
+    BlockSpan,
+    ContentItem,
+    ChildRef
 )
 from document_processor.core.models.ranges import TextRange
 
@@ -187,6 +189,28 @@ def load_physical_document(file_path: str | Path) -> PhysicalDocument:
 
 # === Logical
 
+def _content_item_to_dict(item: ContentItem) -> dict[str, Any]:
+    d = asdict(item)
+    if isinstance(item, BlockSpan):
+        d["kind"] = "block_span"
+    elif isinstance(item, ChildRef):
+        d["kind"] = "child_ref"
+    else:
+        raise TypeError(f"unknown type for argument 'item': expected BlockSpan or ChildRef, got {type(item).__name__}")
+    return d
+
+
+def _logical_node_to_dict(n: LogicalNode) -> dict[str, Any]:
+    return {
+        "id": n.id,
+        "level": n.level,
+        "number": n.number,
+        "marker": asdict(n.marker) if n.marker is not None else None,
+        "title": [asdict(b) for b in n.title],
+        "content": [_content_item_to_dict(item) for item in n.content]
+    }
+
+
 def logical_document_to_dict(doc: LogicalDocument) -> dict[str, Any]:
     document_dict = {
         "id": doc.id,
@@ -196,7 +220,7 @@ def logical_document_to_dict(doc: LogicalDocument) -> dict[str, Any]:
         "profile_version": doc.profile_version,
         "front_matter": [asdict(b) for b in doc.front_matter],
         "root_ids": list(doc.root_ids),
-        "nodes": [asdict(n) for n in doc.nodes],
+        "nodes": [_logical_node_to_dict(n) for n in doc.nodes],
         "end_matter": [asdict(b) for b in doc.end_matter]
     }
 
@@ -213,16 +237,26 @@ def _block_span_from_dict(d: dict[str, Any]) -> BlockSpan:
     )
     return block_span
 
+def _child_ref_from_dict(d: dict[str, str]) -> ChildRef:
+    return ChildRef(node_id=d["node_id"])
 
 def _logical_node_from_dict(d: dict[str, Any]) -> LogicalNode:
+    content: list[ContentItem] = []
+    for item in d["content"]:
+        if item["kind"] == "block_span":
+            content.append(_block_span_from_dict(item))
+        elif item["kind"] == "child_ref":
+            content.append(_child_ref_from_dict(item))
+        else:
+            raise ValueError(f"unknown kind: expected 'block_span' | 'child_ref', got {item["kind"]!r}")
+
     logical_node = LogicalNode(
         id=d["id"],
         level=d["level"],
         number=d["number"],
         marker=_block_span_from_dict(d["marker"]) if d["marker"] is not None else None,
         title=tuple(_block_span_from_dict(b) for b in d["title"]),
-        body=tuple(_block_span_from_dict(b) for b in d["body"]),
-        children_ids=tuple(d["children_ids"])
+        content=tuple(content)
     )
     return logical_node
 

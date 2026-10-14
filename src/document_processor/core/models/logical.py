@@ -7,7 +7,6 @@ from types import MappingProxyType
 from .ranges import TextRange
 
 
-
 @dataclass(frozen=True, kw_only=True)
 class BlockSpan:
     block_id: str
@@ -16,8 +15,18 @@ class BlockSpan:
 
     def __post_init__(self) -> None:
         if not self.block_id.strip():
-            raise ValueError("Empty block_id not allowed")
+            raise ValueError("Empty 'block_id' not allowed")
 
+        
+@dataclass(frozen=True, kw_only=True)
+class ChildRef:
+    node_id: str
+
+    def __post_init__(self) -> None:
+        if not self.node_id.strip():
+            raise ValueError("Empty 'node_id' not allowed")
+
+type ContentItem = BlockSpan | ChildRef
 
 @dataclass(frozen=True, kw_only=True)
 class LogicalNode:
@@ -37,10 +46,9 @@ class LogicalNode:
     # Blocks
     marker: BlockSpan | None
     title: tuple[BlockSpan, ...]
-    body: tuple[BlockSpan, ...]
+    content: tuple[ContentItem, ...]
 
-    # Relationships with other nodes
-    children_ids: tuple[str, ...]
+    _children_ids: tuple[str, ...] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if not self.id.strip():
@@ -51,11 +59,20 @@ class LogicalNode:
             raise ValueError(f"LogicalNode: {self.id!r}: empty attribute 'number'")
 
         # Check children_ids duplicate:
-        seen_ids: set[str] = set()
-        for c_id in self.children_ids:
-            if c_id in seen_ids:
-                raise ValueError(f"LogicalNode: {self.id!r} contains duplicate children ids: {c_id}")
-            seen_ids.add(c_id)
+        seen_ids: dict[str, None] = dict()
+        for item in self.content:
+            if isinstance(item, ChildRef):
+                if item.node_id in seen_ids:
+                    raise ValueError(f"LogicalNode: {self.id!r} contains duplicate children ids: {item.node_id}")
+            
+                seen_ids[item.node_id] = None
+
+        object.__setattr__(self, "_children_ids", tuple(seen_ids))
+
+
+    @property
+    def children_ids(self) -> tuple[str, ...]:
+        return self._children_ids
             
 
 

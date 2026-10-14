@@ -4,16 +4,18 @@ import dataclasses
 
 import pytest
 
-from document_processor.core.models.logical import LogicalNode
+from document_processor.core.models.logical import BlockSpan, ChildRef, LogicalNode
+from document_processor.core.models.ranges import TextRange
 from tests.factories import (
     make_block_span,
+    make_child_ref,
     make_logical_document,
     make_logical_node,
 )
 
 
 def node(node_id: str, *children: str) -> LogicalNode:
-    return make_logical_node(id=node_id, children_ids=children)
+    return make_logical_node(id=node_id, content=tuple(make_child_ref(c) for c in children))
 
 
 def tree_nodes() -> tuple[LogicalNode, ...]:
@@ -51,7 +53,7 @@ class TestBlockSpan:
 
     @pytest.mark.parametrize("block_id", ["", " ", "\t"])
     def test_empty_block_id_rejected(self, block_id: str) -> None:
-        with pytest.raises(ValueError, match="Empty block_id"):
+        with pytest.raises(ValueError, match="block_id"):
             make_block_span(block_id=block_id)
 
     def test_frozen(self) -> None:
@@ -103,18 +105,115 @@ class TestLogicalNode:
         # An auto-numbered khoản has no marker text in the block.
         assert make_logical_node(marker=None).marker is None
 
-    def test_node_without_marker_title_or_body_allowed(self) -> None:
-        n = make_logical_node(marker=None, title=(), body=())
-        assert n.body == ()
+    def test_node_without_marker_title_or_content_allowed(self) -> None:
+        n = make_logical_node(marker=None, title=(), content=())
+        assert n.content == ()
+        assert n.children_ids == ()
 
     def test_duplicate_children_rejected(self) -> None:
         with pytest.raises(ValueError, match="'dieu-1'.*duplicate children ids: khoan-1"):
-            make_logical_node(children_ids=("khoan-1", "khoan-2", "khoan-1"))
+            make_logical_node(
+                content=(
+                    make_child_ref("khoan-1"),
+                    make_block_span(),
+                    make_child_ref("khoan-2"),
+                    make_child_ref("khoan-1"),
+                )
+            )
 
     def test_frozen(self) -> None:
         n = make_logical_node()
         with pytest.raises(dataclasses.FrozenInstanceError):
             n.id = "x"  # type: ignore[misc]
+
+
+# --------------------------------------------------------------------------- #
+# ChildRef
+# --------------------------------------------------------------------------- #
+
+
+class TestChildRef:
+    def test_valid(self) -> None:
+        assert ChildRef(node_id="dieu-1").node_id == "dieu-1"
+
+    @pytest.mark.parametrize("node_id", ["", " ", "\t"])
+    def test_blank_node_id_rejected(self, node_id: str) -> None:
+        with pytest.raises(ValueError, match="node_id"):
+            ChildRef(node_id=node_id)
+
+    def test_keyword_only(self) -> None:
+        with pytest.raises(TypeError):
+            ChildRef("dieu-1")  # type: ignore[call-arg]
+
+    def test_frozen(self) -> None:
+        ref = ChildRef(node_id="dieu-1")
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            ref.node_id = "x"  # type: ignore[misc]
+
+    def test_equality_by_value(self) -> None:
+        assert ChildRef(node_id="a") == ChildRef(node_id="a")
+        assert ChildRef(node_id="a") != ChildRef(node_id="b")
+
+
+# --------------------------------------------------------------------------- #
+# LogicalNode content
+# --------------------------------------------------------------------------- #
+
+
+def text(block_id: str) -> BlockSpan:
+    return make_block_span(block_id=block_id, text_range=TextRange(0, 5))
+
+
+class TestLogicalNodeContent:
+    def test_only_text(self) -> None:
+        n = make_logical_node(content=(text("pb1"), text("pb2")))
+        assert n.children_ids == ()
+
+    def test_only_children(self) -> None:
+        n = make_logical_node(content=(make_child_ref("a"), make_child_ref("b")))
+        assert n.children_ids == ("a", "b")
+
+    def test_interleaved_content_kept_in_order(self) -> None:
+        # lead-in, list, text between, second list, closing remark
+        content = (
+            text("pb1"),
+            make_child_ref("item-1"),
+            make_child_ref("item-2"),
+            text("pb4"),
+            text("pb5"),
+            make_child_ref("item-3"),
+            text("pb7"),
+        )
+        n = make_logical_node(content=content)
+        assert n.content == content
+        assert n.children_ids == ("item-1", "item-2", "item-3")
+
+    def test_children_ids_is_a_tuple(self) -> None:
+        n = make_logical_node(content=(make_child_ref("a"),))
+        assert isinstance(n.children_ids, tuple)
+
+    def test_children_ids_not_a_constructor_argument(self) -> None:
+        with pytest.raises(TypeError):
+            make_logical_node(_children_ids=("a",))
+
+    def test_children_ids_not_in_repr(self) -> None:
+        assert "_children_ids" not in repr(make_logical_node(content=(make_child_ref("a"),)))
+
+    def test_same_block_may_appear_twice_in_content(self) -> None:
+        # Two spans of one block (split by the builder) are allowed; only children must be unique.
+        a = make_block_span(block_id="pb1", text_range=TextRange(0, 3))
+        b = make_block_span(block_id="pb1", text_range=TextRange(4, 9))
+        n = make_logical_node(content=(a, b))
+        assert n.content == (a, b)
+
+    def test_equal_nodes_compare_equal(self) -> None:
+        content = (text("pb1"), make_child_ref("a"))
+        assert make_logical_node(content=content) == make_logical_node(content=content)
+
+    def test_content_order_matters_for_equality(self) -> None:
+        a = make_logical_node(content=(text("pb1"), make_child_ref("a")))
+        b = make_logical_node(content=(make_child_ref("a"), text("pb1")))
+        assert a != b
 
 
 # --------------------------------------------------------------------------- #
@@ -291,3 +390,39 @@ class TestLogicalDocumentLookup:
         doc = make_logical_document()
         with pytest.raises(dataclasses.FrozenInstanceError):
             doc.id = "x"  # type: ignore[misc]
+
+
+class TestLogicalDocumentWithInterleavedContent:
+    def test_pre_order_follows_content_order(self) -> None:
+        nodes = (
+            make_logical_node(
+                id="dieu-1",
+                content=(
+                    text("pb1"),
+                    make_child_ref("khoan-1"),
+                    text("pb3"),
+                    make_child_ref("khoan-2"),
+                ),
+            ),
+            node("khoan-1"),
+            node("khoan-2"),
+        )
+        doc = make_logical_document(root_ids=("dieu-1",), nodes=nodes)
+        assert [n.id for n in doc.nodes] == ["dieu-1", "khoan-1", "khoan-2"]
+
+    def test_wrong_order_against_content_rejected(self) -> None:
+        nodes = (
+            make_logical_node(
+                id="dieu-1",
+                content=(make_child_ref("khoan-1"), text("pb2"), make_child_ref("khoan-2")),
+            ),
+            node("khoan-2"),
+            node("khoan-1"),
+        )
+        with pytest.raises(ValueError, match="not in pre-order"):
+            make_logical_document(root_ids=("dieu-1",), nodes=nodes)
+
+    def test_dangling_child_ref_rejected(self) -> None:
+        nodes = (make_logical_node(id="dieu-1", content=(text("pb1"), make_child_ref("khoan-9"))),)
+        with pytest.raises(ValueError, match="no node with id khoan-9"):
+            make_logical_document(root_ids=("dieu-1",), nodes=nodes)

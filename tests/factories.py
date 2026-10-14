@@ -22,6 +22,7 @@ from document_processor.core.models import (
 
 from document_processor.core.models.logical import (
     BlockSpan,
+    ChildRef,
     LogicalDocument,
     LogicalNode,
 )
@@ -139,6 +140,10 @@ def make_block_span(**overrides: Any) -> BlockSpan:
     return BlockSpan(**fields)
 
 
+def make_child_ref(node_id: str) -> ChildRef:
+    return ChildRef(node_id=node_id)
+
+
 def make_logical_node(**overrides: Any) -> LogicalNode:
     """A valid leaf node (Điều 1, no children); override any field."""
     fields: dict[str, Any] = {
@@ -147,8 +152,7 @@ def make_logical_node(**overrides: Any) -> LogicalNode:
         "number": "1",
         "marker": make_block_span(),
         "title": (),
-        "body": (),
-        "children_ids": (),
+        "content": (),
     }
     fields.update(overrides)
     return LogicalNode(**fields)

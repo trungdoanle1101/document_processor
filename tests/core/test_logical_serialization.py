@@ -6,7 +6,12 @@ from typing import Any
 
 import pytest
 
-from document_processor.core.models.logical import BlockSpan, LogicalDocument, LogicalNode
+from document_processor.core.models.logical import (
+    BlockSpan,
+    ChildRef,
+    LogicalDocument,
+    LogicalNode,
+)
 from document_processor.core.models.ranges import TextRange
 from document_processor.core.serialization import (
     LOGICAL_DOCUMENT_KIND,
@@ -19,6 +24,7 @@ from document_processor.core.serialization import (
 )
 from tests.factories import (
     make_block_span,
+    make_child_ref,
     make_logical_document,
     make_logical_node,
 )
@@ -32,12 +38,13 @@ def full_document() -> LogicalDocument:
     """Two roots with front and end matter, and every optional field exercised.
 
         [front] pb1, pb2
-        chuong-1          marker + title on the next block
-          dieu-1          marker and title in one block
-            khoan-1       auto-numbered: no marker, body only
-            khoan-2       body in two blocks
+        chuong-1          marker + title on the next block; content = two children
+          dieu-1          marker and title in one block; content interleaves
+                          a lead-in, two children and a closing remark
+            khoan-1       auto-numbered: no marker, text only
+            khoan-2       text in two blocks
           dieu-2          number None
-        chuong-2
+        chuong-2          no content
         [end]   pb12
     """
     nodes: tuple[LogicalNode, ...] = (
@@ -47,8 +54,7 @@ def full_document() -> LogicalDocument:
             number="I",
             marker=span("pb3", 0, 8),
             title=(span("pb4", 0, 15),),
-            body=(),
-            children_ids=("dieu-1", "dieu-2"),
+            content=(make_child_ref("dieu-1"), make_child_ref("dieu-2")),
         ),
         make_logical_node(
             id="dieu-1",
@@ -56,8 +62,12 @@ def full_document() -> LogicalDocument:
             number="1",
             marker=span("pb5", 0, 7),
             title=(span("pb5", 8, 26),),
-            body=(),
-            children_ids=("khoan-1", "khoan-2"),
+            content=(
+                span("pb13", 0, 20),
+                make_child_ref("khoan-1"),
+                make_child_ref("khoan-2"),
+                span("pb14", 0, 11),
+            ),
         ),
         make_logical_node(
             id="khoan-1",
@@ -65,8 +75,7 @@ def full_document() -> LogicalDocument:
             number="1",
             marker=None,
             title=(),
-            body=(span("pb6", 0, 40),),
-            children_ids=(),
+            content=(span("pb6", 0, 40),),
         ),
         make_logical_node(
             id="khoan-2",
@@ -74,8 +83,7 @@ def full_document() -> LogicalDocument:
             number="2",
             marker=span("pb7", 0, 2),
             title=(),
-            body=(span("pb7", 3, 30), span("pb8", 0, 12)),
-            children_ids=(),
+            content=(span("pb7", 3, 30), span("pb8", 0, 12)),
         ),
         make_logical_node(
             id="dieu-2",
@@ -83,8 +91,7 @@ def full_document() -> LogicalDocument:
             number=None,
             marker=span("pb9", 0, 7),
             title=(span("pb9", 8, 20),),
-            body=(span("pb10", 0, 5),),
-            children_ids=(),
+            content=(span("pb10", 0, 5),),
         ),
         make_logical_node(
             id="chuong-2",
@@ -92,8 +99,7 @@ def full_document() -> LogicalDocument:
             number="II",
             marker=span("pb11", 0, 9),
             title=(),
-            body=(),
-            children_ids=(),
+            content=(),
         ),
     )
     return make_logical_document(
@@ -141,8 +147,7 @@ class TestToDict:
             "number",
             "marker",
             "title",
-            "body",
-            "children_ids",
+            "content",
         }
 
     def test_span_shape(self) -> None:
@@ -161,6 +166,42 @@ class TestToDict:
         doc = full_document()
         doc.get_node("dieu-1")
         logical_document_to_dict(doc)
+
+
+class TestContentToDict:
+    def node_content(self, node_id: str) -> list[dict[str, Any]]:
+        nodes = saved_dict()["document"]["nodes"]
+        result: list[dict[str, Any]] = next(n for n in nodes if n["id"] == node_id)["content"]
+        return result
+
+    def test_every_item_is_tagged(self) -> None:
+        for node in saved_dict()["document"]["nodes"]:
+            for item in node["content"]:
+                assert item["kind"] in {"block_span", "child_ref"}
+
+    def test_span_item_shape(self) -> None:
+        item = self.node_content("khoan-1")[0]
+        assert item == {
+            "kind": "block_span",
+            "block_id": "pb6",
+            "text_range": {"start": 0, "end": 40},
+        }
+
+    def test_child_item_shape(self) -> None:
+        item = self.node_content("chuong-1")[0]
+        assert item == {"kind": "child_ref", "node_id": "dieu-1"}
+
+    def test_interleaved_order_written_as_is(self) -> None:
+        kinds = [item["kind"] for item in self.node_content("dieu-1")]
+        assert kinds == ["block_span", "child_ref", "child_ref", "block_span"]
+
+    def test_derived_children_ids_not_written(self) -> None:
+        for node in saved_dict()["document"]["nodes"]:
+            assert "_children_ids" not in node
+            assert "children_ids" not in node
+
+    def test_empty_content_written_as_empty_list(self) -> None:
+        assert self.node_content("chuong-2") == []
 
 
 # --------------------------------------------------------------------------- #
@@ -190,12 +231,14 @@ class TestRoundTrip:
         assert isinstance(loaded.end_matter, tuple)
         node = loaded.get_node("khoan-2")
         assert isinstance(node.title, tuple)
-        assert isinstance(node.body, tuple)
+        assert isinstance(node.content, tuple)
         assert isinstance(node.children_ids, tuple)
 
     def test_lookup_works_after_load(self) -> None:
         loaded = logical_document_from_dict(saved_dict())
-        assert loaded.get_node("khoan-2").body[1].block_id == "pb8"
+        item = loaded.get_node("khoan-2").content[1]
+        assert isinstance(item, BlockSpan)
+        assert item.block_id == "pb8"
 
     def test_order_preserved(self) -> None:
         loaded = logical_document_from_dict(saved_dict())
@@ -286,7 +329,7 @@ class TestRejectedInput:
         with pytest.raises(KeyError, match=field):
             logical_document_from_dict(d)
 
-    @pytest.mark.parametrize("field", ["level", "number", "marker", "children_ids"])
+    @pytest.mark.parametrize("field", ["level", "number", "marker", "title", "content"])
     def test_missing_node_field(self, field: str) -> None:
         d = saved_dict()
         del d["document"]["nodes"][0][field]
@@ -301,6 +344,44 @@ class TestRejectedInput:
         )
         with pytest.raises(ValueError, match="Unexpected dictionary kind"):
             load_logical_document(path)
+
+
+class TestContentFromDict:
+    def test_interleaved_order_preserved(self) -> None:
+        loaded = logical_document_from_dict(saved_dict())
+        content = loaded.get_node("dieu-1").content
+        assert [type(item) for item in content] == [BlockSpan, ChildRef, ChildRef, BlockSpan]
+        assert loaded.get_node("dieu-1").children_ids == ("khoan-1", "khoan-2")
+
+    def test_unknown_kind_rejected(self) -> None:
+        d = saved_dict()
+        d["document"]["nodes"][2]["content"][0]["kind"] = "paragraph"
+        with pytest.raises(ValueError, match="'paragraph'"):
+            logical_document_from_dict(d)
+
+    def test_missing_kind_rejected(self) -> None:
+        d = saved_dict()
+        del d["document"]["nodes"][2]["content"][0]["kind"]
+        with pytest.raises(KeyError, match="kind"):
+            logical_document_from_dict(d)
+
+    def test_child_ref_missing_node_id(self) -> None:
+        d = saved_dict()
+        del d["document"]["nodes"][0]["content"][0]["node_id"]
+        with pytest.raises(KeyError, match="node_id"):
+            logical_document_from_dict(d)
+
+    def test_blank_child_ref_rejected(self) -> None:
+        d = saved_dict()
+        d["document"]["nodes"][0]["content"][0]["node_id"] = " "
+        with pytest.raises(ValueError, match="node_id"):
+            logical_document_from_dict(d)
+
+    def test_duplicate_child_ref_rejected(self) -> None:
+        d = saved_dict()
+        d["document"]["nodes"][0]["content"].append({"kind": "child_ref", "node_id": "dieu-1"})
+        with pytest.raises(ValueError, match="duplicate children ids: dieu-1"):
+            logical_document_from_dict(d)
 
 
 class TestValidationRunsOnLoad:
@@ -319,8 +400,7 @@ class TestValidationRunsOnLoad:
 
     def test_dangling_child(self) -> None:
         d = saved_dict()
-        node = d["document"]["nodes"][1]
-        node["children_ids"] = [*node["children_ids"], "khoan-9"]
+        d["document"]["nodes"][1]["content"].append({"kind": "child_ref", "node_id": "khoan-9"})
         with pytest.raises(ValueError, match="no node with id khoan-9"):
             logical_document_from_dict(d)
 
@@ -333,7 +413,7 @@ class TestValidationRunsOnLoad:
     def test_empty_block_id(self) -> None:
         d = saved_dict()
         d["document"]["front_matter"][0]["block_id"] = ""
-        with pytest.raises(ValueError, match="Empty block_id"):
+        with pytest.raises(ValueError, match="block_id"):
             logical_document_from_dict(d)
 
     def test_empty_number(self) -> None:
