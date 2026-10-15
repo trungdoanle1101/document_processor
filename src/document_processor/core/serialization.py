@@ -18,6 +18,7 @@ from document_processor.core.models.physical import (
     PhysicalDocument,
     Region,
     SpanStyle,
+    DeclaredNumbering
 )
 
 from document_processor.core.models.logical import (
@@ -73,6 +74,12 @@ def _char_span_from_dict(d: dict[str, Any]) -> CharSpan:
     )
     return char_span
 
+def _declared_numbering_from_dict(d: dict[str, Any]) -> DeclaredNumbering:
+    declared_numbering = DeclaredNumbering(
+        num_fmt=d["num_fmt"],
+        segment_formats=tuple(d["segment_formats"])
+    )
+    return declared_numbering
 
 def _list_info_from_dict(d: dict[str, Any]) -> ListInfo:
     list_info = ListInfo(
@@ -80,6 +87,11 @@ def _list_info_from_dict(d: dict[str, Any]) -> ListInfo:
         is_ordered=d["is_ordered"],
         displayed_marker=d["displayed_marker"],
         nested_level=d["nested_level"],
+        declared_numbering=(
+            _declared_numbering_from_dict(d["declared_numbering"])
+            if d["declared_numbering"] is not None
+            else None
+        )
     )
     return list_info
 

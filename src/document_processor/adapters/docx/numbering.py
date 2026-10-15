@@ -3,7 +3,7 @@ from dataclasses import dataclass, replace
 
 from lxml.etree import _Element
 
-from document_processor.core.models.physical import ListInfo
+from document_processor.core.models.physical import ListInfo, DeclaredNumbering
 
 from ._xml import xpath_element_or_none, xpath_int_or_none, xpath_str_or_none
 from .number_formats import format_number
@@ -227,6 +227,7 @@ class Numberer:
 
         formats: dict[int, str] = {}
         starts: dict[int, int] = {}
+        segment_formats: list[str] = []
         if level_def.lvl_text is not None:
             all_levels = [
                 int(lvl) - 1 for lvl in PLACEHOLDER_PATTERN.findall(level_def.lvl_text)
@@ -236,6 +237,7 @@ class Numberer:
                 ld = self._get_level_def(num_id, level)
                 formats[level] = ld.num_fmt
                 starts[level] = ld.start
+                segment_formats.append(ld.num_fmt)
 
         counts = self._counter.advance(num_id, ilvl, level_def.start)
 
@@ -243,9 +245,17 @@ class Numberer:
             level_def=level_def, counts=counts, formats=formats, starts=starts
         )
 
+        # Recorded even when no marker is displayed (lvl_text None / numFmt "none");
+        # it reflects the source declaration, not the rendered marker.
+        declared_numbering = DeclaredNumbering(
+            num_fmt=level_def.num_fmt,
+            segment_formats=tuple(segment_formats)
+        )
+
         return ListInfo(
             id=str(num_id),
             is_ordered=level_def.is_ordered,
             displayed_marker=displayed_marker,
             nested_level=ilvl,
+            declared_numbering=declared_numbering
         )

@@ -6,14 +6,17 @@ that exactly that rule fires, or that a legal edge case is accepted.
 
 import pytest
 
-from document_processor.core.models.physical import (
+from document_processor.core.models import (
     BlockType,
     CharSpan,
+    ListInfo,
     SpanStyle,
     TextRange,
 )
+
 from tests.factories import (
     make_block,
+    make_declared_numbering,
     make_document,
     make_image_info,
     make_list_info,
@@ -29,7 +32,7 @@ def bold(start: int, end: int) -> CharSpan:
 
 @pytest.mark.parametrize(
     "text",
-    ["", " ", "\t\n", "\u200b", "\u200b ﻿"],
+    ["", " ", "\t\n", "​", "​ ﻿"],
     ids=["empty", "space", "tab-newline", "zero-width-space", "mixed-invisible"],
 )
 def test_block_rejects_invisible_text(text: str) -> None:
@@ -44,9 +47,7 @@ def test_error_message_names_the_block() -> None:
 
 
 def test_image_block_may_have_empty_text() -> None:
-    block = make_block(
-        block_type=BlockType.IMAGE, text="", image_info=make_image_info()
-    )
+    block = make_block(block_type=BlockType.IMAGE, text="", image_info=make_image_info())
     assert block.text == ""
 
 
@@ -57,6 +58,79 @@ def test_image_block_may_have_alt_text() -> None:
         image_info=make_image_info(),
     )
     assert block.text == "Sơ đồ kiến trúc dữ liệu"
+
+
+# ---------- ListInfo
+
+
+def test_valid_list_info_is_accepted() -> None:
+    info = make_list_info()
+    assert info.declared_numbering is None
+
+
+def test_list_info_declared_numbering_is_required() -> None:
+    # No default on purpose: every adapter states whether the source declares one.
+    with pytest.raises(TypeError, match="declared_numbering"):
+        ListInfo(id="1", is_ordered=True, displayed_marker="1.", nested_level=0)  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize("list_id", ["", "  "], ids=["empty", "blank"])
+def test_list_info_rejects_blank_id(list_id: str) -> None:
+    with pytest.raises(ValueError, match="id"):
+        make_list_info(id=list_id)
+
+
+def test_list_info_rejects_negative_nested_level() -> None:
+    with pytest.raises(ValueError, match="nested_level"):
+        make_list_info(nested_level=-1)
+
+
+def test_list_info_accepts_deep_nested_level() -> None:
+    assert make_list_info(nested_level=8).nested_level == 8
+
+
+def test_list_info_may_carry_declared_numbering() -> None:
+    declared = make_declared_numbering()
+    info = make_list_info(declared_numbering=declared)
+    assert info.declared_numbering == declared
+
+
+# ---------- DeclaredNumbering
+
+
+def test_valid_declared_numbering_is_accepted() -> None:
+    declared = make_declared_numbering(
+        num_fmt="lowerLetter", segment_formats=("decimal", "lowerLetter")
+    )
+    assert declared.segment_formats == ("decimal", "lowerLetter")
+
+
+def test_declared_numbering_may_have_no_segments() -> None:
+    # Bullets, or a level that declares a format but shows no placeholder.
+    declared = make_declared_numbering(num_fmt="bullet", segment_formats=())
+    assert declared.segment_formats == ()
+
+
+def test_declared_numbering_keeps_repeated_segments() -> None:
+    # One entry per placeholder, so "%1-%1" gives two.
+    declared = make_declared_numbering(segment_formats=("decimal", "decimal"))
+    assert len(declared.segment_formats) == 2
+
+
+@pytest.mark.parametrize("num_fmt", ["", " ", "\t"], ids=["empty", "space", "tab"])
+def test_declared_numbering_rejects_blank_num_fmt(num_fmt: str) -> None:
+    with pytest.raises(ValueError, match="num_fmt"):
+        make_declared_numbering(num_fmt=num_fmt)
+
+
+@pytest.mark.parametrize(
+    "segment_formats",
+    [("",), ("decimal", " "), (" ", "decimal")],
+    ids=["only", "last", "first"],
+)
+def test_declared_numbering_rejects_blank_segment(segment_formats: tuple[str, ...]) -> None:
+    with pytest.raises(ValueError, match="segment format"):
+        make_declared_numbering(segment_formats=segment_formats)
 
 
 # ---------- PhysicalBlock: list_info present exactly on LIST_ITEM
@@ -133,7 +207,7 @@ def test_image_info_sizes_may_be_unknown() -> None:
     assert info.displayed_height_pt is None
 
 
-@pytest.mark.parametrize("source_path", ["", "   ", "\u200b"])
+@pytest.mark.parametrize("source_path", ["", "   ", "​"])
 def test_image_info_rejects_invisible_source_path(source_path: str) -> None:
     with pytest.raises(ValueError, match="source_path"):
         make_image_info(source_path=source_path)

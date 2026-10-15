@@ -9,6 +9,7 @@ from typing import Any
 from document_processor.core.identity import compute_hash
 from document_processor.core.models import (
     BlockType,
+    DeclaredNumbering,
     DocSourceFormat,
     ImageInfo,
     ListInfo,
@@ -29,12 +30,24 @@ from document_processor.core.models.logical import (
 from document_processor.core.models.ranges import TextRange
 
 
+def make_declared_numbering(**overrides: Any) -> DeclaredNumbering:
+    """A decimal level shown as "%1."; override any field."""
+    fields: dict[str, Any] = {
+        "num_fmt": "decimal",
+        "segment_formats": ("decimal",),
+    }
+    fields.update(overrides)
+    return DeclaredNumbering(**fields)
+
+
 def make_list_info(**overrides: Any) -> ListInfo:
+    """A first-level "1." item with no declared numbering; override any field."""
     fields: dict[str, Any] = {
         "id": "list1",
         "is_ordered": True,
         "displayed_marker": "1.",
         "nested_level": 0,
+        "declared_numbering": None,
     }
     fields.update(overrides)
     return ListInfo(**fields)

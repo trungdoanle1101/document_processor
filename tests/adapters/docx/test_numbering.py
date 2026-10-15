@@ -523,3 +523,84 @@ def test_numberers_do_not_share_counts() -> None:
     first = Numberer(SAMPLE_NUMBERING)
     markers(first, [(3, 0), (3, 0)])
     assert markers(Numberer(SAMPLE_NUMBERING), [(3, 0)]) == ["1."]
+
+
+# ---------- Numberer: declared numbering
+
+
+def declared(numberer: Numberer, num_id: int, ilvl: int) -> tuple[str, tuple[str, ...]]:
+    info = numberer.next_list_info(num_id, ilvl)
+    assert info.declared_numbering is not None
+    return info.declared_numbering.num_fmt, info.declared_numbering.segment_formats
+
+
+def test_declared_numbering_single_placeholder() -> None:
+    numberer = Numberer(SAMPLE_NUMBERING)
+    assert declared(numberer, 3, 0) == ("decimal", ("decimal",))
+    assert declared(numberer, 3, 1) == ("lowerLetter", ("lowerLetter",))
+
+
+def test_declared_numbering_bullets_have_no_segments() -> None:
+    numberer = Numberer(SAMPLE_NUMBERING)
+    assert declared(numberer, 2, 0) == ("bullet", ())
+    assert declared(numberer, 2, 1) == ("bullet", ())
+
+
+def test_declared_numbering_multilevel_keeps_placeholder_order() -> None:
+    numberer = Numberer(MULTILEVEL_NUMBERING)
+    assert declared(numberer, 1, 0) == ("decimal", ("decimal",))
+    assert declared(numberer, 1, 1) == ("lowerLetter", ("decimal", "lowerLetter"))
+    assert declared(numberer, 1, 2) == (
+        "upperRoman",
+        ("decimal", "lowerLetter", "upperRoman"),
+    )
+
+
+def test_declared_numbering_includes_uncounted_parent() -> None:
+    # "2.1" in a list whose level 0 never appears: level 0 still has a segment.
+    numberer = Numberer(CONTINUED_SUBLIST_NUMBERING)
+    assert declared(numberer, 44, 1) == ("decimal", ("decimal", "decimal"))
+
+
+def test_declared_numbering_follows_order_in_level_text() -> None:
+    # Placeholders in reverse order: segments follow the text, not the level numbers.
+    numberer = Numberer(
+        numbering(
+            abstract_num(1, lvl(0, "upperRoman", "%1."), lvl(1, "lowerLetter", "%2-%1"))
+            + num(1, 1)
+        )
+    )
+    numberer.next_list_info(1, 0)
+    assert declared(numberer, 1, 1) == ("lowerLetter", ("lowerLetter", "upperRoman"))
+
+
+def test_declared_numbering_repeated_placeholder_gives_one_segment_each() -> None:
+    numberer = Numberer(numbering(abstract_num(1, lvl(0, "decimal", "%1-%1")) + num(1, 1)))
+    assert declared(numberer, 1, 0) == ("decimal", ("decimal", "decimal"))
+
+
+def test_declared_numbering_uses_override_formats() -> None:
+    numberer = Numberer(OVERRIDE_NUMBERING)
+    numberer.next_list_info(7, 0)
+    assert declared(numberer, 7, 1) == ("upperRoman", ("upperRoman",))
+
+
+def test_declared_numbering_recorded_when_nothing_is_displayed() -> None:
+    # The source declares a format even if it shows no marker.
+    numberer = Numberer(
+        numbering(
+            abstract_num(1, lvl(0, "decimal", None), lvl(1, "none", "%2."))
+            + num(1, 1)
+        )
+    )
+    no_text = numberer.next_list_info(1, 0)
+    assert no_text.displayed_marker is None
+    assert no_text.declared_numbering is not None
+    assert no_text.declared_numbering.num_fmt == "decimal"
+    assert no_text.declared_numbering.segment_formats == ()
+
+    fmt_none = numberer.next_list_info(1, 1)
+    assert fmt_none.displayed_marker is None
+    assert fmt_none.declared_numbering is not None
+    assert fmt_none.declared_numbering.num_fmt == "none"
+    assert fmt_none.declared_numbering.segment_formats == ("none",)
