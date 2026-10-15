@@ -9,6 +9,7 @@ data/ when it is present.
 import io
 import zipfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 from lxml import etree
@@ -22,6 +23,8 @@ from document_processor.core.models.physical import (
     PhysicalDocument,
 )
 
+from tests.drawing_xml import R_NS, chart, drawing, pic
+
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 W = f'xmlns:w="{W_NS}"'
 FILENAME = "test.docx"
@@ -32,6 +35,9 @@ CONTENT_TYPES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="png" ContentType="image/png"/>
+  <Default Extension="jpeg" ContentType="image/jpeg"/>
+  <Default Extension="emf" ContentType="image/x-emf"/>
   <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
   <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
   <Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>
@@ -42,12 +48,9 @@ PACKAGE_RELS = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
 </Relationships>"""
 
-REL_STYLES = (
-    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles"
-)
-REL_NUMBERING = (
-    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering"
-)
+REL_STYLES = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles"
+REL_NUMBERING = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering"
+REL_IMAGE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
 
 SECT_PR = '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/></w:sectPr>'
 
@@ -57,21 +60,22 @@ def build_docx(
     *,
     styles: str | None = None,
     numbering: str | None = None,
+    images: dict[str, tuple[str, bytes]] | None = None,
 ) -> bytes:
     """A minimal .docx. `body` is the inside of <w:body>; a sectPr is appended.
 
     `styles` / `numbering` are the inside of <w:styles> / <w:numbering>;
     None leaves the part (and its relationship) out of the package.
+    `images` maps a relationship id to (file name in word/media, bytes);
+    use ids from rId10 up so they don't clash with styles and numbering.
     """
     rels = []
     if styles is not None:
-        rels.append(
-            f'<Relationship Id="rId1" Type="{REL_STYLES}" Target="styles.xml"/>'
-        )
+        rels.append(f'<Relationship Id="rId1" Type="{REL_STYLES}" Target="styles.xml"/>')
     if numbering is not None:
-        rels.append(
-            f'<Relationship Id="rId2" Type="{REL_NUMBERING}" Target="numbering.xml"/>'
-        )
+        rels.append(f'<Relationship Id="rId2" Type="{REL_NUMBERING}" Target="numbering.xml"/>')
+    for rid, (name, _) in (images or {}).items():
+        rels.append(f'<Relationship Id="{rid}" Type="{REL_IMAGE}" Target="media/{name}"/>')
     document_rels = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
@@ -83,16 +87,13 @@ def build_docx(
         z.writestr("[Content_Types].xml", CONTENT_TYPES)
         z.writestr("_rels/.rels", PACKAGE_RELS)
         z.writestr("word/_rels/document.xml.rels", document_rels)
-        z.writestr(
-            "word/document.xml",
-            f"<w:document {W}><w:body>{body}{SECT_PR}</w:body></w:document>",
-        )
+        z.writestr("word/document.xml", f"<w:document {W}><w:body>{body}{SECT_PR}</w:body></w:document>")
         if styles is not None:
             z.writestr("word/styles.xml", f"<w:styles {W}>{styles}</w:styles>")
         if numbering is not None:
-            z.writestr(
-                "word/numbering.xml", f"<w:numbering {W}>{numbering}</w:numbering>"
-            )
+            z.writestr("word/numbering.xml", f"<w:numbering {W}>{numbering}</w:numbering>")
+        for name, blob in (images or {}).values():
+            z.writestr(f"word/media/{name}", blob)
     return buf.getvalue()
 
 
@@ -122,7 +123,7 @@ def p(
     return f"<w:p>{ppr_xml}{run}</w:p>"
 
 
-def parse(body: str, **parts: str | None) -> PhysicalDocument:
+def parse(body: str, **parts: Any) -> PhysicalDocument:
     return DocxAdapter().parse_bytes(build_docx(body, **parts), FILENAME)
 
 
@@ -176,9 +177,7 @@ def test_document_fields() -> None:
 
 def test_same_bytes_give_the_same_document() -> None:
     data = build_docx(p("A") + p("B"))
-    assert DocxAdapter().parse_bytes(data, FILENAME) == DocxAdapter().parse_bytes(
-        data, FILENAME
-    )
+    assert DocxAdapter().parse_bytes(data, FILENAME) == DocxAdapter().parse_bytes(data, FILENAME)
 
 
 def test_invalid_bytes_rejected() -> None:
@@ -192,11 +191,7 @@ def test_invalid_bytes_rejected() -> None:
 def test_plain_paragraphs() -> None:
     doc = parse(p("Chương I") + p("QUY ĐỊNH CHUNG") + p("Điều 1. Phạm vi điều chỉnh"))
 
-    assert [b.text for b in doc.blocks] == [
-        "Chương I",
-        "QUY ĐỊNH CHUNG",
-        "Điều 1. Phạm vi điều chỉnh",
-    ]
+    assert [b.text for b in doc.blocks] == ["Chương I", "QUY ĐỊNH CHUNG", "Điều 1. Phạm vi điều chỉnh"]
     assert all(b.block_type is BlockType.PARAGRAPH for b in doc.blocks)
     assert all(b.list_info is None for b in doc.blocks)
 
@@ -231,9 +226,7 @@ def test_source_reference_of_a_single_paragraph_has_no_index() -> None:
 
 
 def test_source_reference_finds_the_paragraph_again() -> None:
-    data = build_docx(
-        p("A") + p() + p("B") + p("   ") + p("C", num_id=3), numbering=NUMBERING
-    )
+    data = build_docx(p("A") + p() + p("B") + p("   ") + p("C", num_id=3), numbering=NUMBERING)
     doc = DocxAdapter().parse_bytes(data, FILENAME)
     root = document_root(data)
 
@@ -257,11 +250,7 @@ def test_nested_list_markers() -> None:
     )
     doc = parse(body, numbering=NUMBERING)
 
-    items = [
-        (b.text, b.list_info.displayed_marker, b.list_info.nested_level)
-        for b in doc.blocks
-        if b.list_info
-    ]
+    items = [(b.text, b.list_info.displayed_marker, b.list_info.nested_level) for b in doc.blocks if b.list_info]
     assert items == [
         ("First", "1.", 0),
         ("Sub a", "a)", 1),
@@ -302,12 +291,8 @@ def test_numbered_items_are_ordered() -> None:
 
 def test_empty_list_item_still_advances_the_counter() -> None:
     # Word shows "1.", "2." (empty) and "3."; the empty one is not emitted.
-    doc = parse(
-        p("One", num_id=3) + p(num_id=3) + p("Three", num_id=3), numbering=NUMBERING
-    )
-    assert [
-        (b.id, b.list_info.displayed_marker) for b in doc.blocks if b.list_info
-    ] == [
+    doc = parse(p("One", num_id=3) + p(num_id=3) + p("Three", num_id=3), numbering=NUMBERING)
+    assert [(b.id, b.list_info.displayed_marker) for b in doc.blocks if b.list_info] == [
         ("pb1", "1."),
         ("pb2", "3."),
     ]
@@ -317,11 +302,7 @@ def test_separate_num_ids_count_separately() -> None:
     numbering = NUMBERING + '<w:num w:numId="4"><w:abstractNumId w:val="0"/></w:num>'
     body = p("A1", num_id=3) + p("B1", num_id=4) + p("A2", num_id=3)
     doc = parse(body, numbering=numbering)
-    assert [b.list_info.displayed_marker for b in doc.blocks if b.list_info] == [
-        "1.",
-        "1.",
-        "2.",
-    ]
+    assert [b.list_info.displayed_marker for b in doc.blocks if b.list_info] == ["1.", "1.", "2."]
 
 
 def test_num_id_zero_is_not_a_list() -> None:
@@ -347,18 +328,10 @@ def test_list_paragraph_without_numbering_rejected() -> None:
 
 
 def test_paragraph_format_from_styles() -> None:
-    body = (
-        p("Plain")
-        + p("Body", style="BodyText")
-        + p("Heading", style="Title")
-        + p("Direct", jc="right")
-    )
+    body = p("Plain") + p("Body", style="BodyText") + p("Heading", style="Title") + p("Direct", jc="right")
     doc = parse(body, styles=STYLES)
 
-    formats = [
-        (b.paragraph_format.style_name, b.paragraph_format.alignment)
-        for b in doc.blocks
-    ]
+    formats = [(b.paragraph_format.style_name, b.paragraph_format.alignment) for b in doc.blocks]
     assert formats == [
         ("Normal", ParagraphAlignment.LEFT),
         ("Body Text", ParagraphAlignment.JUSTIFIED),
@@ -370,10 +343,7 @@ def test_paragraph_format_from_styles() -> None:
 def test_paragraph_format_without_styles() -> None:
     doc = parse(p("Plain") + p("Centered", jc="center") + p("Styled", style="Title"))
 
-    formats = [
-        (b.paragraph_format.style_name, b.paragraph_format.alignment)
-        for b in doc.blocks
-    ]
+    formats = [(b.paragraph_format.style_name, b.paragraph_format.alignment) for b in doc.blocks]
     assert formats == [
         (None, ParagraphAlignment.LEFT),
         (None, ParagraphAlignment.CENTER),
@@ -382,20 +352,13 @@ def test_paragraph_format_without_styles() -> None:
 
 
 def test_list_items_get_a_paragraph_format_too() -> None:
-    doc = parse(
-        p("Item", style="BodyText", num_id=3), styles=STYLES, numbering=NUMBERING
-    )
+    doc = parse(p("Item", style="BodyText", num_id=3), styles=STYLES, numbering=NUMBERING)
     fmt = doc.blocks[0].paragraph_format
-    assert (fmt.style_name, fmt.alignment) == (
-        "Body Text",
-        ParagraphAlignment.JUSTIFIED,
-    )
+    assert (fmt.style_name, fmt.alignment) == ("Body Text", ParagraphAlignment.JUSTIFIED)
 
 
 def test_unknown_alignment_names_file_and_paragraph() -> None:
-    with pytest.raises(
-        ValueError, match=r"File 'test\.docx', at /w:document/w:body/w:p\[2\]"
-    ) as excinfo:
+    with pytest.raises(ValueError, match=r"File 'test\.docx', at /w:document/w:body/w:p\[2\]") as excinfo:
         parse(p("A") + p("B", jc="numTab"), styles=STYLES)
     # The original reason is kept as the cause.
     assert "numTab" in str(excinfo.value.__cause__)
@@ -428,11 +391,7 @@ def tbl(*rows: list[str]) -> str:
 def test_table_becomes_one_table_block() -> None:
     doc = parse(p("Before") + tbl(["TT", "Nội dung"], ["1", "Phạm vi"]) + p("After"))
 
-    assert [b.block_type for b in doc.blocks] == [
-        BlockType.PARAGRAPH,
-        BlockType.TABLE,
-        BlockType.PARAGRAPH,
-    ]
+    assert [b.block_type for b in doc.blocks] == [BlockType.PARAGRAPH, BlockType.TABLE, BlockType.PARAGRAPH]
     table = doc.blocks[1]
     assert table.text == "TT\tNội dung\n1\tPhạm vi"
     assert table.table_info is not None
@@ -473,7 +432,7 @@ def test_header_rows_reach_the_block() -> None:
 
 def test_merged_table_reaches_the_block() -> None:
     rows = (
-        f'<w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr>{p("Trường hợp áp dụng")}</w:tc></w:tr>'
+        f"<w:tr><w:tc><w:tcPr><w:gridSpan w:val=\"2\"/></w:tcPr>{p('Trường hợp áp dụng')}</w:tc></w:tr>"
         f"<w:tr><w:tc>{p('Báo cáo')}</w:tc><w:tc>{p('Kiểm thử')}</w:tc></w:tr>"
     )
     doc = parse(f"<w:tbl><w:tblPr/><w:tblGrid/>{rows}</w:tbl>")
@@ -500,27 +459,21 @@ def test_list_inside_cell_shares_the_counter_with_the_body() -> None:
 
 def test_empty_list_item_in_cell_still_counts() -> None:
     cell_item = f"<w:tbl><w:tblPr/><w:tblGrid/><w:tr><w:tc>{p('x')}{p(num_id=3)}</w:tc></w:tr></w:tbl>"
-    doc = parse(
-        p("One", num_id=3) + cell_item + p("Three", num_id=3), numbering=NUMBERING
-    )
+    doc = parse(p("One", num_id=3) + cell_item + p("Three", num_id=3), numbering=NUMBERING)
     assert doc.blocks[-1].list_info is not None
     assert doc.blocks[-1].list_info.displayed_marker == "3."
 
 
 def test_list_in_cell_without_numbering_rejected() -> None:
     cell_item = f"<w:tbl><w:tblPr/><w:tblGrid/><w:tr><w:tc>{p('x', num_id=3)}</w:tc></w:tr></w:tbl>"
-    with pytest.raises(
-        ValueError, match=r"File 'test\.docx', at /w:document/w:body/w:tbl"
-    ):
+    with pytest.raises(ValueError, match=r"File 'test\.docx', at /w:document/w:body/w:tbl"):
         parse(cell_item)
 
 
 def test_broken_merge_names_file_and_table() -> None:
     continue_cell = f"<w:tc><w:tcPr><w:vMerge/></w:tcPr>{p()}</w:tc>"
     broken = f"<w:tbl><w:tblPr/><w:tblGrid/><w:tr>{continue_cell}</w:tr></w:tbl>"
-    with pytest.raises(
-        ValueError, match=r"File 'test\.docx', at /w:document/w:body/w:tbl"
-    ) as excinfo:
+    with pytest.raises(ValueError, match=r"File 'test\.docx', at /w:document/w:body/w:tbl") as excinfo:
         parse(p("A") + broken)
     assert "without open cell" in str(excinfo.value.__cause__)
 
@@ -532,10 +485,7 @@ def test_nested_table_not_supported_yet() -> None:
 
 
 def test_table_round_trips_through_json(tmp_path: Path) -> None:
-    from document_processor.core.serialization import (
-        load_physical_document,
-        save_physical_document,
-    )
+    from document_processor.core.serialization import load_physical_document, save_physical_document
 
     doc = parse(p("A") + tbl(["TT", "Nội dung"], ["1", ""]))
     path = tmp_path / "doc.json"
@@ -563,9 +513,7 @@ def test_parse_file_matches_parse_bytes(tmp_path: Path) -> None:
     path = tmp_path / "nghi-dinh.docx"
     path.write_bytes(data)
 
-    assert DocxAdapter().parse_file(path) == DocxAdapter().parse_bytes(
-        data, "nghi-dinh.docx"
-    )
+    assert DocxAdapter().parse_file(path) == DocxAdapter().parse_bytes(data, "nghi-dinh.docx")
 
 
 def test_parse_file_accepts_a_str_path(tmp_path: Path) -> None:
@@ -605,11 +553,246 @@ def test_sample_file_invariants() -> None:
     root = document_root(data)
 
     assert doc.blocks, "expected at least one block"
-    assert [b.id for b in doc.blocks] == [
-        f"pb{i}" for i in range(1, len(doc.blocks) + 1)
-    ]
+    assert [b.id for b in doc.blocks] == [f"pb{i}" for i in range(1, len(doc.blocks) + 1)]
     for block in doc.blocks:
         assert block.paragraph_format.alignment is not None
         found = root.xpath(block.source_reference, namespaces={"w": W_NS})
         assert len(found) == 1, block.source_reference
     assert any(b.block_type is BlockType.LIST_ITEM for b in doc.blocks)
+
+
+# ---------- images
+# Drawings come from drawing_xml.py; each image paragraph is built from runs.
+
+PNG_A = b"\x89PNG image A"
+PNG_B = b"\x89PNG image B"
+IMAGES = {"rId10": ("image1.png", PNG_A), "rId11": ("image2.png", PNG_B)}
+
+
+def r_text(text: str) -> str:
+    return f'<w:r><w:t xml:space="preserve">{text}</w:t></w:r>'
+
+
+def r_drawing(xml: str) -> str:
+    return f"<w:r>{xml}</w:r>"
+
+
+def p_runs(*runs: str, num_id: int | None = None, jc: str | None = None) -> str:
+    """A <w:p> made of the given runs (see r_text / r_drawing)."""
+    ppr = ""
+    if num_id is not None:
+        ppr += f'<w:numPr><w:ilvl w:val="0"/><w:numId w:val="{num_id}"/></w:numPr>'
+    if jc is not None:
+        ppr += f'<w:jc w:val="{jc}"/>'
+    ppr_xml = f"<w:pPr>{ppr}</w:pPr>" if ppr else ""
+    return f"<w:p>{ppr_xml}{''.join(runs)}</w:p>"
+
+
+def img(rid: str = "rId10", **kwargs: Any) -> str:
+    """A run holding one picture drawing that embeds `rid`."""
+    return r_drawing(drawing(pic(rid), **kwargs))
+
+
+def test_image_only_paragraph_becomes_an_image_block() -> None:
+    doc = parse(p_runs(img()), images=IMAGES)
+
+    assert len(doc.blocks) == 1
+    block = doc.blocks[0]
+    assert block.block_type is BlockType.IMAGE
+    assert block.text == ""  # alt text is not read (empty or a file name in practice)
+    assert block.list_info is None
+    assert block.image_info is not None
+    assert block.image_info.source_path == "word/media/image1.png"
+    assert block.image_info.mime_type == "image/png"
+    assert block.image_info.content_hash == compute_hash(PNG_A)
+    assert block.image_info.displayed_width_pt == 72.0
+    assert block.image_info.displayed_height_pt == 36.0
+    assert block.source_reference == "/w:document/w:body/w:p"
+
+
+def test_image_block_gets_the_paragraph_format() -> None:
+    doc = parse(p_runs(img(), jc="center"), images=IMAGES, styles=STYLES)
+    assert doc.blocks[0].paragraph_format.alignment is ParagraphAlignment.CENTER
+
+
+def test_heading_then_figure_in_separate_paragraphs() -> None:
+    # The real case: "1. Mô hình" followed by a diagram in its own paragraph.
+    doc = parse(p("1. Mô hình") + p_runs(img()) + p("Trong đó:"), images=IMAGES)
+
+    assert [b.block_type for b in doc.blocks] == [
+        BlockType.PARAGRAPH,
+        BlockType.IMAGE,
+        BlockType.PARAGRAPH,
+    ]
+    assert [b.id for b in doc.blocks] == ["pb1", "pb2", "pb3"]
+
+
+def test_text_image_text_in_one_paragraph_keeps_reading_order() -> None:
+    doc = parse(
+        p_runs(r_text("1. Mô hình"), img(), r_text("Hình 1: Tổng thể")),
+        images=IMAGES,
+    )
+
+    assert [(b.block_type, b.text) for b in doc.blocks] == [
+        (BlockType.PARAGRAPH, "1. Mô hình"),
+        (BlockType.IMAGE, ""),
+        (BlockType.PARAGRAPH, "Hình 1: Tổng thể"),
+    ]
+    assert [b.id for b in doc.blocks] == ["pb1", "pb2", "pb3"]
+
+
+def test_blocks_from_one_paragraph_get_indexed_references() -> None:
+    doc = parse(p_runs(r_text("A"), img(), r_text("B")), images=IMAGES)
+    base = "/w:document/w:body/w:p"
+    assert [b.source_reference for b in doc.blocks] == [base, f"{base}#1", f"{base}#2"]
+
+
+def test_image_first_then_text() -> None:
+    doc = parse(p_runs(img(), r_text("Hình 1")), images=IMAGES)
+    assert [b.block_type for b in doc.blocks] == [BlockType.IMAGE, BlockType.PARAGRAPH]
+
+
+def test_drawing_in_the_same_run_as_text_splits_it() -> None:
+    run = f'<w:r><w:t>before</w:t>{drawing()}<w:t>after</w:t></w:r>'
+    doc = parse(p_runs(run), images=IMAGES)
+    assert [(b.block_type, b.text) for b in doc.blocks] == [
+        (BlockType.PARAGRAPH, "before"),
+        (BlockType.IMAGE, ""),
+        (BlockType.PARAGRAPH, "after"),
+    ]
+
+
+def test_blank_text_around_an_image_is_dropped() -> None:
+    doc = parse(p_runs(r_text("  "), img(), r_text("\t")), images=IMAGES)
+    assert [b.block_type for b in doc.blocks] == [BlockType.IMAGE]
+    assert doc.blocks[0].source_reference == "/w:document/w:body/w:p"
+
+
+def test_two_images_in_one_paragraph() -> None:
+    doc = parse(p_runs(img("rId10"), img("rId11")), images=IMAGES)
+
+    assert [b.block_type for b in doc.blocks] == [BlockType.IMAGE, BlockType.IMAGE]
+    hashes = [b.image_info.content_hash for b in doc.blocks if b.image_info is not None]
+    assert hashes == [compute_hash(PNG_A), compute_hash(PNG_B)]
+
+
+def test_same_image_used_twice_has_one_hash() -> None:
+    doc = parse(p_runs(img("rId10")) + p_runs(img("rId10")), images=IMAGES)
+    assert len(doc.blocks) == 2
+    assert doc.blocks[0].image_info == doc.blocks[1].image_info
+
+
+def test_anchored_image_is_read_too() -> None:
+    doc = parse(p_runs(img(anchor=True)), images=IMAGES)
+    assert [b.block_type for b in doc.blocks] == [BlockType.IMAGE]
+
+
+def test_image_inside_a_hyperlink_is_read() -> None:
+    link = f'<w:hyperlink r:id="rId99" xmlns:r="{R_NS}">{img()}</w:hyperlink>'
+    doc = parse(p_runs(r_text("See"), link), images=IMAGES)
+    assert [b.block_type for b in doc.blocks] == [BlockType.PARAGRAPH, BlockType.IMAGE]
+
+
+def test_chart_is_not_an_image_block() -> None:
+    doc = parse(p_runs(r_text("Biểu đồ"), r_drawing(drawing(chart()))), images=IMAGES)
+    assert [(b.block_type, b.text) for b in doc.blocks] == [(BlockType.PARAGRAPH, "Biểu đồ")]
+
+
+def test_paragraph_with_only_a_chart_produces_no_block() -> None:
+    doc = parse(p("A") + p_runs(r_drawing(drawing(chart()))) + p("B"), images=IMAGES)
+    assert [b.text for b in doc.blocks] == ["A", "B"]
+    assert [b.id for b in doc.blocks] == ["pb1", "pb2"]
+
+
+def test_linked_image_is_skipped() -> None:
+    linked = r_drawing(drawing(pic(embed=None, link="rId30")))
+    doc = parse(p("A") + p_runs(linked), images=IMAGES)
+    assert [b.text for b in doc.blocks] == ["A"]
+
+
+def test_unknown_image_relationship_names_file_and_paragraph() -> None:
+    with pytest.raises(
+        ValueError, match=r"File 'test\.docx', at /w:document/w:body/w:p\[2\]: .*'rId77'"
+    ):
+        parse(p("A") + p_runs(img("rId77")), images=IMAGES)
+
+
+# ---------- images and lists
+
+
+def test_numbered_paragraph_with_image_puts_the_marker_on_the_text() -> None:
+    doc = parse(
+        p_runs(r_text("Mô hình"), img(), num_id=3) + p("Tiếp theo", num_id=3),
+        numbering=NUMBERING,
+        images=IMAGES,
+    )
+
+    text_block, image_block, next_item = doc.blocks
+    assert text_block.block_type is BlockType.LIST_ITEM
+    assert text_block.list_info is not None
+    assert text_block.list_info.displayed_marker == "1."
+    assert image_block.block_type is BlockType.IMAGE
+    assert image_block.list_info is None
+    # The paragraph counted once, not once per block.
+    assert next_item.list_info is not None
+    assert next_item.list_info.displayed_marker == "2."
+
+
+def test_text_after_the_image_is_a_plain_paragraph() -> None:
+    doc = parse(
+        p_runs(r_text("Mô hình"), img(), r_text("Hình 1"), num_id=3),
+        numbering=NUMBERING,
+        images=IMAGES,
+    )
+    assert [b.block_type for b in doc.blocks] == [
+        BlockType.LIST_ITEM,
+        BlockType.IMAGE,
+        BlockType.PARAGRAPH,
+    ]
+    assert doc.blocks[2].list_info is None
+
+
+def test_numbered_image_only_paragraph_still_advances_the_counter() -> None:
+    doc = parse(
+        p("A", num_id=3) + p_runs(img(), num_id=3) + p("C", num_id=3),
+        numbering=NUMBERING,
+        images=IMAGES,
+    )
+    markers = [b.list_info.displayed_marker for b in doc.blocks if b.list_info is not None]
+    assert markers == ["1.", "3."]  # the image paragraph was "2."
+    assert doc.blocks[1].block_type is BlockType.IMAGE
+
+
+def test_empty_numbered_paragraph_with_broken_format_still_counts() -> None:
+    # Numbering is read before the format, and an empty paragraph never
+    # reaches the format: it counts, and its broken jc is not an error.
+    doc = parse(
+        p("A", num_id=3) + p(num_id=3, jc="numTab") + p("C", num_id=3),
+        numbering=NUMBERING,
+        styles=STYLES,
+    )
+    markers = [b.list_info.displayed_marker for b in doc.blocks if b.list_info is not None]
+    assert markers == ["1.", "3."]
+
+
+# ---------- images and tables
+
+
+def test_image_in_a_table_cell_is_ignored() -> None:
+    cell = f"<w:tc>{p_runs(r_text('Sơ đồ'), img())}</w:tc>"
+    doc = parse(f"<w:tbl><w:tblPr/><w:tblGrid/><w:tr>{cell}</w:tr></w:tbl>", images=IMAGES)
+
+    assert [b.block_type for b in doc.blocks] == [BlockType.TABLE]
+    assert "Sơ đồ" in doc.blocks[0].text
+
+
+def test_ids_stay_consecutive_around_tables_and_images() -> None:
+    doc = parse(p("A") + tbl(["x"]) + p_runs(img()) + tbl(["y"]) + p("B"), images=IMAGES)
+    assert [b.id for b in doc.blocks] == ["pb1", "pb2", "pb3", "pb4", "pb5"]
+    assert [b.block_type for b in doc.blocks] == [
+        BlockType.PARAGRAPH,
+        BlockType.TABLE,
+        BlockType.IMAGE,
+        BlockType.TABLE,
+        BlockType.PARAGRAPH,
+    ]

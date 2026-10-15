@@ -3,10 +3,14 @@ from lxml import etree
 from lxml.etree import _Element
 
 
-NAMESPACES = {"w": nsmap["w"]}
+NAMESPACES = {
+    "w": nsmap["w"],
+    "r": nsmap["r"],
+    "a": nsmap["a"],
+    "wp": nsmap["wp"],
+}
 
-
-def _xpath_one_or_none(element: _Element, path: str) -> object | None:
+def _xpath_zero_or_more(element: _Element, path: str) -> list[object]:
     compiled = etree.XPath(path, namespaces=NAMESPACES, smart_strings=False)
     result = compiled(element)
 
@@ -14,6 +18,11 @@ def _xpath_one_or_none(element: _Element, path: str) -> object | None:
         raise TypeError(
             f"XPath: {path}. Unexpected result type from xpath: Expected list, got {type(result).__name__}"
         )
+    return result
+
+
+def _xpath_one_or_none(element: _Element, path: str) -> object | None:
+    result = _xpath_zero_or_more(element, path)
 
     if len(result) == 0:
         return None
@@ -24,6 +33,20 @@ def _xpath_one_or_none(element: _Element, path: str) -> object | None:
     value: object = result[0]
 
     return value
+
+
+def xpath_element_zero_or_more(element: _Element, path: str) -> list[_Element]:
+    result = _xpath_zero_or_more(element, path)
+
+    elements: list[_Element] = []
+    for value in result:
+        if not isinstance(value, _Element):
+            raise TypeError(
+                f"XPath: {path}. Expected an _Element, got {value!r} (type: {type(value).__name__})"
+            )
+        elements.append(value)
+        
+    return elements
 
 
 def xpath_element_or_none(element: _Element, path: str) -> _Element | None:

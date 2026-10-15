@@ -87,7 +87,7 @@ class ListInfo:
 IMAGE_MIME_TYPE_PATTERN = re.compile(r"image/[a-z0-9][a-z0-9.+-]*")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class ImageInfo:
     source_path: str
     mime_type: str

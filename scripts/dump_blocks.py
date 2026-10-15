@@ -1,10 +1,12 @@
 from pathlib import Path
 
 from document_processor.adapters.docx import DocxAdapter
+from document_processor.core.models import PhysicalDocument
 from document_processor.core.cleaning import clean_document
+from document_processor.core.serialization import save_physical_document
 
 
-def dump_blocks(path: str | Path, save_as: str | Path | None = None, clean: bool=False) -> None:
+def dump_blocks(path: str | Path, save_as: str | Path | None = None, clean: bool=False) -> PhysicalDocument:
     adapter = DocxAdapter()
     physical_document = adapter.parse_file(path)
 
@@ -24,9 +26,12 @@ def dump_blocks(path: str | Path, save_as: str | Path | None = None, clean: bool
     with save_path.open("w", encoding="utf-8") as f:
         f.writelines(outputs)
 
+    return physical_document
+
 if __name__ == "__main__":
-    # filename = "2025_Quy dinh quan ly kien truc CNTT.docx"
-    filename = "Phu_luc_Quy dinh quan ly kien truc CNTT.docx"
+    filename = "2025_Quy dinh quan ly kien truc CNTT.docx"
+    # filename = "Phu_luc_Quy dinh quan ly kien truc CNTT.docx"
     filepath = f"data/{filename}"
     dump_blocks(filepath, save_as=f"data/{filename}_blocks.txt")
-    dump_blocks(filepath, save_as=f"data/{filename}_blocks_cleaned.txt", clean=True)
+    doc = dump_blocks(filepath, save_as=f"data/{filename}_blocks_cleaned.txt", clean=True)
+    save_physical_document(doc, f"data/{filename}_cleaned_phys_doc.json")
