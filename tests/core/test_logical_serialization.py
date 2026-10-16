@@ -1,18 +1,13 @@
-"""Tests for saving and loading LogicalDocument."""
+"""Tests for saving and loading LogicalDocument (segments + outline)."""
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from document_processor.core.models.logical import (
-    BlockSpan,
-    ChildRef,
-    LogicalDocument,
-    LogicalNode,
-)
-from document_processor.core.models.ranges import TextRange
+from document_processor.core.models.logical import BaseSegment, LogicalDocument
 from document_processor.core.serialization import (
     LOGICAL_DOCUMENT_KIND,
     LOGICAL_SCHEMA_VERSION,
@@ -23,401 +18,307 @@ from document_processor.core.serialization import (
     save_logical_document,
 )
 from tests.factories import (
-    make_block_span,
-    make_child_ref,
+    make_image_info,
+    make_image_segment,
     make_logical_document,
     make_logical_node,
+    make_table_info,
+    make_table_segment,
+    make_text_segment,
 )
 
 
-def span(block_id: str, start: int, end: int) -> BlockSpan:
-    return make_block_span(block_id=block_id, text_range=TextRange(start, end))
-
-
 def full_document() -> LogicalDocument:
-    """Two roots with front and end matter, and every optional field exercised.
+    """Every segment kind, front and end matter, nested nodes, optional fields set and unset.
 
-        [front] pb1, pb2
-        chuong-1          marker + title on the next block; content = two children
-          dieu-1          marker and title in one block; content interleaves
-                          a lead-in, two children and a closing remark
-            khoan-1       auto-numbered: no marker, text only
-            khoan-2       text in two blocks
-          dieu-2          number None
-        chuong-2          no content
-        [end]   pb12
+        0  text   CHÍNH PHỦ                    front matter
+        1  text   Nghị định này quy định về:   chuong-I [1, 5) > dieu-1 [1, 5)
+        2  text   Kiến trúc tổng thể.            khoan-1 [2, 4)
+        3  image  (diagram)                       (inside khoan-1)
+        4  table  (two-row table)                khoan-2 [4, 5)
+        5  text   Nơi nhận:                    end matter
     """
-    nodes: tuple[LogicalNode, ...] = (
-        make_logical_node(
-            id="chuong-1",
-            level="chuong",
-            number="I",
-            marker=span("pb3", 0, 8),
-            title=(span("pb4", 0, 15),),
-            content=(make_child_ref("dieu-1"), make_child_ref("dieu-2")),
-        ),
-        make_logical_node(
-            id="dieu-1",
-            level="dieu",
-            number="1",
-            marker=span("pb5", 0, 7),
-            title=(span("pb5", 8, 26),),
-            content=(
-                span("pb13", 0, 20),
-                make_child_ref("khoan-1"),
-                make_child_ref("khoan-2"),
-                span("pb14", 0, 11),
-            ),
-        ),
-        make_logical_node(
-            id="khoan-1",
-            level="khoan",
-            number="1",
-            marker=None,
-            title=(),
-            content=(span("pb6", 0, 40),),
-        ),
-        make_logical_node(
-            id="khoan-2",
-            level="khoan",
-            number="2",
-            marker=span("pb7", 0, 2),
-            title=(),
-            content=(span("pb7", 3, 30), span("pb8", 0, 12)),
-        ),
-        make_logical_node(
-            id="dieu-2",
-            level="dieu",
-            number=None,
-            marker=span("pb9", 0, 7),
-            title=(span("pb9", 8, 20),),
-            content=(span("pb10", 0, 5),),
-        ),
-        make_logical_node(
-            id="chuong-2",
-            level="chuong",
-            number="II",
-            marker=span("pb11", 0, 9),
-            title=(),
-            content=(),
-        ),
+    segments = (
+        make_text_segment(block_id="pb1", text="CHÍNH PHỦ"),
+        make_text_segment(block_id="pb5", text="Nghị định này quy định về:"),
+        make_text_segment(block_id="pb6", text="Kiến trúc tổng thể."),
+        make_image_segment(block_id="pb7", image=make_image_info(displayed_width_pt=None)),
+        make_table_segment(block_id="pb8", table=make_table_info()),
+        make_text_segment(block_id="pb9", text="Nơi nhận:"),
     )
-    return make_logical_document(
-        front_matter=(span("pb1", 0, 30), span("pb2", 0, 12)),
-        root_ids=("chuong-1", "chuong-2"),
-        nodes=nodes,
-        end_matter=(span("pb12", 0, 9),),
+    nodes = (
+        make_logical_node(id="chuong-I", parent_id=None, level="chuong", number="I",
+                          marker="Chương I", title="QUY ĐỊNH CHUNG",
+                          head_block_ids=("pb2", "pb3"), start=1, end=5),
+        make_logical_node(id="chuong-I/dieu-1", parent_id="chuong-I", level="dieu", number="1",
+                          marker="Điều 1.", title="Phạm vi điều chỉnh",
+                          head_block_ids=("pb4",), start=1, end=5),
+        make_logical_node(id="chuong-I/dieu-1/khoan-1", parent_id="chuong-I/dieu-1",
+                          level="khoan", number="1", marker="1.", title=None,
+                          head_block_ids=("pb6",), start=2, end=4),
+        make_logical_node(id="chuong-I/dieu-1/khoan-2", parent_id="chuong-I/dieu-1",
+                          level="khoan", number=None, marker=None, title=None,
+                          head_block_ids=("pb8",), start=4, end=5),
     )
+    return make_logical_document(segments=segments, nodes=nodes, body_start=1, body_end=5)
 
 
-def saved_dict() -> dict[str, Any]:
-    return logical_document_to_dict(full_document())
+def through_json(d: dict[str, Any]) -> dict[str, Any]:
+    """Real JSON text in between, so tuples really become lists."""
+    result: dict[str, Any] = json.loads(json.dumps(d, ensure_ascii=False))
+    return result
 
 
-# --------------------------------------------------------------------------- #
-# to_dict
-# --------------------------------------------------------------------------- #
+def round_trip(doc: LogicalDocument) -> LogicalDocument:
+    return logical_document_from_dict(through_json(logical_document_to_dict(doc)))
 
 
-class TestToDict:
-    def test_envelope(self) -> None:
-        d = saved_dict()
-        assert d["kind"] == LOGICAL_DOCUMENT_KIND
-        assert d["schema_version"] == LOGICAL_SCHEMA_VERSION
-        assert set(d) == {"kind", "schema_version", "document"}
+# ---------- round trips
 
-    def test_document_has_every_field_and_no_mapping(self) -> None:
-        assert set(saved_dict()["document"]) == {
-            "id",
-            "physical_document_id",
-            "source_file_hash",
-            "profile_name",
-            "profile_version",
-            "front_matter",
-            "root_ids",
-            "nodes",
-            "end_matter",
-        }
 
-    def test_node_fields(self) -> None:
-        node = saved_dict()["document"]["nodes"][0]
-        assert set(node) == {
-            "id",
-            "level",
-            "number",
-            "marker",
-            "title",
-            "content",
-        }
+def test_full_document_round_trip() -> None:
+    doc = full_document()
+    assert round_trip(doc) == doc
 
-    def test_span_shape(self) -> None:
-        marker = saved_dict()["document"]["nodes"][0]["marker"]
-        assert marker == {"block_id": "pb3", "text_range": {"start": 0, "end": 8}}
 
-    def test_missing_marker_saved_as_none(self) -> None:
-        khoan_1 = saved_dict()["document"]["nodes"][2]
-        assert khoan_1["marker"] is None
+def test_empty_document_round_trip() -> None:
+    doc = make_logical_document()
+    assert round_trip(doc) == doc
 
-    def test_json_serializable(self) -> None:
-        json.dumps(saved_dict())
 
-    def test_does_not_crash_on_lookup_mapping(self) -> None:
-        # asdict() on the whole document would deepcopy the mappingproxy and fail.
-        doc = full_document()
-        doc.get_node("dieu-1")
+def test_document_without_hierarchy_round_trip() -> None:
+    segments = (make_text_segment(block_id="pb1"), make_text_segment(block_id="pb2"))
+    doc = make_logical_document(segments=segments, body_start=0, body_end=2)
+    assert round_trip(doc) == doc
+
+
+def test_loaded_document_rebuilds_its_lookups() -> None:
+    loaded = round_trip(full_document())
+    assert loaded.root_ids == ("chuong-I",)
+    assert loaded.get_children("chuong-I/dieu-1") == (
+        "chuong-I/dieu-1/khoan-1",
+        "chuong-I/dieu-1/khoan-2",
+    )
+    assert loaded.get_node("chuong-I").title == "QUY ĐỊNH CHUNG"
+
+
+def test_loaded_collections_are_tuples() -> None:
+    loaded = round_trip(full_document())
+    assert isinstance(loaded.segments, tuple)
+    assert isinstance(loaded.nodes, tuple)
+    assert isinstance(loaded.nodes[0].head_block_ids, tuple)
+    table_segment = loaded.segments[4]
+    assert isinstance(table_segment.table.cells, tuple)  # type: ignore[union-attr]
+
+
+def test_segment_kinds_survive() -> None:
+    loaded = round_trip(full_document())
+    assert [type(s).__name__ for s in loaded.segments] == [
+        "TextSegment", "TextSegment", "TextSegment", "ImageSegment", "TableSegment", "TextSegment",
+    ]
+
+
+def test_node_order_is_preserved() -> None:
+    loaded = round_trip(full_document())
+    assert [n.id for n in loaded.nodes] == [n.id for n in full_document().nodes]
+
+
+# ---------- JSON shape
+
+
+def test_envelope() -> None:
+    d = logical_document_to_dict(full_document())
+    assert set(d) == {"kind", "schema_version", "document"}
+    assert d["kind"] == LOGICAL_DOCUMENT_KIND
+    assert d["schema_version"] == LOGICAL_SCHEMA_VERSION
+
+
+def test_document_fields() -> None:
+    document = logical_document_to_dict(full_document())["document"]
+    assert set(document) == {
+        "id", "physical_document_id", "source_file_hash", "profile_name",
+        "profile_version", "segments", "nodes", "body_start", "body_end",
+    }
+    assert (document["body_start"], document["body_end"]) == (1, 5)
+
+
+def test_derived_lookups_are_not_written() -> None:
+    text = json.dumps(logical_document_to_dict(full_document()))
+    assert "_node_by_id" not in text
+    assert "_children_by_id" not in text
+    assert "root_ids" not in text
+
+
+def test_text_segment_shape() -> None:
+    segments = through_json(logical_document_to_dict(full_document()))["document"]["segments"]
+    assert segments[1] == {"kind": "text", "block_id": "pb5", "text": "Nghị định này quy định về:"}
+
+
+def test_image_segment_shape() -> None:
+    segments = through_json(logical_document_to_dict(full_document()))["document"]["segments"]
+    image = segments[3]
+    assert set(image) == {"kind", "block_id", "image"}
+    assert image["kind"] == "image"
+    assert image["image"]["mime_type"] == "image/png"
+    assert image["image"]["displayed_width_pt"] is None
+
+
+def test_table_segment_shape() -> None:
+    segments = through_json(logical_document_to_dict(full_document()))["document"]["segments"]
+    table = segments[4]
+    assert set(table) == {"kind", "block_id", "table"}
+    assert table["kind"] == "table"
+    assert table["table"]["n_rows"] == 2
+    assert isinstance(table["table"]["cells"], list)
+
+
+def test_node_shape() -> None:
+    nodes = through_json(logical_document_to_dict(full_document()))["document"]["nodes"]
+    assert nodes[0] == {
+        "id": "chuong-I",
+        "parent_id": None,
+        "level": "chuong",
+        "number": "I",
+        "marker": "Chương I",
+        "title": "QUY ĐỊNH CHUNG",
+        "head_block_ids": ["pb2", "pb3"],
+        "start": 1,
+        "end": 5,
+    }
+
+
+def test_unset_optional_node_fields_are_written_as_null() -> None:
+    nodes = through_json(logical_document_to_dict(full_document()))["document"]["nodes"]
+    assert nodes[3]["number"] is None
+    assert nodes[3]["marker"] is None
+    assert nodes[3]["title"] is None
+
+
+@dataclass(frozen=True, kw_only=True)
+class _UnregisteredSegment(BaseSegment):
+    """A new segment kind that serialization doesn't know about yet."""
+
+
+def test_unknown_segment_type_rejected_on_write() -> None:
+    doc = make_logical_document()
+    object.__setattr__(doc, "segments", (_UnregisteredSegment(block_id="pb1"),))
+    with pytest.raises((TypeError, ValueError), match="_UnregisteredSegment"):
         logical_document_to_dict(doc)
 
 
-class TestContentToDict:
-    def node_content(self, node_id: str) -> list[dict[str, Any]]:
-        nodes = saved_dict()["document"]["nodes"]
-        result: list[dict[str, Any]] = next(n for n in nodes if n["id"] == node_id)["content"]
-        return result
-
-    def test_every_item_is_tagged(self) -> None:
-        for node in saved_dict()["document"]["nodes"]:
-            for item in node["content"]:
-                assert item["kind"] in {"block_span", "child_ref"}
-
-    def test_span_item_shape(self) -> None:
-        item = self.node_content("khoan-1")[0]
-        assert item == {
-            "kind": "block_span",
-            "block_id": "pb6",
-            "text_range": {"start": 0, "end": 40},
-        }
-
-    def test_child_item_shape(self) -> None:
-        item = self.node_content("chuong-1")[0]
-        assert item == {"kind": "child_ref", "node_id": "dieu-1"}
-
-    def test_interleaved_order_written_as_is(self) -> None:
-        kinds = [item["kind"] for item in self.node_content("dieu-1")]
-        assert kinds == ["block_span", "child_ref", "child_ref", "block_span"]
-
-    def test_derived_children_ids_not_written(self) -> None:
-        for node in saved_dict()["document"]["nodes"]:
-            assert "_children_ids" not in node
-            assert "children_ids" not in node
-
-    def test_empty_content_written_as_empty_list(self) -> None:
-        assert self.node_content("chuong-2") == []
+# ---------- loading: envelope checks
 
 
-# --------------------------------------------------------------------------- #
-# Round trip
-# --------------------------------------------------------------------------- #
+def test_wrong_kind_rejected() -> None:
+    d = logical_document_to_dict(full_document())
+    d["kind"] = PHYSICAL_DOCUMENT_KIND
+    with pytest.raises(ValueError, match="kind"):
+        logical_document_from_dict(d)
 
 
-class TestRoundTrip:
-    def test_empty_document(self) -> None:
-        doc = make_logical_document()
-        assert logical_document_from_dict(logical_document_to_dict(doc)) == doc
-
-    def test_full_document(self) -> None:
-        doc = full_document()
-        assert logical_document_from_dict(logical_document_to_dict(doc)) == doc
-
-    def test_through_json_text(self) -> None:
-        doc = full_document()
-        text = json.dumps(logical_document_to_dict(doc))
-        assert logical_document_from_dict(json.loads(text)) == doc
-
-    def test_sequences_are_tuples_after_load(self) -> None:
-        loaded = logical_document_from_dict(saved_dict())
-        assert isinstance(loaded.front_matter, tuple)
-        assert isinstance(loaded.root_ids, tuple)
-        assert isinstance(loaded.nodes, tuple)
-        assert isinstance(loaded.end_matter, tuple)
-        node = loaded.get_node("khoan-2")
-        assert isinstance(node.title, tuple)
-        assert isinstance(node.content, tuple)
-        assert isinstance(node.children_ids, tuple)
-
-    def test_lookup_works_after_load(self) -> None:
-        loaded = logical_document_from_dict(saved_dict())
-        item = loaded.get_node("khoan-2").content[1]
-        assert isinstance(item, BlockSpan)
-        assert item.block_id == "pb8"
-
-    def test_order_preserved(self) -> None:
-        loaded = logical_document_from_dict(saved_dict())
-        assert [n.id for n in loaded.nodes] == [
-            "chuong-1",
-            "dieu-1",
-            "khoan-1",
-            "khoan-2",
-            "dieu-2",
-            "chuong-2",
-        ]
-
-    def test_load_is_idempotent(self) -> None:
-        once = logical_document_to_dict(full_document())
-        twice = logical_document_to_dict(logical_document_from_dict(once))
-        assert once == twice
+def test_missing_kind_rejected() -> None:
+    d = logical_document_to_dict(full_document())
+    del d["kind"]
+    with pytest.raises(ValueError, match="kind"):
+        logical_document_from_dict(d)
 
 
-# --------------------------------------------------------------------------- #
-# Files
-# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("version", [LOGICAL_SCHEMA_VERSION + 1, 0, None, "1"])
+def test_wrong_schema_version_rejected(version: Any) -> None:
+    d = logical_document_to_dict(full_document())
+    d["schema_version"] = version
+    with pytest.raises(ValueError, match="schema version"):
+        logical_document_from_dict(d)
 
 
-class TestFiles:
-    def test_save_and_load(self, tmp_path: Path) -> None:
-        path = tmp_path / "doc.logical.json"
-        doc = full_document()
-        save_logical_document(doc, path)
-        assert load_logical_document(path) == doc
-
-    def test_accepts_str_path(self, tmp_path: Path) -> None:
-        path = str(tmp_path / "doc.json")
-        doc = full_document()
-        save_logical_document(doc, path)
-        assert load_logical_document(path) == doc
-
-    def test_creates_parent_folders(self, tmp_path: Path) -> None:
-        path = tmp_path / "a" / "b" / "doc.json"
-        save_logical_document(full_document(), path)
-        assert path.is_file()
-
-    def test_vietnamese_written_as_is(self, tmp_path: Path) -> None:
-        path = tmp_path / "doc.json"
-        doc = make_logical_document(
-            root_ids=("điều-1",),
-            nodes=(make_logical_node(id="điều-1", level="điều"),),
-        )
-        save_logical_document(doc, path)
-        raw = path.read_text(encoding="utf-8")
-        assert "điều-1" in raw
-        assert "\\u" not in raw
-        assert load_logical_document(path) == doc
+# ---------- loading: segments
 
 
-# --------------------------------------------------------------------------- #
-# Rejected input
-# --------------------------------------------------------------------------- #
+def test_unknown_segment_kind_rejected() -> None:
+    d = through_json(logical_document_to_dict(full_document()))
+    d["document"]["segments"][1]["kind"] = "paragraph"
+    with pytest.raises(ValueError, match="'paragraph'"):
+        logical_document_from_dict(d)
 
 
-class TestRejectedInput:
-    def test_wrong_kind(self) -> None:
-        d = saved_dict()
-        d["kind"] = PHYSICAL_DOCUMENT_KIND
-        with pytest.raises(ValueError, match="Unexpected dictionary kind"):
-            logical_document_from_dict(d)
-
-    def test_missing_kind(self) -> None:
-        d = saved_dict()
-        del d["kind"]
-        with pytest.raises(ValueError, match="Unexpected dictionary kind"):
-            logical_document_from_dict(d)
-
-    def test_wrong_schema_version(self) -> None:
-        d = saved_dict()
-        d["schema_version"] = LOGICAL_SCHEMA_VERSION + 1
-        with pytest.raises(
-            ValueError, match=f"Expected: {LOGICAL_SCHEMA_VERSION}. Actual: {LOGICAL_SCHEMA_VERSION + 1}"
-        ):
-            logical_document_from_dict(d)
-
-    @pytest.mark.parametrize(
-        "field",
-        ["id", "physical_document_id", "source_file_hash", "root_ids", "nodes", "end_matter"],
-    )
-    def test_missing_document_field(self, field: str) -> None:
-        d = saved_dict()
-        del d["document"][field]
-        with pytest.raises(KeyError, match=field):
-            logical_document_from_dict(d)
-
-    @pytest.mark.parametrize("field", ["level", "number", "marker", "title", "content"])
-    def test_missing_node_field(self, field: str) -> None:
-        d = saved_dict()
-        del d["document"]["nodes"][0][field]
-        with pytest.raises(KeyError, match=field):
-            logical_document_from_dict(d)
-
-    def test_physical_document_rejected(self, tmp_path: Path) -> None:
-        path = tmp_path / "doc.json"
-        path.write_text(
-            json.dumps({"kind": PHYSICAL_DOCUMENT_KIND, "schema_version": 1, "document": {}}),
-            encoding="utf-8",
-        )
-        with pytest.raises(ValueError, match="Unexpected dictionary kind"):
-            load_logical_document(path)
+def test_missing_segment_kind_rejected() -> None:
+    d = through_json(logical_document_to_dict(full_document()))
+    del d["document"]["segments"][1]["kind"]
+    with pytest.raises(ValueError, match="kind=None"):
+        logical_document_from_dict(d)
 
 
-class TestContentFromDict:
-    def test_interleaved_order_preserved(self) -> None:
-        loaded = logical_document_from_dict(saved_dict())
-        content = loaded.get_node("dieu-1").content
-        assert [type(item) for item in content] == [BlockSpan, ChildRef, ChildRef, BlockSpan]
-        assert loaded.get_node("dieu-1").children_ids == ("khoan-1", "khoan-2")
-
-    def test_unknown_kind_rejected(self) -> None:
-        d = saved_dict()
-        d["document"]["nodes"][2]["content"][0]["kind"] = "paragraph"
-        with pytest.raises(ValueError, match="'paragraph'"):
-            logical_document_from_dict(d)
-
-    def test_missing_kind_rejected(self) -> None:
-        d = saved_dict()
-        del d["document"]["nodes"][2]["content"][0]["kind"]
-        with pytest.raises(KeyError, match="kind"):
-            logical_document_from_dict(d)
-
-    def test_child_ref_missing_node_id(self) -> None:
-        d = saved_dict()
-        del d["document"]["nodes"][0]["content"][0]["node_id"]
-        with pytest.raises(KeyError, match="node_id"):
-            logical_document_from_dict(d)
-
-    def test_blank_child_ref_rejected(self) -> None:
-        d = saved_dict()
-        d["document"]["nodes"][0]["content"][0]["node_id"] = " "
-        with pytest.raises(ValueError, match="node_id"):
-            logical_document_from_dict(d)
-
-    def test_duplicate_child_ref_rejected(self) -> None:
-        d = saved_dict()
-        d["document"]["nodes"][0]["content"].append({"kind": "child_ref", "node_id": "dieu-1"})
-        with pytest.raises(ValueError, match="duplicate children ids: dieu-1"):
-            logical_document_from_dict(d)
+def test_segment_validation_runs_on_load() -> None:
+    d = through_json(logical_document_to_dict(full_document()))
+    d["document"]["segments"][1]["text"] = "   "
+    with pytest.raises(ValueError, match="text"):
+        logical_document_from_dict(d)
 
 
-class TestValidationRunsOnLoad:
-    def test_orphan_node(self) -> None:
-        d = saved_dict()
-        d["document"]["root_ids"] = ["chuong-1"]  # chuong-2 now unreachable
-        with pytest.raises(ValueError, match="unreachable"):
-            logical_document_from_dict(d)
+def test_image_validation_runs_on_load() -> None:
+    d = through_json(logical_document_to_dict(full_document()))
+    d["document"]["segments"][3]["image"]["mime_type"] = "text/plain"
+    with pytest.raises(ValueError, match="mime_type"):
+        logical_document_from_dict(d)
 
-    def test_nodes_out_of_order(self) -> None:
-        d = saved_dict()
-        nodes = d["document"]["nodes"]
-        nodes[2], nodes[3] = nodes[3], nodes[2]  # swap khoan-1 and khoan-2
-        with pytest.raises(ValueError, match="not in pre-order"):
-            logical_document_from_dict(d)
 
-    def test_dangling_child(self) -> None:
-        d = saved_dict()
-        d["document"]["nodes"][1]["content"].append({"kind": "child_ref", "node_id": "khoan-9"})
-        with pytest.raises(ValueError, match="no node with id khoan-9"):
-            logical_document_from_dict(d)
+# ---------- loading: nodes and outline
 
-    def test_invalid_text_range(self) -> None:
-        d = saved_dict()
-        d["document"]["nodes"][0]["marker"]["text_range"] = {"start": 5, "end": 5}
-        with pytest.raises(ValueError, match="0 <= start < end"):
-            logical_document_from_dict(d)
 
-    def test_empty_block_id(self) -> None:
-        d = saved_dict()
-        d["document"]["front_matter"][0]["block_id"] = ""
-        with pytest.raises(ValueError, match="block_id"):
-            logical_document_from_dict(d)
+def test_node_validation_runs_on_load() -> None:
+    d = through_json(logical_document_to_dict(full_document()))
+    d["document"]["nodes"][2]["head_block_ids"] = []
+    with pytest.raises(ValueError, match="head_block_ids"):
+        logical_document_from_dict(d)
 
-    def test_empty_number(self) -> None:
-        d = saved_dict()
-        d["document"]["nodes"][1]["number"] = ""
-        with pytest.raises(ValueError, match="'number'"):
-            logical_document_from_dict(d)
+
+def test_outline_validation_runs_on_load() -> None:
+    d = through_json(logical_document_to_dict(full_document()))
+    d["document"]["nodes"][3]["start"] = 3  # overlaps khoan-1 [2, 4)
+    with pytest.raises(ValueError, match="overlaps or precedes"):
+        logical_document_from_dict(d)
+
+
+def test_reordered_nodes_rejected_on_load() -> None:
+    d = through_json(logical_document_to_dict(full_document()))
+    nodes = d["document"]["nodes"]
+    nodes[1], nodes[2] = nodes[2], nodes[1]  # a khoan before its Điều
+    with pytest.raises(ValueError, match="not an open ancestor"):
+        logical_document_from_dict(d)
+
+
+def test_body_range_validation_runs_on_load() -> None:
+    d = through_json(logical_document_to_dict(full_document()))
+    d["document"]["body_end"] = 99
+    with pytest.raises(ValueError, match="body_end"):
+        logical_document_from_dict(d)
+
+
+# ---------- files
+
+
+def test_save_and_load(tmp_path: Path) -> None:
+    path = tmp_path / "doc.logical.json"
+    doc = full_document()
+    save_logical_document(doc, path)
+    assert load_logical_document(path) == doc
+
+
+def test_save_creates_parent_folders(tmp_path: Path) -> None:
+    path = tmp_path / "a" / "b" / "doc.json"
+    save_logical_document(full_document(), path)
+    assert path.is_file()
+
+
+def test_saved_file_keeps_vietnamese_readable(tmp_path: Path) -> None:
+    path = tmp_path / "doc.json"
+    save_logical_document(full_document(), path)
+    text = path.read_text(encoding="utf-8")
+    assert "QUY ĐỊNH CHUNG" in text
+    assert "\\u" not in text
+
+
+def test_save_accepts_str_path(tmp_path: Path) -> None:
+    path = tmp_path / "doc.json"
+    save_logical_document(full_document(), str(path))
+    assert load_logical_document(str(path)) == full_document()

@@ -22,12 +22,12 @@ from document_processor.core.models import (
 )
 
 from document_processor.core.models.logical import (
-    BlockSpan,
-    ChildRef,
+    ImageSegment,
     LogicalDocument,
     LogicalNode,
+    TableSegment,
+    TextSegment,
 )
-from document_processor.core.models.ranges import TextRange
 
 
 def make_declared_numbering(**overrides: Any) -> DeclaredNumbering:
@@ -144,37 +144,46 @@ def make_table_block(**overrides: Any) -> PhysicalBlock:
     return make_block(**fields)
 
 
-def make_block_span(**overrides: Any) -> BlockSpan:
-    fields: dict[str, Any] = {
-        "block_id": "pb1",
-        "text_range": TextRange(0, 7),
-    }
+def make_text_segment(**overrides: Any) -> TextSegment:
+    fields: dict[str, Any] = {"block_id": "pb1", "text": "Nghị định này quy định về:"}
     fields.update(overrides)
-    return BlockSpan(**fields)
+    return TextSegment(**fields)
 
 
-def make_child_ref(node_id: str) -> ChildRef:
-    return ChildRef(node_id=node_id)
+def make_image_segment(**overrides: Any) -> ImageSegment:
+    fields: dict[str, Any] = {"block_id": "pb1", "image": make_image_info()}
+    fields.update(overrides)
+    return ImageSegment(**fields)
+
+
+def make_table_segment(**overrides: Any) -> TableSegment:
+    fields: dict[str, Any] = {"block_id": "pb1", "table": make_table_info()}
+    fields.update(overrides)
+    return TableSegment(**fields)
 
 
 def make_logical_node(**overrides: Any) -> LogicalNode:
-    """A valid leaf node (Điều 1, no children); override any field."""
+    """A valid root node (Điều 1) covering segment [0, 1); override any field."""
     fields: dict[str, Any] = {
         "id": "dieu-1",
+        "parent_id": None,
         "level": "dieu",
         "number": "1",
-        "marker": make_block_span(),
-        "title": (),
-        "content": (),
+        "marker": "Điều 1.",
+        "title": "Phạm vi điều chỉnh",
+        "head_block_ids": ("pb1",),
+        "start": 0,
+        "end": 1,
     }
     fields.update(overrides)
     return LogicalNode(**fields)
 
 
 def make_logical_document(**overrides: Any) -> LogicalDocument:
-    """A valid document with no nodes; override any field.
+    """A valid empty document (no segments, no nodes); override any field.
 
-    Pass ``nodes`` and ``root_ids`` together, since they must agree.
+    When passing ``segments``, also pass ``body_start`` / ``body_end`` (and
+    ``nodes``) that fit them.
     """
     fields: dict[str, Any] = {
         "id": "ld1",
@@ -182,10 +191,10 @@ def make_logical_document(**overrides: Any) -> LogicalDocument:
         "source_file_hash": "hash1",
         "profile_name": "vn_regulation",
         "profile_version": "1.0.0",
-        "front_matter": (),
-        "root_ids": (),
+        "segments": (),
         "nodes": (),
-        "end_matter": (),
+        "body_start": 0,
+        "body_end": 0,
     }
     fields.update(overrides)
     return LogicalDocument(**fields)

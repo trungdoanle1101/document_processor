@@ -4,29 +4,39 @@ from dataclasses import dataclass, field
 from typing import Mapping
 from types import MappingProxyType
 
-from .ranges import TextRange
+from document_processor.core.models.physical import ImageInfo, TableInfo
+from ._checks import require_visible, require_visible_or_none, require_unique, require_range
+
+type Segment = TextSegment | ImageSegment | TableSegment
 
 
 @dataclass(frozen=True, kw_only=True)
-class BlockSpan:
+class BaseSegment:
     block_id: str
-    # Span always carries explicit range
-    text_range: TextRange
 
     def __post_init__(self) -> None:
-        if not self.block_id.strip():
-            raise ValueError("Empty 'block_id' not allowed")
+        require_visible(type(self).__name__, "block_id", self.block_id)
 
-        
 @dataclass(frozen=True, kw_only=True)
-class ChildRef:
-    node_id: str
+class TextSegment(BaseSegment):
+    text: str
 
     def __post_init__(self) -> None:
-        if not self.node_id.strip():
-            raise ValueError("Empty 'node_id' not allowed")
+        super().__post_init__()
+        owner = f"{type(self).__name__} {self.block_id!r}"
+        require_visible(owner, "text", self.text)
 
-type ContentItem = BlockSpan | ChildRef
+
+@dataclass(frozen=True, kw_only=True)
+class ImageSegment(BaseSegment):
+    image: ImageInfo
+
+
+@dataclass(frozen=True, kw_only=True)
+class TableSegment(BaseSegment):
+    table: TableInfo
+
+
 
 @dataclass(frozen=True, kw_only=True)
 class LogicalNode:
@@ -35,44 +45,59 @@ class LogicalNode:
     E.g., a chapter, article, clause, item
     """
 
-    # Basic information
+    # Stable, unique id
     id: str
 
-    # Interpretation within the provided hierarchy
+    # Enclosing parent node; a root node has None parent_id (meaning the entire document)
+    parent_id: str | None
+
+    # Profile level name
     level: str
-    ## number: number given to logical level
+    
+    # The numbering as written. None for levels without numbers (e.g., bullets)
     number: str | None
 
-    # Blocks
-    marker: BlockSpan | None
-    title: tuple[BlockSpan, ...]
-    content: tuple[ContentItem, ...]
+    # Marker used
+    marker: str | None
 
-    _children_ids: tuple[str, ...] = field(init=False, repr=False, compare=False)
+    # Title of this node
+    title: str | None 
+
+    # block ids where marker/title came from
+    head_block_ids: tuple[str, ...]
+
+    # Covered segments range: [start, end)
+    # Index of starting segment, inclusive
+    start: int
+
+    # Index of ending segment, exclusive
+    end: int
+    
 
     def __post_init__(self) -> None:
-        if not self.id.strip():
-            raise ValueError("Empty LogicalNode id not allowed")
-        if not self.level.strip():
-            raise ValueError(f"LogicalNode: {self.id!r}: empty attribute 'level'")
-        if self.number is not None and not self.number.strip():
-            raise ValueError(f"LogicalNode: {self.id!r}: empty attribute 'number'")
+        owner = type(self).__name__
+        require_visible(owner, "id", self.id)
 
-        # Check children_ids duplicate:
-        seen_ids: dict[str, None] = dict()
-        for item in self.content:
-            if isinstance(item, ChildRef):
-                if item.node_id in seen_ids:
-                    raise ValueError(f"LogicalNode: {self.id!r} contains duplicate children ids: {item.node_id}")
-            
-                seen_ids[item.node_id] = None
+        owner = f"{self.__class__.__name__} {self.id!r}"
+        require_visible(owner, "level", self.level)
 
-        object.__setattr__(self, "_children_ids", tuple(seen_ids))
+        if self.parent_id == self.id:
+            raise ValueError(f"{owner}: 'parent_id' cannot be itself")
 
+        for name in ("parent_id", "number", "marker", "title"):
+            require_visible_or_none(owner, name, getattr(self, name)) 
 
-    @property
-    def children_ids(self) -> tuple[str, ...]:
-        return self._children_ids
+        if any(not b_id.strip() for b_id in self.head_block_ids):
+            raise ValueError(f"{owner}: 'head_block_ids' cannot contain empty ids")
+        
+        if not self.head_block_ids:
+            raise ValueError(f"{owner}: 'head_block_ids' cannot be empty")
+        
+        for b in self.head_block_ids:
+            require_visible(owner, "head_block_ids", b)
+        require_unique(owner, "head_block_ids", self.head_block_ids)
+        
+        require_range(owner, self.start, self.end)
             
 
 
@@ -89,56 +114,131 @@ class LogicalDocument:
     profile_name: str
     profile_version: str
 
-    front_matter: tuple[BlockSpan, ...]
-    root_ids: tuple[str, ...]
+    # Segments of the entire document
+    segments: tuple[Segment, ...]
+    
+    # Nodes listed in pre-order
     nodes: tuple[LogicalNode, ...]
-    end_matter: tuple[BlockSpan, ...]
 
-    _node_by_id_mapping: Mapping[str, LogicalNode] = field(init=False, repr=False, compare=False)
+    # body: segments[body_start:body_end]
+    body_start: int
+    body_end: int
+    
+    # Front matter will be segments[:body_start]
+    # End matter will be segments[body_end:] 
+
+    _node_by_id: Mapping[str, LogicalNode] = field(init=False, repr=False, compare=False)
+    _children_by_id: Mapping[str | None, tuple[str, ...]] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
-        # Check duplicate id's in nodes
-        node_by_id: dict[str, LogicalNode] = dict()
-        for i, n in enumerate(self.nodes):
-            if n.id in node_by_id:
-                raise ValueError(
-                    f"LogicalDocument {self.id!r}: duplicate node id {n.id!r} at position {i}"
-                )
-            node_by_id[n.id] = n
+
+        owner = self.__class__.__name__
+        require_visible(owner, "id", self.id)
+
+        owner = f"{self.__class__.__name__} {self.id!r}"
+        for name in ("physical_document_id", "source_file_hash", "profile_name", "profile_version"):
+            require_visible(owner, name, getattr(self, name))
 
         
-        # Check coverage from root_ids.
-        # Use dict[str, None] as ordered set
-        order: dict[str, None] = dict()
-        for root_id in self.root_ids:
-            stack: list[str] = [root_id]
-            
-            while stack:
-                node_id = stack.pop()
-
-                if node_id not in node_by_id:
-                    raise ValueError(f"LogicalDocument {self.id!r}: no node with id {node_id}")
-                node = node_by_id[node_id]
-
-                if node_id in order:
-                    raise ValueError(f"LogicalDocument {self.id!r}: node id {node_id!r} already visited")
-                
-                order[node_id] = None
-                  
-                for c_id in reversed(node.children_ids):
-                    stack.append(c_id)
+        require_range(
+            owner, self.body_start, self.body_end,
+            lower=0, upper=len(self.segments),
+            start_label="body_start", end_label="body_end"
+        )
         
-        if len(order) != len(node_by_id):
-            unreachable_ids = sorted(set(node_by_id) - set(order))
-            raise ValueError(f"LogicalDocument {self.id!r}: attribute 'nodes' contains unreachable nodes when traversing trees with roots from attribute 'root_ids'. Unreachable ids: {unreachable_ids}")
+        # Check duplicate node ids
+        require_unique(owner, "nodes", (n.id for n in self.nodes))
 
-        if list(order) != [n.id for n in self.nodes]:
-            raise ValueError(f"LogicalDocument {self.id!r}: attribute 'nodes' contains nodes not in pre-order")
+        # Check duplicate id's in nodes and generate mapping
+        self._generate_node_by_id_mapping()
 
-        # Set the mapping as attribute post init
-        object.__setattr__(self, "_node_by_id_mapping", MappingProxyType(node_by_id))
+        # Check outline of the nodes
+        self._check_outline()
+        
+
+        # Populate _children_by_id
+        self._generate_children_by_id_mapping()
+        
     
     def get_node(self, node_id: str) -> LogicalNode:
-        if node_id not in self._node_by_id_mapping:
-            raise KeyError(f"LogicalDocument {self.id!r}: no node with id {node_id}")
-        return self._node_by_id_mapping[node_id]
+        if node_id not in self._node_by_id:
+            raise KeyError(f"{self.__class__.__name__} {self.id!r}: no node with id {node_id}")
+        return self._node_by_id[node_id]
+    
+
+    def get_children(self, node_id: str | None) -> tuple[str, ...]:
+        # None node_id = document "root"
+        if node_id not in self._children_by_id:
+            raise KeyError(f"{self.__class__.__name__} {self.id!r}: no node with id {node_id}")
+        return self._children_by_id[node_id]
+    
+
+    @property
+    def root_ids(self) -> tuple[str, ...]:
+        return self._children_by_id[None]
+    
+    
+    def _check_outline(self) -> None:
+        # stack: keeps track of a node's open ancestors, innermost last
+        # top of a stack is a node's parent
+        stack: list[LogicalNode] = []
+
+        # previous sibling's end segment index, per parent
+        last_end: dict[str | None, int] = {None: self.body_start}
+
+
+        for i, node in enumerate(self.nodes):
+            owner = f"{type(self).__name__} {self.id!r}, node {node.id!r} at pos {i}"
+
+            if (node.parent_id is not None) and (node.parent_id not in self._node_by_id):
+                raise ValueError(f"{owner}: unknown parent {node.parent_id!r}")
+            
+            # Pop until the top of the stack is this node's parent
+            while stack and stack[-1].id != node.parent_id:
+                stack.pop()
+            
+            if node.parent_id is None:
+                # a root node can't have ancestors
+                if stack:
+                    raise AssertionError
+                # parent of a root must be the entire body
+                lo, hi = self.body_start, self.body_end
+            
+            else:
+                if not stack:
+                    raise ValueError(
+                        f"{owner}: parent {node.parent_id!r} is not an open ancestor (nodes not in pre-order) "
+                    )
+                parent = stack[-1]
+                lo, hi = parent.start, parent.end
+
+            require_range(owner, node.start, node.end, upper=len(self.segments))
+
+            if not (lo <= node.start and node.end <= hi):
+                raise ValueError(f"{owner}: invalid range [{node.start}, {node.end}), outside parent's range [{lo}, {hi})")
+        
+            if node.start < last_end[node.parent_id]:
+                raise ValueError(f"{owner}: overlaps or precedes its previous sibling")
+            
+            last_end[node.parent_id] = node.end
+            last_end[node.id] = node.start
+            stack.append(node)
+
+
+    def _generate_node_by_id_mapping(self) -> None:
+        node_by_id: dict[str, LogicalNode] = dict()
+        for n in self.nodes:
+            node_by_id[n.id] = n
+
+        object.__setattr__(self, "_node_by_id", MappingProxyType(node_by_id))
+
+    
+    def _generate_children_by_id_mapping(self) -> None:
+        children: dict[str | None, list[str]] = {None: []}
+        for node in self.nodes:
+            children.setdefault(node.parent_id, []).append(node.id)
+            children[node.id] = []
+
+        object.__setattr__(self, "_children_by_id", MappingProxyType({k: tuple(v) for k, v in children.items()}))
+    
+            

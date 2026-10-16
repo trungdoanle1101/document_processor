@@ -8,6 +8,7 @@ from document_processor.core.identity import HASH_ALGORITHM
 from document_processor.core.text_utils import is_invisible, to_single_line
 
 from .ranges import TextRange
+from ._checks import require_visible
 
 _TABLE_COL_SEP = "\t"
 _TABLE_ROW_SEP = "\n"
@@ -77,8 +78,7 @@ class ListInfo:
     declared_numbering: DeclaredNumbering | None
 
     def __post_init__(self) -> None:
-        if not self.id.strip():
-            raise ValueError("Empty ListInfo id not allowed")
+        require_visible(type(self).__name__, "id", self.id)
         
         if self.nested_level < 0:
             raise ValueError(f"ListInfo {self.id!r}: required: nested_level >= 0") 

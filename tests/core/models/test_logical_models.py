@@ -1,428 +1,464 @@
-"""Tests for the logical model: BlockSpan, LogicalNode, LogicalDocument."""
+"""Validation rules of the logical models: segments, nodes, and the outline.
+
+The running example (see ``outline_document``) is a small decree:
+
+    segments                                   outline
+    0  CHÍNH PHỦ                  front matter
+    1  Nghị định này quy định về: body         chuong-I            [1, 4)
+    2  Kiến trúc tổng thể.                       chuong-I/dieu-1   [1, 4)
+    3  Kiến trúc dữ liệu.                          .../khoan-1     [2, 3)
+    4  Nơi nhận:                  end matter         .../khoan-2   [3, 4)
+
+Chương I and Điều 1 start at the same segment because their markers and titles
+were consumed by the builder; segment 1 is Điều 1's own lead-in.
+"""
 
 import dataclasses
+from typing import Any
 
 import pytest
 
-from document_processor.core.models.logical import BlockSpan, ChildRef, LogicalNode
-from document_processor.core.models.ranges import TextRange
+from document_processor.core.models.logical import (
+    ImageSegment,
+    LogicalDocument,
+    LogicalNode,
+    TableSegment,
+    TextSegment,
+)
 from tests.factories import (
-    make_block_span,
-    make_child_ref,
+    make_image_info,
+    make_image_segment,
     make_logical_document,
     make_logical_node,
+    make_table_info,
+    make_table_segment,
+    make_text_segment,
+)
+
+INVISIBLE = ["", "   ", "\t\n", "​"]
+INVISIBLE_IDS = ["empty", "spaces", "whitespace", "zero-width"]
+
+CHUONG = "chuong-I"
+DIEU = "chuong-I/dieu-1"
+KHOAN_1 = "chuong-I/dieu-1/khoan-1"
+KHOAN_2 = "chuong-I/dieu-1/khoan-2"
+
+
+def text(block_id: str, value: str) -> TextSegment:
+    return make_text_segment(block_id=block_id, text=value)
+
+
+SEGMENTS = (
+    text("pb1", "CHÍNH PHỦ"),
+    text("pb5", "Nghị định này quy định về:"),
+    text("pb6", "Kiến trúc tổng thể."),
+    text("pb7", "Kiến trúc dữ liệu."),
+    text("pb8", "Nơi nhận:"),
 )
 
 
-def node(node_id: str, *children: str) -> LogicalNode:
-    return make_logical_node(id=node_id, content=tuple(make_child_ref(c) for c in children))
+def node(node_id: str, parent_id: str | None, start: int, end: int, **overrides: Any) -> LogicalNode:
+    fields: dict[str, Any] = {
+        "id": node_id,
+        "parent_id": parent_id,
+        "level": "x",
+        "number": None,
+        "marker": None,
+        "title": None,
+        "head_block_ids": (f"head-{node_id}",),
+        "start": start,
+        "end": end,
+    }
+    fields.update(overrides)
+    return make_logical_node(**fields)
 
 
-def tree_nodes() -> tuple[LogicalNode, ...]:
-    """Two roots, in pre-order:
+OUTLINE = (
+    node(CHUONG, None, 1, 4, level="chuong", number="I", marker="Chương I",
+         title="QUY ĐỊNH CHUNG", head_block_ids=("pb2", "pb3")),
+    node(DIEU, CHUONG, 1, 4, level="dieu", number="1", marker="Điều 1.",
+         title="Phạm vi điều chỉnh", head_block_ids=("pb4",)),
+    node(KHOAN_1, DIEU, 2, 3, level="khoan", number="1", marker="1.", head_block_ids=("pb6",)),
+    node(KHOAN_2, DIEU, 3, 4, level="khoan", number="2", marker="2.", head_block_ids=("pb7",)),
+)
 
-        chuong-1
-          dieu-1
-            khoan-1
-            khoan-2
-          dieu-2
-        chuong-2
-    """
-    return (
-        node("chuong-1", "dieu-1", "dieu-2"),
-        node("dieu-1", "khoan-1", "khoan-2"),
-        node("khoan-1"),
-        node("khoan-2"),
-        node("dieu-2"),
-        node("chuong-2"),
+
+def outline_document(nodes: tuple[LogicalNode, ...] = OUTLINE, **overrides: Any) -> LogicalDocument:
+    fields: dict[str, Any] = {
+        "segments": SEGMENTS,
+        "nodes": nodes,
+        "body_start": 1,
+        "body_end": 4,
+    }
+    fields.update(overrides)
+    return make_logical_document(**fields)
+
+
+# ---------- segments
+
+
+def test_text_segment_is_accepted() -> None:
+    segment = make_text_segment(block_id="pb5", text="Nghị định này quy định về:")
+    assert segment.block_id == "pb5"
+    assert segment.text == "Nghị định này quy định về:"
+
+
+def test_image_and_table_segments_carry_their_payload() -> None:
+    image = make_image_info()
+    table = make_table_info()
+    assert make_image_segment(image=image).image == image
+    assert make_table_segment(table=table).table == table
+
+
+@pytest.mark.parametrize("block_id", INVISIBLE, ids=INVISIBLE_IDS)
+@pytest.mark.parametrize(
+    "make",
+    [make_text_segment, make_image_segment, make_table_segment],
+    ids=["text", "image", "table"],
+)
+def test_every_segment_rejects_blank_block_id(make: Any, block_id: str) -> None:
+    with pytest.raises(ValueError, match="block_id"):
+        make(block_id=block_id)
+
+
+@pytest.mark.parametrize(
+    ("make", "name"),
+    [(make_text_segment, "TextSegment"), (make_image_segment, "ImageSegment"), (make_table_segment, "TableSegment")],
+)
+def test_segment_error_names_the_concrete_class(make: Any, name: str) -> None:
+    with pytest.raises(ValueError, match=rf"^{name}\b"):
+        make(block_id="")
+
+
+@pytest.mark.parametrize("value", INVISIBLE, ids=INVISIBLE_IDS)
+def test_text_segment_rejects_invisible_text(value: str) -> None:
+    # A cut heading that leaves nothing produces no segment at all.
+    with pytest.raises(ValueError, match="text"):
+        make_text_segment(text=value)
+
+
+def test_text_segment_keeps_text_as_given() -> None:
+    assert make_text_segment(text="  a  b ").text == "  a  b "
+
+
+def test_segments_are_frozen() -> None:
+    segment = make_text_segment()
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        segment.text = "changed"  # type: ignore[misc]
+
+
+def test_segments_require_keyword_arguments() -> None:
+    with pytest.raises(TypeError):
+        TextSegment("pb1", "text")  # type: ignore[call-arg]
+
+
+def test_segment_factories_build_the_right_kinds() -> None:
+    assert isinstance(make_text_segment(), TextSegment)
+    assert isinstance(make_image_segment(), ImageSegment)
+    assert isinstance(make_table_segment(), TableSegment)
+
+
+# ---------- LogicalNode
+
+
+def test_valid_node_is_accepted() -> None:
+    n = make_logical_node()
+    assert n.id == "dieu-1"
+    assert n.parent_id is None
+    assert (n.start, n.end) == (0, 1)
+
+
+def test_optional_fields_may_be_none() -> None:
+    n = make_logical_node(number=None, marker=None, title=None)
+    assert (n.number, n.marker, n.title) == (None, None, None)
+
+
+def test_empty_range_is_allowed() -> None:
+    # A heading with no content of its own.
+    n = make_logical_node(start=3, end=3)
+    assert n.start == n.end == 3
+
+
+def test_head_may_span_several_blocks() -> None:
+    # "Chương I" with its title on the next block.
+    assert make_logical_node(head_block_ids=("pb2", "pb3")).head_block_ids == ("pb2", "pb3")
+
+
+@pytest.mark.parametrize("node_id", INVISIBLE, ids=INVISIBLE_IDS)
+def test_node_rejects_blank_id(node_id: str) -> None:
+    with pytest.raises(ValueError, match="'id'"):
+        make_logical_node(id=node_id)
+
+
+@pytest.mark.parametrize("field", ["level"])
+@pytest.mark.parametrize("value", INVISIBLE, ids=INVISIBLE_IDS)
+def test_node_rejects_blank_level(field: str, value: str) -> None:
+    with pytest.raises(ValueError, match=f"'{field}'"):
+        make_logical_node(**{field: value})
+
+
+@pytest.mark.parametrize("field", ["parent_id", "number", "marker", "title"])
+@pytest.mark.parametrize("value", INVISIBLE, ids=INVISIBLE_IDS)
+def test_node_rejects_blank_optional_fields(field: str, value: str) -> None:
+    with pytest.raises(ValueError, match=f"'{field}'"):
+        make_logical_node(**{field: value})
+
+
+def test_node_cannot_be_its_own_parent() -> None:
+    with pytest.raises(ValueError, match="parent_id"):
+        make_logical_node(id="dieu-1", parent_id="dieu-1")
+
+
+def test_node_requires_a_head_block() -> None:
+    with pytest.raises(ValueError, match="head_block_ids"):
+        make_logical_node(head_block_ids=())
+
+
+@pytest.mark.parametrize("block_id", INVISIBLE, ids=INVISIBLE_IDS)
+def test_node_rejects_blank_head_block_id(block_id: str) -> None:
+    with pytest.raises(ValueError, match="head_block_ids"):
+        make_logical_node(head_block_ids=("pb1", block_id))
+
+
+def test_node_rejects_duplicate_head_block_ids() -> None:
+    with pytest.raises(ValueError, match="duplicate value 'pb2'"):
+        make_logical_node(head_block_ids=("pb2", "pb3", "pb2"))
+
+
+@pytest.mark.parametrize(("start", "end"), [(-1, 1), (2, 1), (-2, -1)])
+def test_node_rejects_invalid_range(start: int, end: int) -> None:
+    with pytest.raises(ValueError, match=rf"got start={start}, end={end}"):
+        make_logical_node(start=start, end=end)
+
+
+def test_node_error_names_the_node() -> None:
+    with pytest.raises(ValueError, match=r"^LogicalNode 'dieu-7'"):
+        make_logical_node(id="dieu-7", level="")
+
+
+def test_node_is_frozen() -> None:
+    n = make_logical_node()
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        n.start = 5  # type: ignore[misc]
+
+
+# ---------- LogicalDocument: identity and body range
+
+
+def test_empty_document_is_accepted() -> None:
+    doc = make_logical_document()
+    assert doc.segments == ()
+    assert doc.nodes == ()
+    assert doc.root_ids == ()
+
+
+@pytest.mark.parametrize(
+    "field", ["id", "physical_document_id", "source_file_hash", "profile_name", "profile_version"]
+)
+@pytest.mark.parametrize("value", INVISIBLE, ids=INVISIBLE_IDS)
+def test_document_rejects_blank_identity_fields(field: str, value: str) -> None:
+    with pytest.raises(ValueError, match=f"'{field}'"):
+        make_logical_document(**{field: value})
+
+
+def test_document_without_hierarchy_is_accepted() -> None:
+    # Only paragraphs, no headings: segments with an empty outline.
+    doc = make_logical_document(segments=SEGMENTS, body_start=0, body_end=len(SEGMENTS))
+    assert doc.nodes == ()
+    assert doc.root_ids == ()
+    assert doc.get_children(None) == ()
+
+
+@pytest.mark.parametrize(
+    ("body_start", "body_end"),
+    [(0, 0), (0, 5), (1, 4), (5, 5), (2, 2)],
+    ids=["all-front", "all-body", "front-body-end", "all-front-at-end", "empty-body"],
+)
+def test_body_range_inside_the_segments_is_accepted(body_start: int, body_end: int) -> None:
+    doc = make_logical_document(segments=SEGMENTS, body_start=body_start, body_end=body_end)
+    assert (doc.body_start, doc.body_end) == (body_start, body_end)
+
+
+@pytest.mark.parametrize(
+    ("body_start", "body_end"),
+    [(-1, 2), (3, 2), (0, 6), (6, 6)],
+    ids=["negative", "start-after-end", "end-past-segments", "both-past-segments"],
+)
+def test_body_range_outside_the_segments_is_rejected(body_start: int, body_end: int) -> None:
+    with pytest.raises(ValueError, match="body_start"):
+        make_logical_document(segments=SEGMENTS, body_start=body_start, body_end=body_end)
+
+
+def test_document_is_frozen() -> None:
+    doc = outline_document()
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        doc.body_start = 0  # type: ignore[misc]
+
+
+# ---------- LogicalDocument: the outline example
+
+
+def test_outline_example_is_accepted() -> None:
+    doc = outline_document()
+    assert doc.root_ids == (CHUONG,)
+    assert doc.get_children(None) == (CHUONG,)
+    assert doc.get_children(CHUONG) == (DIEU,)
+    assert doc.get_children(DIEU) == (KHOAN_1, KHOAN_2)
+    assert doc.get_children(KHOAN_1) == ()
+
+
+def test_get_node() -> None:
+    doc = outline_document()
+    assert doc.get_node(DIEU).title == "Phạm vi điều chỉnh"
+
+
+def test_get_node_rejects_unknown_id() -> None:
+    with pytest.raises(KeyError, match="dieu-9"):
+        outline_document().get_node("dieu-9")
+
+
+def test_get_children_rejects_unknown_id() -> None:
+    with pytest.raises(KeyError, match="dieu-9"):
+        outline_document().get_children("dieu-9")
+
+
+def test_derived_lookups_are_not_compared_or_shown() -> None:
+    first = outline_document()
+    second = outline_document()
+    assert first == second
+    assert "_node_by_id" not in repr(first)
+    assert "_children_by_id" not in repr(first)
+
+
+def test_derived_lookups_are_read_only() -> None:
+    doc = outline_document()
+    with pytest.raises(TypeError):
+        doc._children_by_id[None] = ()  # type: ignore[index]
+
+
+# ---------- outline: shapes that are allowed
+
+
+def test_several_roots() -> None:
+    nodes = (node("a", None, 1, 2), node("b", None, 2, 4))
+    assert outline_document(nodes).root_ids == ("a", "b")
+
+
+def test_parent_and_first_child_may_share_a_start() -> None:
+    nodes = (node("a", None, 1, 4), node("a/1", "a", 1, 2), node("a/2", "a", 2, 4))
+    assert outline_document(nodes).get_children("a") == ("a/1", "a/2")
+
+
+def test_body_text_outside_any_node_is_allowed() -> None:
+    # Segment 1 (a preamble) and segment 3 belong to the document itself.
+    nodes = (node("a", None, 2, 3),)
+    assert outline_document(nodes).root_ids == ("a",)
+
+
+def test_gaps_between_siblings_are_allowed() -> None:
+    nodes = (node("a", None, 1, 4), node("a/1", "a", 1, 2), node("a/2", "a", 3, 4))
+    assert outline_document(nodes).get_children("a") == ("a/1", "a/2")
+
+
+def test_empty_nodes_at_the_same_position() -> None:
+    # Two headings with nothing between them.
+    nodes = (node("a", None, 2, 2), node("b", None, 2, 2), node("c", None, 2, 4))
+    assert outline_document(nodes).root_ids == ("a", "b", "c")
+
+
+def test_empty_child_at_its_parents_end() -> None:
+    nodes = (node("a", None, 1, 3), node("a/1", "a", 3, 3))
+    assert outline_document(nodes).get_children("a") == ("a/1",)
+
+
+def test_deep_nesting_and_return_to_a_shallower_level() -> None:
+    nodes = (
+        node("a", None, 1, 4),
+        node("a/1", "a", 1, 3),
+        node("a/1/x", "a/1", 1, 2),
+        node("a/1/x/i", "a/1/x", 1, 2),
+        node("a/2", "a", 3, 4),          # back up two levels
     )
+    doc = outline_document(nodes)
+    assert doc.get_children("a") == ("a/1", "a/2")
+    assert doc.get_children("a/1/x") == ("a/1/x/i",)
 
 
-ROOTS = ("chuong-1", "chuong-2")
+def test_root_after_a_deep_branch() -> None:
+    nodes = (node("a", None, 1, 3), node("a/1", "a", 1, 3), node("a/1/x", "a/1", 2, 3), node("b", None, 3, 4))
+    assert outline_document(nodes).root_ids == ("a", "b")
 
 
-# --------------------------------------------------------------------------- #
-# BlockSpan
-# --------------------------------------------------------------------------- #
+# ---------- outline: shapes that are rejected
 
 
-class TestBlockSpan:
-    def test_valid(self) -> None:
-        span = make_block_span(block_id="pb3")
-        assert span.block_id == "pb3"
+def test_duplicate_node_ids_rejected() -> None:
+    nodes = (node("a", None, 1, 2), node("a", None, 2, 4))
+    with pytest.raises(ValueError, match="duplicate value 'a'"):
+        outline_document(nodes)
 
-    @pytest.mark.parametrize("block_id", ["", " ", "\t"])
-    def test_empty_block_id_rejected(self, block_id: str) -> None:
-        with pytest.raises(ValueError, match="block_id"):
-            make_block_span(block_id=block_id)
 
-    def test_frozen(self) -> None:
-        span = make_block_span()
-        with pytest.raises(dataclasses.FrozenInstanceError):
-            span.block_id = "pb2"  # type: ignore[misc]
+def test_unknown_parent_rejected() -> None:
+    nodes = (node("a", None, 1, 4), node("a/1", "missing", 1, 2))
+    with pytest.raises(ValueError, match="unknown parent 'missing'"):
+        outline_document(nodes)
 
-    def test_keyword_only(self) -> None:
-        from document_processor.core.models.logical import BlockSpan
-        from document_processor.core.models.ranges import TextRange
 
-        with pytest.raises(TypeError):
-            BlockSpan("pb1", TextRange(0, 1))  # type: ignore[call-arg]
+def test_child_listed_before_its_parent_rejected() -> None:
+    nodes = (OUTLINE[0], OUTLINE[2], OUTLINE[1], OUTLINE[3])
+    with pytest.raises(ValueError, match="not an open ancestor"):
+        outline_document(nodes)
 
 
-# --------------------------------------------------------------------------- #
-# LogicalNode
-# --------------------------------------------------------------------------- #
+def test_child_listed_after_its_parents_branch_closed_rejected() -> None:
+    # a/2 belongs to a, but b (a root) came in between: not pre-order.
+    nodes = (node("a", None, 1, 2), node("b", None, 2, 3), node("a/2", "a", 1, 2))
+    with pytest.raises(ValueError, match="not an open ancestor"):
+        outline_document(nodes)
 
 
-class TestLogicalNode:
-    def test_valid(self) -> None:
-        n = make_logical_node()
-        assert n.id == "dieu-1"
+def test_child_outside_its_parent_rejected() -> None:
+    nodes = (node("a", None, 1, 3), node("a/1", "a", 2, 4))
+    with pytest.raises(ValueError, match="outside parent's range"):
+        outline_document(nodes)
 
-    @pytest.mark.parametrize("node_id", ["", "  "])
-    def test_empty_id_rejected(self, node_id: str) -> None:
-        with pytest.raises(ValueError, match="Empty LogicalNode id"):
-            make_logical_node(id=node_id)
 
-    @pytest.mark.parametrize("level", ["", "  "])
-    def test_empty_level_rejected(self, level: str) -> None:
-        with pytest.raises(ValueError, match="'dieu-1'.*'level'"):
-            make_logical_node(level=level)
+def test_child_starting_before_its_parent_rejected() -> None:
+    nodes = (node("a", None, 2, 4), node("a/1", "a", 1, 3))
+    with pytest.raises(ValueError, match="outside parent's range"):
+        outline_document(nodes)
 
-    def test_number_none_allowed(self) -> None:
-        assert make_logical_node(number=None).number is None
 
-    @pytest.mark.parametrize("number", ["1", "a", "đ", "IV", "1a"])
-    def test_number_kept_as_written(self, number: str) -> None:
-        assert make_logical_node(number=number).number == number
+@pytest.mark.parametrize(("start", "end"), [(0, 2), (3, 5), (0, 5)], ids=["front", "end", "both"])
+def test_root_outside_the_body_rejected(start: int, end: int) -> None:
+    with pytest.raises(ValueError, match="outside parent's range"):
+        outline_document((node("a", None, start, end),))
 
-    @pytest.mark.parametrize("number", ["", " "])
-    def test_empty_number_rejected(self, number: str) -> None:
-        with pytest.raises(ValueError, match="'dieu-1'.*'number'"):
-            make_logical_node(number=number)
 
-    def test_marker_none_allowed(self) -> None:
-        # An auto-numbered khoản has no marker text in the block.
-        assert make_logical_node(marker=None).marker is None
+def test_node_beyond_the_segments_rejected() -> None:
+    with pytest.raises(ValueError, match="end <= 5"):
+        outline_document((node("a", None, 1, 9),), body_end=5)
 
-    def test_node_without_marker_title_or_content_allowed(self) -> None:
-        n = make_logical_node(marker=None, title=(), content=())
-        assert n.content == ()
-        assert n.children_ids == ()
 
-    def test_duplicate_children_rejected(self) -> None:
-        with pytest.raises(ValueError, match="'dieu-1'.*duplicate children ids: khoan-1"):
-            make_logical_node(
-                content=(
-                    make_child_ref("khoan-1"),
-                    make_block_span(),
-                    make_child_ref("khoan-2"),
-                    make_child_ref("khoan-1"),
-                )
-            )
+def test_overlapping_siblings_rejected() -> None:
+    nodes = (node("a", None, 1, 4), node("a/1", "a", 1, 3), node("a/2", "a", 2, 4))
+    with pytest.raises(ValueError, match="overlaps or precedes"):
+        outline_document(nodes)
 
-    def test_frozen(self) -> None:
-        n = make_logical_node()
-        with pytest.raises(dataclasses.FrozenInstanceError):
-            n.id = "x"  # type: ignore[misc]
 
+def test_siblings_out_of_order_rejected() -> None:
+    nodes = (node("a", None, 1, 4), node("a/2", "a", 3, 4), node("a/1", "a", 1, 2))
+    with pytest.raises(ValueError, match="overlaps or precedes"):
+        outline_document(nodes)
 
-# --------------------------------------------------------------------------- #
-# ChildRef
-# --------------------------------------------------------------------------- #
 
+def test_overlapping_roots_rejected() -> None:
+    nodes = (node("a", None, 1, 3), node("b", None, 2, 4))
+    with pytest.raises(ValueError, match="overlaps or precedes"):
+        outline_document(nodes)
 
-class TestChildRef:
-    def test_valid(self) -> None:
-        assert ChildRef(node_id="dieu-1").node_id == "dieu-1"
 
-    @pytest.mark.parametrize("node_id", ["", " ", "\t"])
-    def test_blank_node_id_rejected(self, node_id: str) -> None:
-        with pytest.raises(ValueError, match="node_id"):
-            ChildRef(node_id=node_id)
-
-    def test_keyword_only(self) -> None:
-        with pytest.raises(TypeError):
-            ChildRef("dieu-1")  # type: ignore[call-arg]
-
-    def test_frozen(self) -> None:
-        ref = ChildRef(node_id="dieu-1")
-        with pytest.raises(dataclasses.FrozenInstanceError):
-            ref.node_id = "x"  # type: ignore[misc]
-
-    def test_equality_by_value(self) -> None:
-        assert ChildRef(node_id="a") == ChildRef(node_id="a")
-        assert ChildRef(node_id="a") != ChildRef(node_id="b")
-
-
-# --------------------------------------------------------------------------- #
-# LogicalNode content
-# --------------------------------------------------------------------------- #
-
-
-def text(block_id: str) -> BlockSpan:
-    return make_block_span(block_id=block_id, text_range=TextRange(0, 5))
-
-
-class TestLogicalNodeContent:
-    def test_only_text(self) -> None:
-        n = make_logical_node(content=(text("pb1"), text("pb2")))
-        assert n.children_ids == ()
-
-    def test_only_children(self) -> None:
-        n = make_logical_node(content=(make_child_ref("a"), make_child_ref("b")))
-        assert n.children_ids == ("a", "b")
-
-    def test_interleaved_content_kept_in_order(self) -> None:
-        # lead-in, list, text between, second list, closing remark
-        content = (
-            text("pb1"),
-            make_child_ref("item-1"),
-            make_child_ref("item-2"),
-            text("pb4"),
-            text("pb5"),
-            make_child_ref("item-3"),
-            text("pb7"),
-        )
-        n = make_logical_node(content=content)
-        assert n.content == content
-        assert n.children_ids == ("item-1", "item-2", "item-3")
-
-    def test_children_ids_is_a_tuple(self) -> None:
-        n = make_logical_node(content=(make_child_ref("a"),))
-        assert isinstance(n.children_ids, tuple)
-
-    def test_children_ids_not_a_constructor_argument(self) -> None:
-        with pytest.raises(TypeError):
-            make_logical_node(_children_ids=("a",))
-
-    def test_children_ids_not_in_repr(self) -> None:
-        assert "_children_ids" not in repr(make_logical_node(content=(make_child_ref("a"),)))
-
-    def test_same_block_may_appear_twice_in_content(self) -> None:
-        # Two spans of one block (split by the builder) are allowed; only children must be unique.
-        a = make_block_span(block_id="pb1", text_range=TextRange(0, 3))
-        b = make_block_span(block_id="pb1", text_range=TextRange(4, 9))
-        n = make_logical_node(content=(a, b))
-        assert n.content == (a, b)
-
-    def test_equal_nodes_compare_equal(self) -> None:
-        content = (text("pb1"), make_child_ref("a"))
-        assert make_logical_node(content=content) == make_logical_node(content=content)
-
-    def test_content_order_matters_for_equality(self) -> None:
-        a = make_logical_node(content=(text("pb1"), make_child_ref("a")))
-        b = make_logical_node(content=(make_child_ref("a"), text("pb1")))
-        assert a != b
-
-
-# --------------------------------------------------------------------------- #
-# LogicalDocument: valid documents
-# --------------------------------------------------------------------------- #
-
-
-class TestLogicalDocumentValid:
-    def test_no_nodes(self) -> None:
-        doc = make_logical_document()
-        assert doc.nodes == ()
-        assert doc.root_ids == ()
-
-    def test_no_nodes_with_front_matter(self) -> None:
-        # A document with no recognized headings keeps everything in front matter.
-        doc = make_logical_document(front_matter=(make_block_span(),))
-        assert len(doc.front_matter) == 1
-
-    def test_single_root(self) -> None:
-        doc = make_logical_document(root_ids=("dieu-1",), nodes=(node("dieu-1"),))
-        assert doc.get_node("dieu-1").id == "dieu-1"
-
-    def test_tree_with_several_roots(self) -> None:
-        doc = make_logical_document(root_ids=ROOTS, nodes=tree_nodes())
-        assert [n.id for n in doc.nodes] == [
-            "chuong-1",
-            "dieu-1",
-            "khoan-1",
-            "khoan-2",
-            "dieu-2",
-            "chuong-2",
-        ]
-
-    def test_flat_roots(self) -> None:
-        nodes = (node("dieu-1"), node("dieu-2"), node("dieu-3"))
-        doc = make_logical_document(root_ids=("dieu-1", "dieu-2", "dieu-3"), nodes=nodes)
-        assert len(doc.nodes) == 3
-
-
-# --------------------------------------------------------------------------- #
-# LogicalDocument: invalid documents
-# --------------------------------------------------------------------------- #
-
-
-class TestLogicalDocumentInvalid:
-    def test_duplicate_node_id(self) -> None:
-        nodes = (node("dieu-1"), node("dieu-1"))
-        with pytest.raises(ValueError, match="duplicate node id 'dieu-1' at position 1"):
-            make_logical_document(root_ids=("dieu-1",), nodes=nodes)
-
-    def test_dangling_root_id(self) -> None:
-        with pytest.raises(ValueError, match="no node with id dieu-9"):
-            make_logical_document(root_ids=("dieu-1", "dieu-9"), nodes=(node("dieu-1"),))
-
-    def test_dangling_child_id(self) -> None:
-        nodes = (node("dieu-1", "khoan-1", "khoan-9"), node("khoan-1"))
-        with pytest.raises(ValueError, match="no node with id khoan-9"):
-            make_logical_document(root_ids=("dieu-1",), nodes=nodes)
-
-    def test_root_ids_given_but_no_nodes(self) -> None:
-        with pytest.raises(ValueError, match="no node with id dieu-1"):
-            make_logical_document(root_ids=("dieu-1",))
-
-    def test_duplicate_root_id(self) -> None:
-        with pytest.raises(ValueError, match="'dieu-1' already visited"):
-            make_logical_document(root_ids=("dieu-1", "dieu-1"), nodes=(node("dieu-1"),))
-
-    def test_node_with_two_parents(self) -> None:
-        nodes = (
-            node("dieu-1", "khoan-1"),
-            node("khoan-1"),
-            node("dieu-2", "khoan-1"),
-        )
-        with pytest.raises(ValueError, match="'khoan-1' already visited"):
-            make_logical_document(root_ids=("dieu-1", "dieu-2"), nodes=nodes)
-
-    def test_root_that_is_also_a_child(self) -> None:
-        nodes = (node("dieu-1", "khoan-1"), node("khoan-1"))
-        with pytest.raises(ValueError, match="'khoan-1' already visited"):
-            make_logical_document(root_ids=("dieu-1", "khoan-1"), nodes=nodes)
-
-    def test_node_is_its_own_child(self) -> None:
-        with pytest.raises(ValueError, match="'dieu-1' already visited"):
-            make_logical_document(root_ids=("dieu-1",), nodes=(node("dieu-1", "dieu-1"),))
-
-    def test_cycle_reachable_from_root(self) -> None:
-        nodes = (node("dieu-1", "khoan-1"), node("khoan-1", "dieu-1"))
-        with pytest.raises(ValueError, match="'dieu-1' already visited"):
-            make_logical_document(root_ids=("dieu-1",), nodes=nodes)
-
-    def test_cycle_not_reachable_from_root(self) -> None:
-        nodes = (node("dieu-1"), node("a", "b"), node("b", "a"))
-        with pytest.raises(ValueError, match="unreachable") as exc:
-            make_logical_document(root_ids=("dieu-1",), nodes=nodes)
-        assert "'a'" in str(exc.value)
-        assert "'b'" in str(exc.value)
-
-    def test_orphan_node(self) -> None:
-        nodes = (node("dieu-1"), node("khoan-7"))
-        with pytest.raises(ValueError, match="unreachable.*'khoan-7'"):
-            make_logical_document(root_ids=("dieu-1",), nodes=nodes)
-
-    def test_nodes_without_any_root(self) -> None:
-        with pytest.raises(ValueError, match="unreachable"):
-            make_logical_document(nodes=(node("dieu-1"),))
-
-    def test_siblings_out_of_order(self) -> None:
-        nodes = (node("dieu-1", "khoan-1", "khoan-2"), node("khoan-2"), node("khoan-1"))
-        with pytest.raises(ValueError, match="not in pre-order"):
-            make_logical_document(root_ids=("dieu-1",), nodes=nodes)
-
-    def test_roots_out_of_order(self) -> None:
-        nodes = (node("dieu-2"), node("dieu-1"))
-        with pytest.raises(ValueError, match="not in pre-order"):
-            make_logical_document(root_ids=("dieu-1", "dieu-2"), nodes=nodes)
-
-    def test_post_order_rejected(self) -> None:
-        nodes = (node("khoan-1"), node("khoan-2"), node("dieu-1", "khoan-1", "khoan-2"))
-        with pytest.raises(ValueError, match="not in pre-order"):
-            make_logical_document(root_ids=("dieu-1",), nodes=nodes)
-
-    def test_breadth_first_order_rejected(self) -> None:
-        # Level by level: both articles before any clause.
-        nodes = (
-            node("chuong-1", "dieu-1", "dieu-2"),
-            node("dieu-1", "khoan-1"),
-            node("dieu-2"),
-            node("khoan-1"),
-        )
-        with pytest.raises(ValueError, match="not in pre-order"):
-            make_logical_document(root_ids=("chuong-1",), nodes=nodes)
-
-
-# --------------------------------------------------------------------------- #
-# LogicalDocument: lookup
-# --------------------------------------------------------------------------- #
-
-
-class TestLogicalDocumentLookup:
-    def test_get_node_returns_the_same_object(self) -> None:
-        nodes = tree_nodes()
-        doc = make_logical_document(root_ids=ROOTS, nodes=nodes)
-        for n in nodes:
-            assert doc.get_node(n.id) is n
-
-    def test_get_node_missing_raises_key_error(self) -> None:
-        doc = make_logical_document(root_ids=ROOTS, nodes=tree_nodes())
-        with pytest.raises(KeyError, match="no node with id dieu-9"):
-            doc.get_node("dieu-9")
-
-    def test_get_node_on_empty_document(self) -> None:
-        with pytest.raises(KeyError):
-            make_logical_document().get_node("dieu-1")
-
-    def test_mapping_is_read_only(self) -> None:
-        doc = make_logical_document(root_ids=("dieu-1",), nodes=(node("dieu-1"),))
-        with pytest.raises(TypeError):
-            doc._node_by_id_mapping["x"] = node("x")  # type: ignore[index]
-
-    def test_mapping_not_a_constructor_argument(self) -> None:
-        with pytest.raises(TypeError):
-            make_logical_document(_node_by_id_mapping={})
-
-    def test_mapping_not_in_repr(self) -> None:
-        doc = make_logical_document(root_ids=("dieu-1",), nodes=(node("dieu-1"),))
-        assert "_node_by_id_mapping" not in repr(doc)
-
-    def test_equal_documents_compare_equal(self) -> None:
-        a = make_logical_document(root_ids=ROOTS, nodes=tree_nodes())
-        b = make_logical_document(root_ids=ROOTS, nodes=tree_nodes())
-        assert a == b
-
-    def test_frozen(self) -> None:
-        doc = make_logical_document()
-        with pytest.raises(dataclasses.FrozenInstanceError):
-            doc.id = "x"  # type: ignore[misc]
-
-
-class TestLogicalDocumentWithInterleavedContent:
-    def test_pre_order_follows_content_order(self) -> None:
-        nodes = (
-            make_logical_node(
-                id="dieu-1",
-                content=(
-                    text("pb1"),
-                    make_child_ref("khoan-1"),
-                    text("pb3"),
-                    make_child_ref("khoan-2"),
-                ),
-            ),
-            node("khoan-1"),
-            node("khoan-2"),
-        )
-        doc = make_logical_document(root_ids=("dieu-1",), nodes=nodes)
-        assert [n.id for n in doc.nodes] == ["dieu-1", "khoan-1", "khoan-2"]
-
-    def test_wrong_order_against_content_rejected(self) -> None:
-        nodes = (
-            make_logical_node(
-                id="dieu-1",
-                content=(make_child_ref("khoan-1"), text("pb2"), make_child_ref("khoan-2")),
-            ),
-            node("khoan-2"),
-            node("khoan-1"),
-        )
-        with pytest.raises(ValueError, match="not in pre-order"):
-            make_logical_document(root_ids=("dieu-1",), nodes=nodes)
-
-    def test_dangling_child_ref_rejected(self) -> None:
-        nodes = (make_logical_node(id="dieu-1", content=(text("pb1"), make_child_ref("khoan-9"))),)
-        with pytest.raises(ValueError, match="no node with id khoan-9"):
-            make_logical_document(root_ids=("dieu-1",), nodes=nodes)
+def test_outline_error_names_document_node_and_position() -> None:
+    nodes = (node("a", None, 1, 4), node("a/1", "a", 1, 3), node("a/2", "a", 2, 4))
+    with pytest.raises(ValueError, match=r"^LogicalDocument 'ld1', node 'a/2' at pos 2"):
+        outline_document(nodes)
