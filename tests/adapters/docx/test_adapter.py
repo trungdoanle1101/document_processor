@@ -796,3 +796,21 @@ def test_ids_stay_consecutive_around_tables_and_images() -> None:
         BlockType.TABLE,
         BlockType.PARAGRAPH,
     ]
+
+
+# ---------- symbol-font bullets
+
+
+def test_wingdings_check_mark_bullet_reaches_the_block() -> None:
+    # As in the real document: abstractNum 22, lvlText U+F0FC in Wingdings.
+    wingdings = (
+        '<w:abstractNum w:abstractNumId="22"><w:lvl w:ilvl="0"><w:start w:val="1"/>'
+        '<w:numFmt w:val="bullet"/><w:lvlText w:val="\uf0fc"/><w:lvlJc w:val="start"/>'
+        '<w:rPr><w:rFonts w:ascii="Wingdings" w:hAnsi="Wingdings" w:cs="Wingdings" w:hint="default"/></w:rPr>'
+        '</w:lvl></w:abstractNum><w:num w:numId="22"><w:abstractNumId w:val="22"/></w:num>'
+    )
+    doc = parse(p("Đã hoàn thành", num_id=22), numbering=wingdings)
+    info = doc.blocks[0].list_info
+    assert info is not None
+    assert info.displayed_marker == "✓"
+    assert info.is_ordered is False

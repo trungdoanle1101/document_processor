@@ -7,6 +7,7 @@ from document_processor.core.models.physical import ListInfo, DeclaredNumbering
 
 from ._xml import xpath_element_or_none, xpath_int_or_none, xpath_str_or_none
 from .number_formats import format_number
+from .symbol_fonts import map_symbol_text
 
 NUM_ID_VAL_XPATH = "./w:pPr/w:numPr/w:numId/@w:val"
 ILVL_VAL_XPATH = "./w:pPr/w:numPr/w:ilvl/@w:val"
@@ -20,6 +21,8 @@ LEVEL_XPATH_TEMPLATE = (
 NUM_FMT_VAL_XPATH = "./w:numFmt/@w:val"
 LVL_TEXT_VAL_XPATH = "./w:lvlText/@w:val"
 START_VAL_XPATH = "./w:start/@w:val"
+RFONTS_ASCII_XPATH = "./w:rPr/w:rFonts/@w:ascii"
+RFONTS_HANSI_XPATH = "./w:rPr/w:rFonts/@w:hAnsi"
 
 
 LVL_OVERRIDE_XPATH_TEMPLATE = (
@@ -70,6 +73,14 @@ def read_start(level: _Element) -> int | None:
     return xpath_int_or_none(level, START_VAL_XPATH)
 
 
+def read_rfonts_ascii(level: _Element) -> str | None:
+    return xpath_str_or_none(level, RFONTS_ASCII_XPATH)
+
+
+def read_rfonts_hansi(level: _Element) -> str | None:
+    return xpath_str_or_none(level, RFONTS_HANSI_XPATH)
+
+
 def find_level_override(
     numbering_root: _Element, num_id: int, ilvl: int
 ) -> _Element | None:
@@ -93,6 +104,7 @@ class LevelDefinition:
     num_fmt: str
     lvl_text: str | None
     start: int
+    font: str | None = None
 
     @property
     def is_ordered(self) -> bool:
@@ -106,6 +118,7 @@ def build_level_definition(level: _Element) -> LevelDefinition:
     num_fmt = read_num_fmt(level)
     lvl_text = read_lvl_text(level)
     start = read_start(level)
+    rfonts_ascii = read_rfonts_ascii(level)
 
     # ECMA-376: missing numFmt means decimal
     num_fmt = num_fmt if num_fmt is not None else "decimal"
@@ -113,7 +126,9 @@ def build_level_definition(level: _Element) -> LevelDefinition:
     # ECMA-376: missing start means 0
     start = start if start is not None else 0
 
-    return LevelDefinition(num_fmt=num_fmt, lvl_text=lvl_text, start=start)
+    font = rfonts_ascii if rfonts_ascii is not None else read_rfonts_hansi(level)
+
+    return LevelDefinition(num_fmt=num_fmt, lvl_text=lvl_text, start=start, font=font)
 
 
 def _build_original_level_definition(
@@ -176,9 +191,7 @@ def resolve_marker(
         return None
 
     if level_def.num_fmt == "bullet":
-        # TODO: Symbol-font bullets come through as Private Use Area characters.
-        # Need to map them via w:lvl/w:rPr/w:rFonts
-        return level_def.lvl_text
+        return map_symbol_text(level_def.lvl_text, level_def.font)
 
     def _fill(match: re.Match[str]) -> str:
         ilvl = int(match.group(1)) - 1
@@ -245,7 +258,7 @@ class Numberer:
             level_def=level_def, counts=counts, formats=formats, starts=starts
         )
 
-        # Recorded even when no marker is displayed (lvl_text None / numFmt "none");
+        # num_fmt recorded as 'decimal' even when no marker is displayed (lvl_text None / numFmt "none");
         # it reflects the source declaration, not the rendered marker.
         declared_numbering = DeclaredNumbering(
             num_fmt=level_def.num_fmt,
