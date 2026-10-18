@@ -19,7 +19,7 @@ from document_processor.core.numerals import (
 from document_processor.core.text_utils import is_blank_char
 from .registry import Registry
 
-_NAME_PATTERN = re.compile(r"[a-z][a-z0-9_]*")
+NAME_PATTERN = re.compile(r"[a-z][a-z0-9_]*")
 
 @dataclass(frozen=True, kw_only=True)
 class CounterStyle:
@@ -36,7 +36,7 @@ class CounterStyle:
 
     def __post_init__(self) -> None:
         # Check 'name' is a valid slot name
-        if not _NAME_PATTERN.fullmatch(self.name):
+        if not NAME_PATTERN.fullmatch(self.name):
             raise ValueError(f"invalid value for attribute 'name': got {self.name!r}. Must fully match '[a-z][a-z0-9_]*'")
 
 
