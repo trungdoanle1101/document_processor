@@ -18,8 +18,8 @@ from document_processor.core.numerals import (
 )
 from document_processor.core.text_utils import is_blank_char
 from .registry import Registry
+from .markers import NAME_PATTERN
 
-NAME_PATTERN = re.compile(r"[a-z][a-z0-9_]*")
 
 @dataclass(frozen=True, kw_only=True)
 class CounterStyle:
