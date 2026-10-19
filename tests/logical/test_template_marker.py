@@ -1,4 +1,4 @@
-"""Tests for logical/marker_template.py: parse_template.
+"""Tests for logical/template_marker.py: _parse_template (private; imported as parse_template).
 
 parse_template checks the SHAPE of one marker template and splits it into parts:
 
@@ -12,7 +12,9 @@ compile_template. Error tests match keywords, not whole messages.
 
 import pytest
 
-from document_processor.logical.marker_template import Slot, TemplatePart, parse_template
+from document_processor.logical.template_marker import _parse_template as parse_template
+from document_processor.logical.template_marker import _Slot as Slot
+from document_processor.logical.template_marker import _TemplatePart as TemplatePart
 
 
 def slot(*styles: str) -> Slot:
