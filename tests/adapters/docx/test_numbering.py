@@ -440,6 +440,7 @@ def test_resolve_marker_bullet_returns_its_character() -> None:
         ("\uf0b7", "Symbol", "•"),
         ("\uf0a7", "Wingdings", "▪"),
         ("\uf0d8", "Wingdings", "➢"),
+        ("o", "Courier New", "◦"),  # Word's default level-2 bullet
     ],
 )
 def test_resolve_marker_maps_symbol_font_bullets(lvl_text: str, font: str, expected: str) -> None:
@@ -453,6 +454,7 @@ def test_resolve_marker_keeps_unknown_symbol_bullet_raw() -> None:
 
 def test_resolve_marker_keeps_bullet_without_font_raw() -> None:
     assert resolve_marker(definition("bullet", "\uf0fc"), {0: 1}, {}, {}) == "\uf0fc"
+    assert resolve_marker(definition("bullet", "o"), {0: 1}, {}, {}) == "o"
 
 
 def test_resolve_marker_does_not_map_numbered_levels() -> None:
@@ -723,3 +725,21 @@ def test_mapped_bullet_is_still_unordered_and_declared_as_bullet() -> None:
     assert info.declared_numbering is not None
     assert info.declared_numbering.num_fmt == "bullet"
     assert info.declared_numbering.segment_formats == ()
+
+
+# ---------- Numberer: Word's default bullet list
+
+# Word's default bullets for levels 1-3: Symbol 0xB7, Courier New "o", Wingdings 0xA7.
+WORD_DEFAULT_BULLETS = numbering(
+    abstract_num(
+        30,
+        lvl(0, "bullet", "\uf0b7", font="Symbol"),
+        lvl(1, "bullet", "o", font="Courier New"),
+        lvl(2, "bullet", "\uf0a7", font="Wingdings"),
+    )
+    + num(30, 30)
+)
+
+
+def test_numberer_maps_word_default_bullets() -> None:
+    assert markers(Numberer(WORD_DEFAULT_BULLETS), [(30, 0), (30, 1), (30, 2)]) == ["•", "◦", "▪"]

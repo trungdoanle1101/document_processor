@@ -5,6 +5,7 @@ _SYMBOL_FONTS: dict[str, dict[int, str]] = {
     "symbol":    {0xB7: "•"},
     "wingdings": {0xA7: "▪", 0x76: "❖", 0xD8: "➢", 0xFC: "✓",
                   0xFB: "✗", 0xFE: "☑", 0xFD: "☒", 0x6C: "●", 0x6E: "■", 0x71: "❑"},
+    "courier new": {0x6F: "◦"}
 }
 
 

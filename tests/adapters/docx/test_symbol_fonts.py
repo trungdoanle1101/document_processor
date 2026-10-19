@@ -3,6 +3,9 @@
 Word stores a Symbol or Wingdings bullet as the font's own byte, usually in the
 private-use form U+F0xx (U+F0FC is Wingdings 0xFC). Older files may store the
 plain byte (U+00FC, "ü"). Both forms map to the same Unicode character.
+
+Courier New is not a symbol font, but Word's default level-2 bullet is the
+letter "o" in Courier New, drawn as a white bullet; it maps to "◦".
 """
 
 import pytest
@@ -94,9 +97,10 @@ def test_unknown_code_in_a_known_font_is_unchanged() -> None:
 
 
 def test_ordinary_characters_are_unchanged() -> None:
-    # Bullets like "-" or "o" are not in the Wingdings table.
+    # "-" and "o" are not in the Wingdings or Symbol tables.
     assert map_symbol_text("-", "Wingdings") == "-"
     assert map_symbol_text("o", "Symbol") == "o"
+    assert map_symbol_text("o", "Wingdings") == "o"
 
 
 def test_private_use_outside_the_f0xx_block_is_unchanged() -> None:
@@ -112,3 +116,25 @@ def test_every_character_is_mapped() -> None:
 
 def test_empty_text() -> None:
     assert map_symbol_text("", "Wingdings") == ""
+
+
+# ---------- Courier New: Word's default level-2 bullet
+
+
+def test_courier_new_o_is_a_white_bullet() -> None:
+    assert map_symbol_text("o", "Courier New") == "◦"
+
+
+@pytest.mark.parametrize("font", ["Courier New", "courier new", "COURIER NEW"])
+def test_courier_new_font_name_ignores_case(font: str) -> None:
+    assert map_symbol_text("o", font) == "◦"
+
+
+@pytest.mark.parametrize("font", ["Arial", "Times New Roman", "Courier", "CourierNew"])
+def test_o_in_other_fonts_is_unchanged(font: str) -> None:
+    assert map_symbol_text("o", font) == "o"
+
+
+@pytest.mark.parametrize("text", ["-", "O", "·", "•"])
+def test_courier_new_only_maps_lowercase_o(text: str) -> None:
+    assert map_symbol_text(text, "Courier New") == text
