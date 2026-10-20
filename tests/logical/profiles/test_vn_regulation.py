@@ -39,7 +39,8 @@ def levels_reading_list_marker(displayed: str) -> list[str]:
 
 def template_reading(level: str, text: str) -> TemplateMatch:
     readings = VN_REGULATION.get_marker(level).match_text(text)
-    assert isinstance(readings, list) and len(readings) == 1, readings
+    assert len(readings) == 1, readings
+    assert isinstance(readings[0], TemplateMatch)
     return readings[0]
 
 
@@ -226,8 +227,8 @@ def test_diem_reports_which_template_matched() -> None:
 
 
 def test_glyph_levels_report_their_style() -> None:
-    gach = VN_REGULATION.get_marker("gach").match_text("– X")
-    cong = VN_REGULATION.get_marker("cong").match_text("+ X")
+    [gach] = VN_REGULATION.get_marker("gach").match_text("– X")
+    [cong] = VN_REGULATION.get_marker("cong").match_text("+ X")
     assert isinstance(gach, GlyphMatch) and gach.style == "dash"
     assert isinstance(cong, GlyphMatch) and cong.style == "plus"
 

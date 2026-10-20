@@ -33,23 +33,23 @@ class GlyphMarker:
         end = 2 if len(s) > 1 and s[1] in _VARIATION_SELECTORS else 1
         return style, s[0], end
 
-    def match_text(self, text: str) -> GlyphMatch | None:
+    def match_text(self, text: str) -> list[GlyphMatch]:
         read = self._read_glyph(text)
         if read is None:
-            return None
+            return []
         style, glyph, end = read
         if end >= len(text) or not text[end].isspace():
-            return None
-        return GlyphMatch(source="text", style=style.name, glyph=glyph, end=end)
+            return []
+        return [GlyphMatch(source="text", style=style.name, glyph=glyph, end=end)]
 
-    def match_list_marker(self, displayed_marker: str) -> GlyphMatch | None:
+    def match_list_marker(self, displayed_marker: str) -> list[GlyphMatch]:
         read = self._read_glyph(displayed_marker)
         if read is None:
-            return None
+            return []
         style, glyph, end = read
         if end != len(displayed_marker):
-            return None
-        return GlyphMatch(source="list_marker", style=style.name, glyph=glyph, end=end)
+            return []
+        return [GlyphMatch(source="list_marker", style=style.name, glyph=glyph, end=end)]
 
 
 def compile_glyph_marker(

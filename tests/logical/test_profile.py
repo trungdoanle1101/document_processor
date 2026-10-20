@@ -43,9 +43,7 @@ def make(levels: tuple[LevelSpec, ...] | None = (CHUONG, DIEU, KHOAN, GACH), **o
 
 def first_text_match(profile: Profile, level: str, text: str) -> object:
     found = profile.get_marker(level).match_text(text)
-    if isinstance(found, list):
-        return found[0] if found else None
-    return found
+    return found[0] if found else None
 
 
 # ============================================================ fields
@@ -309,9 +307,9 @@ def test_word_bullet_alone_matches_nothing_itself() -> None:
     marker = profile.get_marker("bullet")
     assert isinstance(marker, GlyphMarker)
     for text in ["• x", "- x", "✓ x"]:
-        assert marker.match_text(text) is None
+        assert marker.match_text(text) == []
     for displayed in ["•", "◦", "▪", "✓", ""]:
-        assert marker.match_list_marker(displayed) is None
+        assert marker.match_list_marker(displayed) == []
 
 
 def test_word_bullet_with_other_styles() -> None:
