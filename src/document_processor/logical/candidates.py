@@ -1,4 +1,7 @@
+import itertools
+from collections.abc import Mapping, Sequence, Iterator
 from dataclasses import dataclass
+from types import MappingProxyType
 
 from document_processor.core.models import PhysicalBlock, BlockType, Region, ListInfo
 from document_processor.logical.levels import MarkerMatch
@@ -6,6 +9,15 @@ from document_processor.logical.glyph_marker import GlyphMatch
 from document_processor.logical.template_marker import TemplateMatch
 from document_processor.logical.profile import Profile
 from document_processor.logical.markers import WORD_BULLET
+
+
+DECLARED_FORMAT_STYLES: Mapping[str, str] = MappingProxyType({
+    "decimal": "arabic",
+    "lowerLetter": "lower_latin",
+    "upperLetter": "upper_latin",
+    "lowerRoman": "lower_roman",
+    "upperRoman": "upper_roman",
+})
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -23,7 +35,13 @@ class Candidate:
         
         if self.text_match is not None and self.text_match.source != "text":
             raise ValueError(f"candidate for level {self.level!r}: text_match.source must be 'text'")
-        
+
+
+@dataclass(frozen=True, kw_only=True)
+class BlockCandidates:
+    block: PhysicalBlock
+    candidates: tuple[Candidate, ...]
+
 
 def find_candidates(profile: Profile, block: PhysicalBlock) -> tuple[Candidate, ...]:
     if block.block_type in (BlockType.TABLE, BlockType.IMAGE):
@@ -74,14 +92,121 @@ def find_candidates(profile: Profile, block: PhysicalBlock) -> tuple[Candidate, 
             text_match=None
         ))
 
-
     return tuple(sorted(candidates, key=lambda c: profile.get_rank(c.level)))
+
+
+def narrow_candidates(
+    block_candidates: Sequence[BlockCandidates]
+) -> tuple[BlockCandidates, ...]:
+    """For each block, keep at most one candidate per level chosen by the numbering of earlier items at the same level; candidates of different levels are left for the builder.
+    """
+    # level -> (style, value)
+    last_number_by_level: dict[str, tuple[str, int]] = {}
+    narrowed: list[BlockCandidates] = []
+
+    for item in block_candidates:
+        chosen_candidates: list[Candidate] = []
+        for level, candidates in _group_by_level(item.candidates):
+            chosen_candidate = _pick_one_candidate(
+                candidates=list(candidates),
+                of_block=item.block,
+                last_number_at_this_level=last_number_by_level.get(level)
+            )
+            chosen_candidates.append(chosen_candidate)
+            style_and_value = _get_candidate_style_value(chosen_candidate)
+            if style_and_value is not None:
+                last_number_by_level[level] = style_and_value
+        narrowed.append(
+            BlockCandidates(
+                block=item.block, candidates=tuple(chosen_candidates)
+            )
+        )
+
+    return tuple(narrowed)
+    
+
+def _pick_one_candidate(
+    candidates: list[Candidate], of_block: PhysicalBlock, last_number_at_this_level: tuple[str, int] | None
+) -> Candidate:
+    if len(candidates) == 1:
+        return candidates[0]
+    
+    # 1. Word declares format: list readings in another style are wrong
+    # Filter out candidates with different numbering style from block's declared style
+    # Keep candidates with list_match = None (they are matched by text)
+    declared_style = _get_declared_num_style(of_block)
+    if declared_style is not None:
+        style_filtered: list[Candidate] = []
+        for candidate in candidates:
+            if candidate.list_match is None:
+                style_filtered.append(candidate)
+            else:
+                style_and_value = _get_candidate_style_value(candidate)
+                if style_and_value is not None and style_and_value[0] == declared_style:
+                    style_filtered.append(candidate)
+        
+        candidates = style_filtered or candidates
+
+    # 2. Choose candidate that continues the count of this level
+    if last_number_at_this_level is not None:
+        last_style, last_value = last_number_at_this_level
+        for candidate in candidates:
+            style_and_value = _get_candidate_style_value(candidate)
+            if style_and_value == (last_style, last_value + 1):
+                return candidate
+    
+    # 3. Start a new list: value 1
+    for candidate in candidates:
+        style_and_value = _get_candidate_style_value(candidate)
+        if style_and_value is not None and style_and_value[1] == 1:
+            return candidate
+
+    # 4. Nothing decides: list or text, then the order in the slot
+    if declared_style is None:
+        for candidate in candidates:
+            if candidate.text_match is not None:
+                return candidate
+
+    return candidates[0]
+
+
+def _group_by_level(candidates: tuple[Candidate, ...]) -> Iterator[tuple[str, Iterator[Candidate]]]:
+    return itertools.groupby(candidates, key=lambda c: c.level)
+
+
+def _get_candidate_style_value(candidate: Candidate) -> tuple[str, int] | None:
+    """(style, value) of the candidate
+    """
+    match = candidate.list_match or candidate.text_match
+    if not isinstance(match, TemplateMatch) or not match.numerals:
+        return None
+    
+    last_numeral = match.numerals[-1]
+    return (last_numeral.style, last_numeral.value)
+    
+
+def _get_declared_num_style(block: PhysicalBlock) -> str | None:
+    if block.list_info is None:
+        return None
+    
+    declared_numbering = block.list_info.declared_numbering
+    
+    if declared_numbering is None:
+        return None
+    
+    num_fmt = declared_numbering.num_fmt
+    
+    if num_fmt not in DECLARED_FORMAT_STYLES:
+        return None
+    
+    return DECLARED_FORMAT_STYLES[num_fmt]
 
 
 def _number_key(match: MarkerMatch) -> tuple[object, ...]:
     if isinstance(match, TemplateMatch):
         return tuple((n.style, n.value) for n in match.numerals)
     return (match.style, )
+
 
 def _is_word_bullet(list_info: ListInfo) -> bool:
     if list_info.declared_numbering is not None:
