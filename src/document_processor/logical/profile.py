@@ -10,7 +10,7 @@ from document_processor.logical.levels import (
     LevelSpec, TemplateMarkerSpec, Marker, GlyphMarkerSpec, MarkerSpec
 )
 from document_processor.logical.registry import Registry
-from document_processor.logical.markers import NAME_PATTERN
+from document_processor.logical.markers import NAME_PATTERN, WORD_BULLET
 from document_processor.core.text_utils import normalize_nfc
 
 
@@ -79,7 +79,7 @@ class Profile:
 
                 level_by_name[level.name] = level
                 rank_by_name[level.name] = rank
-                if isinstance(marker_spec, GlyphMarkerSpec) and "word_bullet" in marker_spec.glyphs:
+                if isinstance(marker_spec, GlyphMarkerSpec) and WORD_BULLET in marker_spec.glyphs:
                     word_bullet_level = level.name
 
         end_matter_marker: TemplateMarker | None = None
@@ -131,7 +131,7 @@ class Profile:
                 case_sensitive=marker_spec.case_sensitive
             )
         else:
-            glyphs = [g for g in marker_spec.glyphs if g != "word_bullet"]
+            glyphs = [g for g in marker_spec.glyphs if g != WORD_BULLET]
             if not glyphs:
                 return GlyphMarker(
                     by_glyph=MappingProxyType({})
