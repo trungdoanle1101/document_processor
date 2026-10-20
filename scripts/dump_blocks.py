@@ -1,4 +1,6 @@
+import json
 from pathlib import Path
+from dataclasses import asdict
 
 from document_processor.adapters.docx import DocxAdapter
 from document_processor.core.models import PhysicalDocument
@@ -15,8 +17,15 @@ def dump_blocks(path: str | Path, save_as: str | Path | None = None, clean: bool
 
     outputs: list[str] = []
     for block in physical_document.blocks:
-        block_output = f"id: {block.id} | block_type: {block.block_type.value} | alignment: {block.paragraph_format.alignment.value if block.paragraph_format.alignment is not None else None} | displayed_marker: {block.list_info.displayed_marker if block.list_info else None} | text: {block.text[:60]!r}\n"
-        outputs.append(block_output)
+        d = {
+            "id": block.id,
+            "block_type": block.block_type.value,
+            "region": block.region.value,
+            "list_info": asdict(block.list_info) if block.list_info is not None else None,
+            "text": block.text[:80]
+        }
+        # block_output = f"id: {block.id} | block_type: {block.block_type.value} | region: {block.region.value} | alignment: {block.paragraph_format.alignment.value if block.paragraph_format.alignment is not None else None} | displayed_marker: {block.list_info.displayed_marker if block.list_info else None} | text: {block.text[:60]!r}\n"
+        outputs.append(d)
 
     if save_as is None:
         return
@@ -24,7 +33,9 @@ def dump_blocks(path: str | Path, save_as: str | Path | None = None, clean: bool
     save_path = Path(save_as)
 
     with save_path.open("w", encoding="utf-8") as f:
-        f.writelines(outputs)
+        # f.writelines(outputs)
+        for item in outputs:
+            f.write(json.dumps(item, ensure_ascii=False) + "\n")
 
     return physical_document
 
@@ -32,6 +43,6 @@ if __name__ == "__main__":
     filename = "2025_Quy dinh quan ly kien truc CNTT.docx"
     # filename = "Phu_luc_Quy dinh quan ly kien truc CNTT.docx"
     filepath = f"data/{filename}"
-    dump_blocks(filepath, save_as=f"data/{filename}_blocks.txt")
-    doc = dump_blocks(filepath, save_as=f"data/{filename}_blocks_cleaned.txt", clean=True)
+    dump_blocks(filepath, save_as=f"data/{filename}_blocks.jsonl")
+    doc = dump_blocks(filepath, save_as=f"data/{filename}_blocks_cleaned.jsonl", clean=True)
     save_physical_document(doc, f"data/{filename}_cleaned_phys_doc.json")

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from document_processor.core.models import PhysicalBlock, BlockType, Region
+from document_processor.core.models import PhysicalBlock, BlockType, Region, ListInfo
 from document_processor.logical.levels import MarkerMatch
 from document_processor.logical.glyph_marker import GlyphMatch
 from document_processor.logical.template_marker import TemplateMatch
@@ -62,7 +62,7 @@ def find_candidates(profile: Profile, block: PhysicalBlock) -> tuple[Candidate, 
     if (
         profile.word_bullet_level is not None
         and block.list_info is not None
-        and not block.list_info.is_ordered
+        and _is_word_bullet(block.list_info)
         and all(c.list_match is None for c in candidates)
     ):
         displayed = displayed_marker or ""
@@ -82,3 +82,8 @@ def _number_key(match: MarkerMatch) -> tuple[object, ...]:
     if isinstance(match, TemplateMatch):
         return tuple((n.style, n.value) for n in match.numerals)
     return (match.style, )
+
+def _is_word_bullet(list_info: ListInfo) -> bool:
+    if list_info.declared_numbering is not None:
+        return list_info.declared_numbering.num_fmt == "bullet"
+    return not list_info.is_ordered

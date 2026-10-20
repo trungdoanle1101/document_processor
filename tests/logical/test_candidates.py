@@ -309,6 +309,29 @@ def test_typed_bullets_never_fall_back() -> None:
     assert find_candidates(profile(DIEU, BULLET), paragraph("• Nội dung")) == ()
 
 
+def none_list(text: str) -> Any:
+    """A heading in a Word list that numbers nothing (num_fmt "none"), as in the real document."""
+    info = make_list_info(
+        displayed_marker=None,
+        is_ordered=False,
+        declared_numbering=make_declared_numbering(num_fmt="none", segment_formats=()),
+    )
+    return make_block(block_type=BlockType.LIST_ITEM, text=text, list_info=info)
+
+
+def test_a_list_that_numbers_nothing_is_not_a_bullet_list() -> None:
+    # is_ordered is false here too, but nothing is displayed and the format is "none".
+    assert summary(find_candidates(profile(DIEU, BULLET), none_list("Điều 1. Phạm vi"))) == [("dieu", None, (("arabic", 1),))]
+    assert find_candidates(profile(DIEU, BULLET), none_list("QUY ĐỊNH CHUNG")) == ()
+
+
+def test_without_a_declared_format_an_unordered_list_counts_as_bullets() -> None:
+    # Sources that declare no numbering (not docx) only say whether the list is ordered.
+    info = make_list_info(displayed_marker="•", is_ordered=False, declared_numbering=None)
+    block = make_block(block_type=BlockType.LIST_ITEM, text="Nội dung", list_info=info)
+    assert summary(find_candidates(profile(DIEU, BULLET), block)) == [("bullet", WORD_BULLET, None)]
+
+
 def test_no_fallback_without_a_word_bullet_level() -> None:
     assert find_candidates(profile(DIEU, GACH), bulleted("Nội dung", "•")) == ()
 
@@ -346,12 +369,16 @@ def test_returns_a_tuple() -> None:
         (paragraph("Chương I"), [("chuong", None, (("upper_roman", 1),))]),
         (paragraph("Điều 9. Phạm vi điều chỉnh"), [("dieu", None, (("arabic", 9),))]),
         (numbered("Nội dung khoản", "1."), [("khoan", (("arabic", 1),), None)]),
-        (numbered("a) Nội dung", "a)"), [("diem", (("lower_vn", 1),), (("lower_vn", 1),))]),
+        (
+            numbered("a) Nội dung", "a)"),
+            [("diem", (("lower_latin", 1),), (("lower_latin", 1),)), ("diem", (("lower_vn", 1),), (("lower_vn", 1),))],
+        ),
+        (numbered("Được hỗ trợ", "f)"), [("diem", (("lower_latin", 6),), None)]),
         (paragraph("- Nội dung"), [("gach", None, "dash")]),
         (paragraph("Chương trình đào tạo"), []),
-        # A typed table-of-contents entry under a Word bullet: no level reads it,
-        # and VN_REGULATION has no word_bullet level.
-        (bulleted("1.1. Mục tiêu", "◦"), []),
+        # A typed table-of-contents entry under a Word bullet: read from the text;
+        # VN_REGULATION has no word_bullet level, so the bullet itself gives nothing.
+        (bulleted("1.1. Mục tiêu", "◦"), [("khoan_cap_2", None, (("arabic", 1), ("arabic", 1)))]),
         (bulleted("Nội dung", "✓"), []),
     ],
 )

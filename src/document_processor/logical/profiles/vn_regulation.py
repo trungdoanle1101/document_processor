@@ -1,4 +1,4 @@
-"""Vietnamese legal and regulation documents (luật, nghị định, thông tư, quy chế…).
+"""Vietnamese legal and regulation documents (luật, nghị định, thông tư, quy chế, quy định nội bộ…).
 
 Hierarchy, outermost first (a level's position in `levels` is its rank):
 
@@ -6,9 +6,16 @@ Hierarchy, outermost first (a level's position in `levels` is its rank):
       Mục 1               section (optional); title on the next line
         Điều 9. Phạm vi…  article; title after the marker
           1. …            khoản (clause), only inside an Điều
-            a) …          điểm (point), only inside an Điều; "a)" and "a." mix in one list
-              - …         dash item
-                + …       plus item, one step deeper than a dash
+            2.1 …         sub-clause, only inside a khoản ("2.1", "2.1.")
+              2.3.1 …     sub-sub-clause, only inside a khoản ("2.3.1", "2.3.1.")
+                a) …      điểm (point), only inside an Điều; "a)" and "a." mix in one list
+                  - …     dash item
+                    + …   plus item, one step deeper than a dash
+
+Điểm letters are read both ways: legal texts use the Vietnamese alphabet
+(a b c d đ e g h …), internal regulations and Word's lowerLetter numbering use the
+Latin one (… e f g h …). Every common letter has two readings; pass 2 picks one
+from the sequence and the declared numbering format.
 
 Words are matched case-insensitively ("CHƯƠNG I" and "Chương I" both count);
 numerals are not. The document ends at "Nơi nhận:" (the distribution list).
@@ -19,7 +26,7 @@ from document_processor.logical.profile import Profile
 
 VN_REGULATION = Profile(
     name="vn_regulation",
-    version="2",
+    version="3",
     levels=(
         LevelSpec(
             name="chuong",
@@ -42,8 +49,20 @@ VN_REGULATION = Profile(
             inside=("dieu",),
         ),
         LevelSpec(
+            # "2.1 Nguồn dữ liệu…" under khoản 2. Also reads "2.5 triệu đồng" at the start
+            # of a line; `inside` and pass 2 are what keep that out.
+            name="khoan_cap_2",
+            marker=TemplateMarkerSpec(templates=("{arabic}.{arabic}", "{arabic}.{arabic}.")),
+            inside=("khoan",),
+        ),
+        LevelSpec(
+            name="khoan_cap_3",
+            marker=TemplateMarkerSpec(templates=("{arabic}.{arabic}.{arabic}", "{arabic}.{arabic}.{arabic}.")),
+            inside=("khoan",),
+        ),
+        LevelSpec(
             name="diem",
-            marker=TemplateMarkerSpec(templates=("{lower_vn})", "{lower_vn}.")),
+            marker=TemplateMarkerSpec(templates=("{lower_latin|lower_vn})", "{lower_latin|lower_vn}.")),
             inside=("dieu",),
         ),
         LevelSpec(
