@@ -194,7 +194,7 @@ def choose_headings(
             kept = count_kept_open_by_heading(profile, open_levels, heading.level)
             del open_levels[kept:]
             open_levels.append(heading.level)
-        elif _is_text_block(item.block):
+        elif is_text_block(item.block):
             kept = count_kept_open_by_plain_paragraph(profile, open_levels)
             del open_levels[kept:]
 
@@ -247,7 +247,7 @@ def _starts_end_matter(profile: Profile, block: PhysicalBlock) -> bool:
     return bool(matches)
 
 
-def _is_text_block(block: PhysicalBlock) -> bool:
+def is_text_block(block: PhysicalBlock) -> bool:
     return block.block_type in (BlockType.PARAGRAPH, BlockType.LIST_ITEM)
 
 

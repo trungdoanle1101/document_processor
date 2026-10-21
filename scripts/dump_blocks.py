@@ -3,9 +3,11 @@ from pathlib import Path
 from dataclasses import asdict
 
 from document_processor.adapters.docx import DocxAdapter
-from document_processor.core.models import PhysicalDocument
+from document_processor.core.models import PhysicalDocument, LogicalDocument
 from document_processor.core.cleaning import clean_document
-from document_processor.core.serialization import save_physical_document
+from document_processor.core.serialization import save_physical_document, save_logical_document
+from document_processor.logical.build import build_logical_document
+from document_processor.logical.profiles.vn_regulation import VN_REGULATION
 
 
 def dump_blocks(path: str | Path, save_as: str | Path | None = None, clean: bool=False) -> PhysicalDocument:
@@ -39,10 +41,20 @@ def dump_blocks(path: str | Path, save_as: str | Path | None = None, clean: bool
 
     return physical_document
 
+
+def dump_logical(path: str | Path, save_as: str | Path) -> LogicalDocument:
+    adapter = DocxAdapter()
+    physical_document = adapter.parse_file(path)
+    physical_document = clean_document(physical_document)
+    logical_document = build_logical_document(VN_REGULATION, physical_document)
+
+    save_path = Path(save_as)
+    save_logical_document(logical_document, save_path)
+    return logical_document
+
+
 if __name__ == "__main__":
     filename = "2025_Quy dinh quan ly kien truc CNTT.docx"
     # filename = "Phu_luc_Quy dinh quan ly kien truc CNTT.docx"
     filepath = f"data/{filename}"
-    dump_blocks(filepath, save_as=f"data/{filename}_blocks.jsonl")
-    doc = dump_blocks(filepath, save_as=f"data/{filename}_blocks_cleaned.jsonl", clean=True)
-    save_physical_document(doc, f"data/{filename}_cleaned_phys_doc.json")
+    doc = dump_logical(filepath, save_as=f"{filepath}_logical.json")
