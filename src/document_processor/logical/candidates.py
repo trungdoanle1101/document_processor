@@ -2,6 +2,7 @@ import itertools
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
+from typing import Literal
 
 from document_processor.core.models import BlockType, ListInfo, PhysicalBlock, Region
 from document_processor.logical.glyph_marker import GlyphMatch
@@ -50,11 +51,25 @@ class BlockCandidates:
     candidates: tuple[Candidate, ...]
 
 
+type DocumentPart = Literal["front_matter", "body", "end_matter"]
+
+
 @dataclass(frozen=True, kw_only=True)
 class ClassifiedBlock:
     block: PhysicalBlock
     heading: Candidate | None
-    is_end_matter: bool
+    part: DocumentPart
+
+
+def classify_blocks(
+    profile: Profile, blocks: Sequence[PhysicalBlock]
+) -> tuple[ClassifiedBlock, ...]:
+    """Classify every block: pass 1 finds candidates, pass 2 keeps one per level, pass 3 chooses the heading and the document part."""
+    items = [
+        BlockCandidates(block=b, candidates=find_candidates(profile, b)) for b in blocks
+    ]
+    narrowed = narrow_candidates(items)
+    return choose_headings(profile, narrowed)
 
 
 def find_candidates(profile: Profile, block: PhysicalBlock) -> tuple[Candidate, ...]:
@@ -160,12 +175,16 @@ def choose_headings(
     body_started = profile.levels is None
     classified: list[ClassifiedBlock] = []
     for item in items:
-        if not in_end_matter and body_started and _starts_end_matter(profile, item.block):
+        if (
+            not in_end_matter
+            and body_started
+            and _starts_end_matter(profile, item.block)
+        ):
             in_end_matter = True
 
         if in_end_matter:
             classified.append(
-                ClassifiedBlock(block=item.block, heading=None, is_end_matter=True)
+                ClassifiedBlock(block=item.block, heading=None, part="end_matter")
             )
             continue
 
@@ -180,7 +199,11 @@ def choose_headings(
             del open_levels[kept:]
 
         classified.append(
-            ClassifiedBlock(block=item.block, heading=heading, is_end_matter=False)
+            ClassifiedBlock(
+                block=item.block,
+                heading=heading,
+                part="body" if body_started else "front_matter",
+            )
         )
 
     return tuple(classified)
@@ -229,7 +252,7 @@ def _is_text_block(block: PhysicalBlock) -> bool:
 
 
 def _choose_heading(
-    profile: Profile, candidates: tuple[Candidate, ...], open_levels: list[str]
+    profile: Profile, candidates: tuple[Candidate, ...], open_levels: Sequence[str]
 ) -> Candidate | None:
     for candidate in candidates:
         candidate_level = profile.get_level(candidate.level)

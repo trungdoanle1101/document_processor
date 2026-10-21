@@ -18,6 +18,7 @@ from document_processor.logical.candidates import (
     Candidate,
     ClassifiedBlock,
     choose_headings,
+    classify_blocks,
     count_kept_open_by_heading,
     count_kept_open_by_plain_paragraph,
     find_candidates,
@@ -646,12 +647,15 @@ STRUCTURE = Profile(
 
 
 def classify(test_profile: Profile, *blocks: Any) -> list[ClassifiedBlock]:
-    items = [BlockCandidates(block=b, candidates=find_candidates(test_profile, b)) for b in blocks]
-    return list(choose_headings(test_profile, narrow_candidates(items)))
+    return list(classify_blocks(test_profile, blocks))
 
 
 def headings(classified: list[ClassifiedBlock]) -> list[str | None]:
     return [c.heading.level if c.heading is not None else None for c in classified]
+
+
+def parts(classified: list[ClassifiedBlock]) -> list[str]:
+    return [c.part for c in classified]
 
 
 def signature_table(text: str) -> Any:
@@ -809,31 +813,31 @@ def test_an_unclaimed_word_bullet_counts_as_a_plain_paragraph() -> None:
 def test_end_matter_starts_at_the_first_match() -> None:
     blocks = [paragraph("Điều 1. X"), paragraph("Nơi nhận:"), paragraph("- Như Điều 3;"), paragraph("Điều 9. Y")]
     classified = classify(STRUCTURE, *blocks)
-    assert [c.is_end_matter for c in classified] == [False, True, True, True]
+    assert parts(classified) == ["body", "end_matter", "end_matter", "end_matter"]
     assert headings(classified) == ["dieu", None, None, None]  # nothing after it is a heading
 
 
 def test_end_matter_in_a_signature_table() -> None:
     # In the real internal regulation, "Nơi nhận:" is the first cell of the last table.
     blocks = [paragraph("Điều 27. X"), signature_table("Nơi nhận: - Như Điều 26; - Lưu: VT")]
-    assert [c.is_end_matter for c in classify(STRUCTURE, *blocks)] == [False, True]
+    assert parts(classify(STRUCTURE, *blocks)) == ["body", "end_matter"]
 
 
 def test_nothing_is_end_matter_without_a_match() -> None:
     blocks = [paragraph("Điều 1. X"), paragraph("Nơi nhận hồ sơ: Bộ phận một cửa")]
-    assert [c.is_end_matter for c in classify(STRUCTURE, *blocks)] == [False, False]
+    assert parts(classify(STRUCTURE, *blocks)) == ["body", "body"]
 
 
 def test_profile_without_end_matter() -> None:
     no_end = Profile(name="no_end", version="1", levels=(DIEU,), end_matter=None)
-    assert [c.is_end_matter for c in classify(no_end, paragraph("Điều 1. X"), paragraph("Nơi nhận:"))] == [False, False]
+    assert parts(classify(no_end, paragraph("Điều 1. X"), paragraph("Nơi nhận:"))) == ["body", "body"]
 
 
 def test_profile_without_levels_still_finds_end_matter() -> None:
     flat = Profile(name="flat", version="1", levels=None, end_matter=TemplateMarkerSpec(templates=("Nơi nhận:",)))
     classified = classify(flat, paragraph("Nội dung"), paragraph("Nơi nhận:"))
     assert headings(classified) == [None, None]
-    assert [c.is_end_matter for c in classified] == [False, True]
+    assert parts(classified) == ["body", "end_matter"]  # no levels: the body starts at once
 
 
 # ---------- VN_REGULATION, a stretch of the real document
@@ -869,7 +873,7 @@ def test_vn_regulation_real_stretch() -> None:
         None, "chuong", None, "muc", None, "dieu", "khoan", "khoan",
         "khoan_cap_2", "khoan_cap_3", "diem", None, "gach", None, "dieu", None,
     ]
-    assert [c.is_end_matter for c in classified] == [False] * 15 + [True]
+    assert parts(classified) == ["front_matter"] + ["body"] * 14 + ["end_matter"]
 
 
 def test_end_matter_is_not_looked_for_before_the_body() -> None:
@@ -877,11 +881,52 @@ def test_end_matter_is_not_looked_for_before_the_body() -> None:
     blocks = [paragraph("Căn cứ Luật Tổ chức Chính phủ;"), paragraph("Nơi nhận:"), paragraph("Điều 1. X"), paragraph("Nơi nhận:")]
     classified = classify(STRUCTURE, *blocks)
     assert headings(classified) == [None, None, "dieu", None]
-    assert [c.is_end_matter for c in classified] == [False, False, False, True]
+    assert parts(classified) == ["front_matter", "front_matter", "body", "end_matter"]
 
 
 def test_end_matter_ignores_headers_and_footers() -> None:
     blocks = [paragraph("Điều 1. X"), paragraph("Nơi nhận:", region=Region.FOOTER), paragraph("1. Y")]
     classified = classify(STRUCTURE, *blocks)
-    assert [c.is_end_matter for c in classified] == [False, False, False]
+    assert parts(classified) == ["body", "body", "body"]
     assert headings(classified) == ["dieu", None, "khoan"]
+
+
+
+# ---------- front matter, body, end matter
+
+
+def test_everything_before_the_first_heading_is_front_matter() -> None:
+    blocks = [paragraph("NGÂN HÀNG TMCP"), paragraph("QUY ĐỊNH"), paragraph("Điều 1. X"), paragraph("Nội dung")]
+    assert parts(classify(STRUCTURE, *blocks)) == ["front_matter", "front_matter", "body", "body"]
+
+
+def test_the_first_heading_itself_is_body() -> None:
+    [classified] = classify(STRUCTURE, paragraph("Điều 1. X"))
+    assert classified.part == "body"
+
+
+def test_a_rejected_marker_before_the_body_stays_front_matter() -> None:
+    # "1." with no Điều open is not a heading, so the body has not started.
+    assert parts(classify(STRUCTURE, paragraph("1. Căn cứ"), paragraph("Điều 1. X"))) == ["front_matter", "body"]
+
+
+def test_the_body_stays_started_when_every_level_has_closed() -> None:
+    # A dash item closes on a plain paragraph; the open levels are empty again, but this is still the body.
+    gach_first = Profile(name="gach_first", version="1", levels=(GACH_CLOSING,), end_matter=None)
+    assert parts(classify(gach_first, paragraph("- x"), paragraph("Đoạn."))) == ["body", "body"]
+
+
+def test_no_heading_at_all_leaves_everything_front_matter() -> None:
+    # The builder then starts the body at segment 0 (plan rule); pass 3 just reports what it saw.
+    assert parts(classify(STRUCTURE, paragraph("Nội dung"), paragraph("Nơi nhận:"))) == ["front_matter", "front_matter"]
+
+
+def test_classify_blocks_runs_all_three_passes() -> None:
+    # Pass 2 picks Latin for "a)"; pass 3 needs a khoản open for điểm.
+    blocks = [paragraph("Điều 1. X"), paragraph("1. Y"), paragraph("a) Z")]
+    classified = classify_blocks(STRUCTURE, blocks)
+    assert isinstance(classified, tuple)
+    assert headings(list(classified)) == ["dieu", "khoan", "diem"]
+    diem = classified[2].heading
+    assert diem is not None and isinstance(diem.text_match, TemplateMatch)
+    assert diem.text_match.numerals[0].style == "lower_latin"
