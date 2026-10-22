@@ -210,6 +210,7 @@ class LogicalDocument:
                 f"{self.__class__.__name__} {self.id!r}: no node with id {node_id}"
             )
         return self._children_by_id[node_id]
+    
 
     @property
     def root_ids(self) -> tuple[str, ...]:
@@ -315,3 +316,7 @@ class LogicalDocument:
             "_children_by_id",
             MappingProxyType({k: tuple(v) for k, v in children.items()}),
         )
+
+
+def heading_label(marker: str | None, title: str | None) -> str:
+    return " ".join(part for part in (marker, title) if part is not None)
