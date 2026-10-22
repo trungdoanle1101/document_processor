@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Mapping
+from typing import Mapping, Literal
 from types import MappingProxyType
 
 from document_processor.core.models.physical import ImageInfo, TableInfo
@@ -36,6 +36,8 @@ class ImageSegment(BaseSegment):
 class TableSegment(BaseSegment):
     table: TableInfo
 
+
+type DocumentPart = Literal["front_matter", "body", "end_matter"]
 
 
 @dataclass(frozen=True, kw_only=True)

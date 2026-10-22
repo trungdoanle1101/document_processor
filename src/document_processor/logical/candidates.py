@@ -2,9 +2,8 @@ import itertools
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Literal
 
-from document_processor.core.models import BlockType, ListInfo, PhysicalBlock, Region
+from document_processor.core.models import BlockType, ListInfo, PhysicalBlock, Region, DocumentPart
 from document_processor.logical.glyph_marker import GlyphMatch
 from document_processor.logical.levels import MarkerMatch
 from document_processor.logical.markers import WORD_BULLET
@@ -49,9 +48,6 @@ class Candidate:
 class BlockCandidates:
     block: PhysicalBlock
     candidates: tuple[Candidate, ...]
-
-
-type DocumentPart = Literal["front_matter", "body", "end_matter"]
 
 
 @dataclass(frozen=True, kw_only=True)

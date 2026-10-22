@@ -1,6 +1,5 @@
 _PUA_BASE = 0xF000
 
-# Word's built-in bullet library, plus the check boxes. Keys are the font's own byte.
 _SYMBOL_FONTS: dict[str, dict[int, str]] = {
     "symbol":    {0xB7: "•"},
     "wingdings": {0xA7: "▪", 0x76: "❖", 0xD8: "➢", 0xFC: "✓",
@@ -10,7 +9,7 @@ _SYMBOL_FONTS: dict[str, dict[int, str]] = {
 
 
 def map_symbol_text(text: str, font: str | None) -> str:
-    """Replace symbol-font characters with their Unicode equivalents; unknown ones stay."""
+    """Replace bullet font characters with their Unicode equivalents; unknown ones stay."""
     table = _SYMBOL_FONTS.get(font.casefold()) if font else None
     if table is None:
         return text
