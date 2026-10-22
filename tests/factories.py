@@ -22,6 +22,7 @@ from document_processor.core.models import (
 )
 
 from document_processor.core.models.logical import (
+    HeadingSegment,
     ImageSegment,
     LogicalDocument,
     LogicalNode,
@@ -160,6 +161,23 @@ def make_table_segment(**overrides: Any) -> TableSegment:
     fields: dict[str, Any] = {"block_id": "pb1", "table": make_table_info()}
     fields.update(overrides)
     return TableSegment(**fields)
+
+
+def make_heading_segment(**overrides: Any) -> HeadingSegment:
+    """The heading of make_logical_node's Điều 1; override any field."""
+    fields: dict[str, Any] = {
+        "block_id": "pb1",
+        "node_id": "dieu-1",
+        "marker": "Điều 1.",
+        "title": "Phạm vi điều chỉnh",
+    }
+    fields.update(overrides)
+    return HeadingSegment(**fields)
+
+
+def heading_for(node: LogicalNode) -> HeadingSegment:
+    """The heading segment that must sit at ``node.start``."""
+    return HeadingSegment(block_id=node.head_block_ids[0], node_id=node.id, marker=node.marker, title=node.title)
 
 
 def make_logical_node(**overrides: Any) -> LogicalNode:

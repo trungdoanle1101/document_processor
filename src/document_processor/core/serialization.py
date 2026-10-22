@@ -4,31 +4,30 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from document_processor.core.models.logical import (
+    HeadingSegment,
+    ImageSegment,
+    LogicalDocument,
+    LogicalNode,
+    Segment,
+    TableSegment,
+    TextSegment,
+)
 from document_processor.core.models.physical import (
     BlockType,
     CharSpan,
+    DeclaredNumbering,
     DocSourceFormat,
     ImageInfo,
     ListInfo,
-    TableInfo,
-    TableCell,
     ParagraphAlignment,
     ParagraphFormat,
     PhysicalBlock,
     PhysicalDocument,
     Region,
     SpanStyle,
-    DeclaredNumbering
-)
-
-from document_processor.core.models.logical import (
-    LogicalNode,
-    LogicalDocument,
-    Segment,
-    TextSegment,
-    TableSegment,
-    ImageSegment
-
+    TableCell,
+    TableInfo,
 )
 from document_processor.core.models.ranges import TextRange
 
@@ -41,7 +40,9 @@ LOGICAL_DOCUMENT_KIND = "logical_document"
 def _unwrap_enum_factory(kv_pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return {k: (v.value if isinstance(v, Enum) else v) for k, v in kv_pairs}
 
+
 # === Physical
+
 
 def physical_document_to_dict(doc: PhysicalDocument) -> dict[str, Any]:
     d = {
@@ -54,10 +55,10 @@ def physical_document_to_dict(doc: PhysicalDocument) -> dict[str, Any]:
 
 def _paragraph_format_from_dict(d: dict[str, Any]) -> ParagraphFormat:
     paragraph_format = ParagraphFormat(
-        alignment=ParagraphAlignment(d["alignment"])
-        if d["alignment"] is not None
-        else None,
-        style_name=d["style_name"]
+        alignment=(
+            ParagraphAlignment(d["alignment"]) if d["alignment"] is not None else None
+        ),
+        style_name=d["style_name"],
     )
     return paragraph_format
 
@@ -76,12 +77,13 @@ def _char_span_from_dict(d: dict[str, Any]) -> CharSpan:
     )
     return char_span
 
+
 def _declared_numbering_from_dict(d: dict[str, Any]) -> DeclaredNumbering:
     declared_numbering = DeclaredNumbering(
-        num_fmt=d["num_fmt"],
-        segment_formats=tuple(d["segment_formats"])
+        num_fmt=d["num_fmt"], segment_formats=tuple(d["segment_formats"])
     )
     return declared_numbering
+
 
 def _list_info_from_dict(d: dict[str, Any]) -> ListInfo:
     list_info = ListInfo(
@@ -93,7 +95,7 @@ def _list_info_from_dict(d: dict[str, Any]) -> ListInfo:
             _declared_numbering_from_dict(d["declared_numbering"])
             if d["declared_numbering"] is not None
             else None
-        )
+        ),
     )
     return list_info
 
@@ -201,6 +203,7 @@ def load_physical_document(file_path: str | Path) -> PhysicalDocument:
         doc_dict = json.load(f)
     return physical_document_from_dict(doc_dict)
 
+
 # === Logical
 
 
@@ -217,6 +220,7 @@ def _logical_node_to_dict(n: LogicalNode) -> dict[str, Any]:
         "end": n.end,
     }
 
+
 def _segment_to_dict(s: Segment) -> dict[str, Any]:
     d: dict[str, Any] = {"block_id": s.block_id}
     if isinstance(s, TextSegment):
@@ -228,11 +232,15 @@ def _segment_to_dict(s: Segment) -> dict[str, Any]:
     elif isinstance(s, TableSegment):
         d["kind"] = "table"
         d["table"] = asdict(s.table)
+    elif isinstance(s, HeadingSegment):
+        d["kind"] = "heading"
+        d["node_id"] = s.node_id
+        d["marker"] = s.marker
+        d["title"] = s.title
     else:
         raise ValueError(f"Unknown segment type, got {type(s).__name__}")
 
     return d
-
 
 
 def logical_document_to_dict(doc: LogicalDocument) -> dict[str, Any]:
@@ -245,13 +253,13 @@ def logical_document_to_dict(doc: LogicalDocument) -> dict[str, Any]:
         "segments": [_segment_to_dict(s) for s in doc.segments],
         "nodes": [_logical_node_to_dict(n) for n in doc.nodes],
         "body_start": doc.body_start,
-        "body_end": doc.body_end
+        "body_end": doc.body_end,
     }
 
     return {
         "kind": LOGICAL_DOCUMENT_KIND,
         "schema_version": LOGICAL_SCHEMA_VERSION,
-        "document": document_dict
+        "document": document_dict,
     }
 
 
@@ -261,11 +269,11 @@ def _logical_node_from_dict(d: dict[str, Any]) -> LogicalNode:
         parent_id=d["parent_id"],
         level=d["level"],
         number=d["number"],
-        marker= d["marker"],
+        marker=d["marker"],
         title=d["title"],
         head_block_ids=tuple(d["head_block_ids"]),
         start=d["start"],
-        end=d["end"]
+        end=d["end"],
     )
     return logical_node
 
@@ -274,14 +282,29 @@ def _segment_from_dict(d: dict[str, Any]) -> Segment:
     kind = d.get("kind")
     if kind == "text":
         return TextSegment(block_id=d["block_id"], text=d["text"])
-    
-    if kind == "image":
-        return ImageSegment(block_id=d["block_id"], image=_image_info_from_dict(d["image"]))
-    
-    if kind == "table":
-        return TableSegment(block_id=d["block_id"], table=_table_info_from_dict(d["table"]))
 
-    raise ValueError(f"unknown segment kind: expected in ('text', 'image', 'table'), got kind={kind!r}")
+    if kind == "image":
+        return ImageSegment(
+            block_id=d["block_id"], image=_image_info_from_dict(d["image"])
+        )
+
+    if kind == "table":
+        return TableSegment(
+            block_id=d["block_id"], table=_table_info_from_dict(d["table"])
+        )
+
+    if kind == "heading":
+        return HeadingSegment(
+            block_id=d["block_id"],
+            node_id=d["node_id"],
+            marker=d["marker"],
+            title=d["title"],
+        )
+
+    raise ValueError(
+        f"unknown segment kind: expected in ('text', 'image', 'table', 'heading'), got kind={kind!r}"
+    )
+
 
 def logical_document_from_dict(d: dict[str, Any]) -> LogicalDocument:
     kind = d.get("kind")
@@ -304,7 +327,7 @@ def logical_document_from_dict(d: dict[str, Any]) -> LogicalDocument:
         segments=tuple(_segment_from_dict(s) for s in document_dict["segments"]),
         nodes=tuple(_logical_node_from_dict(n) for n in document_dict["nodes"]),
         body_start=document_dict["body_start"],
-        body_end=document_dict["body_end"]
+        body_end=document_dict["body_end"],
     )
     return document
 

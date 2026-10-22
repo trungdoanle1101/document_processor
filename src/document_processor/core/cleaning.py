@@ -1,8 +1,8 @@
+from collections.abc import Callable
 from dataclasses import dataclass, replace
-from typing import Callable
 
-from document_processor.core.models import PhysicalBlock, PhysicalDocument, BlockType
-from document_processor.core.text_utils import normalize_nfc, strip_edges, is_invisible
+from document_processor.core.models import BlockType, PhysicalBlock, PhysicalDocument
+from document_processor.core.text_utils import is_invisible, normalize_nfc, strip_edges
 
 
 @dataclass(frozen=True)

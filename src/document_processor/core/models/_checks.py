@@ -6,7 +6,7 @@ from document_processor.core.text_utils import is_invisible
 def require_visible(owner: str, name: str, value: str) -> None:
     if is_invisible(value):
         raise ValueError(f"{owner}: {name!r} cannot be empty or invisible")
-    
+
 
 def require_visible_or_none(owner: str, name: str, value: str | None) -> None:
     if value is not None:
@@ -22,9 +22,16 @@ def require_unique(owner: str, name: str, values: Iterable[str]) -> None:
 
 
 def require_range(
-        owner: str, start: int, end: int, lower: int = 0, upper: int | None=None,
-        start_label: str = "start", end_label: str = "end"
+    owner: str,
+    start: int,
+    end: int,
+    lower: int = 0,
+    upper: int | None = None,
+    start_label: str = "start",
+    end_label: str = "end",
 ) -> None:
     if not ((lower <= start <= end) and (upper is None or end <= upper)):
         bound = "" if upper is None else f" <= {upper}"
-        raise ValueError(f"{owner}: required {lower} <= {start_label} <= {end_label}{bound}, got {start_label}={start}, {end_label}={end}") 
+        raise ValueError(
+            f"{owner}: required {lower} <= {start_label} <= {end_label}{bound}, got {start_label}={start}, {end_label}={end}"
+        )

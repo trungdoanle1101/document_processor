@@ -1,5 +1,4 @@
-from string import ascii_uppercase, ascii_lowercase
-
+from string import ascii_lowercase, ascii_uppercase
 
 _ROMAN_NUMERALS = (
     ("M", 1000),
@@ -24,6 +23,7 @@ UPPER_LATIN = ascii_uppercase
 LOWER_VN = "abcdđeghiklmnopqrstuvxy"
 UPPER_VN = LOWER_VN.upper()
 
+
 # === Arabic
 def int_to_arabic(n: int) -> str:
     if n < 0:
@@ -35,6 +35,7 @@ def arabic_to_int(text: str) -> int | None:
     if not (text.isascii() and text.isdigit()):
         return None
     return int(text)
+
 
 # === Letters
 def int_to_letters(n: int, alphabet: str) -> str:
@@ -59,7 +60,6 @@ def letters_to_int(text: str, alphabet: str) -> int | None:
     if (index < 0) or (text != first * len(text)):
         return None
     return len(alphabet) * (len(text) - 1) + index + 1
-
 
 
 # === Upper Latin
@@ -100,11 +100,10 @@ def lower_vn_to_int(text: str) -> int | None:
 
 # === Upper Roman
 
+
 def int_to_upper_roman(n: int) -> str:
     if not (1 <= n <= MAX_ROMAN):
-        raise ValueError(
-            f"Roman numerals cover 1 to {MAX_ROMAN}. Got {n}"
-        )
+        raise ValueError(f"Roman numerals cover 1 to {MAX_ROMAN}. Got {n}")
     s = []
     for symbol, value in _ROMAN_NUMERALS:
         while n >= value:
@@ -122,6 +121,7 @@ def upper_roman_to_int(text: str) -> int | None:
 
 
 # === Lower Roman
+
 
 def int_to_lower_roman(n: int) -> str:
     return int_to_upper_roman(n).lower()

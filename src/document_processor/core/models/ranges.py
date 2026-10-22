@@ -3,8 +3,8 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class TextRange:
-    """Half open [start, end) offsets in code points to block's text as stored
-    """
+    """Half open [start, end) offsets in code points to block's text as stored"""
+
     start: int
     end: int
 
@@ -16,5 +16,7 @@ class TextRange:
 
     def slice(self, text: str) -> str:
         if self.end > len(text):
-            raise ValueError(f"Invalid TextRange applied on text: end {self.end} > len {len(text)}")
+            raise ValueError(
+                f"Invalid TextRange applied on text: end {self.end} > len {len(text)}"
+            )
         return text[self.start : self.end]

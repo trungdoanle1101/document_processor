@@ -7,8 +7,8 @@ from enum import Enum
 from document_processor.core.identity import HASH_ALGORITHM
 from document_processor.core.text_utils import is_invisible, to_single_line
 
-from .ranges import TextRange
 from ._checks import require_visible
+from .ranges import TextRange
 
 _TABLE_COL_SEP = "\t"
 _TABLE_ROW_SEP = "\n"
@@ -58,15 +58,15 @@ class DeclaredNumbering:
     format yet display nothing (e.g. docx with no lvlText). Use
     ListInfo.displayed_marker for what the reader actually sees.
     """
-    num_fmt: str # "decimal", "lowerLetter", "bullet", ...
-    segment_formats: tuple[str, ...] # One per placeholder, in order
+
+    num_fmt: str  # "decimal", "lowerLetter", "bullet", ...
+    segment_formats: tuple[str, ...]  # One per placeholder, in order
 
     def __post_init__(self) -> None:
         if not self.num_fmt.strip():
             raise ValueError("Empty num_fmt not allowed")
         if any(not f.strip() for f in self.segment_formats):
             raise ValueError("Empty segment format not allowed")
-
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -79,9 +79,9 @@ class ListInfo:
 
     def __post_init__(self) -> None:
         require_visible(type(self).__name__, "id", self.id)
-        
+
         if self.nested_level < 0:
-            raise ValueError(f"ListInfo {self.id!r}: required: nested_level >= 0") 
+            raise ValueError(f"ListInfo {self.id!r}: required: nested_level >= 0")
 
 
 IMAGE_MIME_TYPE_PATTERN = re.compile(r"image/[a-z0-9][a-z0-9.+-]*")

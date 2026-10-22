@@ -54,7 +54,8 @@ def dump_logical(path: str | Path, save_as: str | Path) -> LogicalDocument:
 
 
 if __name__ == "__main__":
-    filename = "2025_Quy dinh quan ly kien truc CNTT.docx"
+    # filename = "2025_Quy dinh quan ly kien truc CNTT.docx"
     # filename = "Phu_luc_Quy dinh quan ly kien truc CNTT.docx"
+    filename = "1_Khung_tham_chieu_KTCNTT_ve_phan_mem_Mau_tai_lieu_kien_truc.docx"
     filepath = f"data/{filename}"
     doc = dump_logical(filepath, save_as=f"{filepath}_logical.json")

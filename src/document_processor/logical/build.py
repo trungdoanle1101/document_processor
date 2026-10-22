@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from document_processor.core.identity import compute_hash
 from document_processor.core.models import (
     BlockType,
+    HeadingSegment,
     ImageSegment,
     LogicalDocument,
     LogicalNode,
@@ -67,6 +68,7 @@ class _Assembly:
             return False
         draft.title = item.block.text
         draft.head_block_ids.append(item.block.id)
+        self.segments[draft.start] = _heading_segment_for(draft)
         return True
 
     def add_end_matter_block(self, block: PhysicalBlock) -> None:
@@ -84,6 +86,10 @@ class _Assembly:
         draft, body_text = self._new_draft(block, heading)
         self.open_nodes.append(draft)
         self.all_drafts.append(draft)
+
+        # A node's first segment is its heading (LogicalDocument checks this)
+        self.segments.append(_heading_segment_for(draft))
+        
         if body_text:
             self.segments.append(TextSegment(block_id=block.id, text=body_text))
         draft_level_spec = self.profile.get_level(draft.level)
@@ -118,7 +124,9 @@ class _Assembly:
         )
 
         return LogicalDocument(
-            id=compute_hash(f"{physical_document.id}|{self.profile.name}|{self.profile.version}".encode()),
+            id=compute_hash(
+                f"{physical_document.id}|{self.profile.name}|{self.profile.version}".encode()
+            ),
             physical_document_id=physical_document.id,
             source_file_hash=physical_document.file_hash,
             profile_name=self.profile.name,
@@ -126,7 +134,7 @@ class _Assembly:
             segments=tuple(self.segments),
             nodes=nodes,
             body_start=self.body_start if self.body_start is not None else 0,
-            body_end=self.body_end if self.body_end is not None else len(self.segments)
+            body_end=self.body_end if self.body_end is not None else len(self.segments),
         )
 
     def _close_from(self, index: int) -> None:
@@ -194,6 +202,15 @@ def assemble_document(
     return assembly.finish(physical)
 
 
+def _heading_segment_for(draft: _NodeDraft) -> HeadingSegment:
+    return HeadingSegment(
+        block_id=draft.head_block_ids[0],
+        node_id=draft.id,
+        marker=draft.marker,
+        title=draft.title
+    )
+
+
 def _block_to_segment(block: PhysicalBlock) -> Segment:
     if block.block_type is BlockType.TABLE and block.table_info is not None:
         return TableSegment(block_id=block.id, table=block.table_info)
@@ -222,7 +239,9 @@ def _split_heading(block: PhysicalBlock, candidate: Candidate) -> _HeadingParts:
     )
 
     marker = matched_string[: match.end]
-    rest_of_text = matched_string[match.end :].lstrip() if match.source == "text" else block.text
+    rest_of_text = (
+        matched_string[match.end :].lstrip() if match.source == "text" else block.text
+    )
     if isinstance(match, GlyphMatch) or not match.numerals:
         number = None
     else:

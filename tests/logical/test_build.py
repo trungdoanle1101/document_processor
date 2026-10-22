@@ -1,11 +1,15 @@
 """Tests for logical/build.py: assembling a LogicalDocument from classified blocks.
 
 The builder never decides what a block is (passes 1-3 did); it turns the
-decisions into segments and nodes. Each block gives one segment, except a
-heading (its rest of text, if any, per the level's title rule) and a title
-block consumed by a next_block heading (none). A node covers [start, end) of
-the segments, including its descendants. LogicalDocument itself re-checks the
-outline, so a wrong parent or range fails loudly here too.
+decisions into segments and nodes. A heading gives a HeadingSegment (marker and
+title) and then its rest of text, if the level's title rule leaves any; a title
+block consumed by a next_block heading gives no segment of its own; every
+other block gives one segment. A node covers [start, end) of the segments,
+starting with its own heading and including its descendants. LogicalDocument
+itself re-checks the outline and the headings, so a wrong parent, range or
+heading fails loudly here too.
+
+In the expected texts, "# …" is a heading segment.
 """
 
 from typing import Any
@@ -15,6 +19,7 @@ import pytest
 from document_processor.core.identity import compute_hash
 from document_processor.core.models import (
     BlockType,
+    HeadingSegment,
     ImageSegment,
     LogicalDocument,
     TableSegment,
@@ -91,10 +96,12 @@ def outline(document: LogicalDocument) -> list[tuple[str, str | None, str, str |
 
 
 def texts(document: LogicalDocument) -> list[str]:
-    """Each segment as text: its text, or [table] / [image]."""
+    """Each segment as text: "# marker title" for a heading, its text, or [table] / [image]."""
     out = []
     for segment in document.segments:
-        if isinstance(segment, TextSegment):
+        if isinstance(segment, HeadingSegment):
+            out.append("# " + " ".join(part for part in (segment.marker, segment.title) if part))
+        elif isinstance(segment, TextSegment):
             out.append(segment.text)
         elif isinstance(segment, TableSegment):
             out.append("[table]")
@@ -117,9 +124,9 @@ def test_no_heading_everything_is_body_text() -> None:
 def test_front_matter_is_everything_before_the_first_heading() -> None:
     b = Blocks()
     document = build(b.text("NGÂN HÀNG"), b.text("QUY ĐỊNH"), b.text("Điều 1. Phạm vi"), b.text("Nội dung"))
-    assert texts(document) == ["NGÂN HÀNG", "QUY ĐỊNH", "Nội dung"]
-    assert document.body_start == 2
-    assert document.body_end == 3
+    assert texts(document) == ["NGÂN HÀNG", "QUY ĐỊNH", "# Điều 1. Phạm vi", "Nội dung"]
+    assert document.body_start == 2  # the body starts with the first heading
+    assert document.body_end == 4
 
 
 def test_document_fields() -> None:
@@ -155,30 +162,30 @@ def test_node_ids_are_pre_order_positions() -> None:
 def test_rest_of_paragraph_is_the_title() -> None:
     b = Blocks()
     document = build(b.text("Điều 9. Phạm vi điều chỉnh"))
-    assert outline(document) == [("n0", None, "dieu", "9", "Điều 9.", "Phạm vi điều chỉnh", 0, 0)]
-    assert texts(document) == []  # the heading block gives no segment
+    assert outline(document) == [("n0", None, "dieu", "9", "Điều 9.", "Phạm vi điều chỉnh", 0, 1)]
+    assert texts(document) == ["# Điều 9. Phạm vi điều chỉnh"]  # the heading only, no body segment
 
 
 def test_rest_of_paragraph_with_nothing_after_the_marker_has_no_title() -> None:
     b = Blocks()
     document = build(b.text("Điều 9."), b.text("Nội dung"))
     assert outline(document)[0][5] is None
-    assert texts(document) == ["Nội dung"]  # no fallback to the next block
+    assert texts(document) == ["# Điều 9.", "Nội dung"]  # no fallback to the next block
 
 
 def test_title_none_keeps_the_rest_as_the_first_body_segment() -> None:
     b = Blocks()
     document = build(b.text("Điều 1. A"), b.text("2. Nội dung khoản"))
-    assert outline(document)[1] == ("n1", "n0", "khoan", "2", "2.", None, 0, 1)
-    assert texts(document) == ["Nội dung khoản"]
+    assert outline(document)[1] == ("n1", "n0", "khoan", "2", "2.", None, 1, 3)
+    assert texts(document) == ["# Điều 1. A", "# 2.", "Nội dung khoản"]
 
 
 def test_generated_marker_keeps_the_whole_text() -> None:
     # Word shows "1."; the text has no marker of its own, so all of it is body.
     b = Blocks()
     document = build(b.text("Điều 1. A"), b.numbered("Quy định này quy định về", "1."))
-    assert outline(document)[1] == ("n1", "n0", "khoan", "1", "1.", None, 0, 1)
-    assert texts(document) == ["Quy định này quy định về"]
+    assert outline(document)[1] == ("n1", "n0", "khoan", "1", "1.", None, 1, 3)
+    assert texts(document) == ["# Điều 1. A", "# 1.", "Quy định này quy định về"]
 
 
 def test_generated_and_typed_marker_drop_the_typed_one() -> None:
@@ -186,7 +193,7 @@ def test_generated_and_typed_marker_drop_the_typed_one() -> None:
     b = Blocks()
     document = build(b.text("Điều 1. A"), b.numbered("1. Nội dung", "1."))
     assert outline(document)[1][4] == "1."
-    assert texts(document) == ["Nội dung"]
+    assert texts(document) == ["# Điều 1. A", "# 1.", "Nội dung"]
 
 
 def test_multi_numeral_number_is_written_with_its_separators() -> None:
@@ -206,8 +213,8 @@ def test_word_only_marker_has_no_number() -> None:
 def test_glyph_marker_has_no_number() -> None:
     b = Blocks()
     document = build(b.text("- Nội dung gạch"))
-    assert outline(document) == [("n0", None, "gach", None, "-", None, 0, 1)]
-    assert texts(document) == ["Nội dung gạch"]
+    assert outline(document) == [("n0", None, "gach", None, "-", None, 0, 2)]
+    assert texts(document) == ["# -", "Nội dung gạch"]
 
 
 # ---------- next_block
@@ -217,16 +224,17 @@ def test_next_block_takes_the_following_text_as_title() -> None:
     b = Blocks()
     chuong, title, dieu = b.text("Chương I"), b.text("QUY ĐỊNH CHUNG"), b.text("Điều 1. Phạm vi")
     document = build(chuong, title, dieu, b.text("Nội dung"))
-    assert outline(document)[0] == ("n0", None, "chuong", "I", "Chương I", "QUY ĐỊNH CHUNG", 0, 1)
+    assert outline(document)[0] == ("n0", None, "chuong", "I", "Chương I", "QUY ĐỊNH CHUNG", 0, 3)
     assert document.nodes[0].head_block_ids == (chuong.id, title.id)
-    assert texts(document) == ["Nội dung"]  # neither the marker nor the title block is a segment
+    # One heading segment holds both the marker and the consumed title; the title block adds nothing.
+    assert texts(document) == ["# Chương I QUY ĐỊNH CHUNG", "# Điều 1. Phạm vi", "Nội dung"]
 
 
 def test_next_block_uses_the_rest_of_its_own_line_first() -> None:
     b = Blocks()
     document = build(b.text("Chương I QUY ĐỊNH CHUNG"), b.text("Đoạn đầu chương"))
     assert outline(document)[0][5] == "QUY ĐỊNH CHUNG"
-    assert texts(document) == ["Đoạn đầu chương"]  # not consumed
+    assert texts(document) == ["# Chương I QUY ĐỊNH CHUNG", "Đoạn đầu chương"]  # not consumed
 
 
 def test_next_block_followed_by_a_heading_has_no_title() -> None:
@@ -239,14 +247,14 @@ def test_next_block_followed_by_a_table_has_no_title() -> None:
     b = Blocks()
     document = build(b.text("Chương I"), b.table(), b.text("Đoạn"))
     assert outline(document)[0][5] is None
-    assert texts(document) == ["[table]", "Đoạn"]
+    assert texts(document) == ["# Chương I", "[table]", "Đoạn"]
 
 
 def test_only_the_block_right_after_can_be_the_title() -> None:
     b = Blocks()
     document = build(b.text("Chương I"), b.image(), b.text("QUY ĐỊNH CHUNG"))
     assert outline(document)[0][5] is None
-    assert texts(document) == ["[image]", "QUY ĐỊNH CHUNG"]
+    assert texts(document) == ["# Chương I", "[image]", "QUY ĐỊNH CHUNG"]
 
 
 # ============================================================ tree shape
@@ -282,40 +290,41 @@ def test_ranges_include_descendants() -> None:
     document = build(
         b.text("Điều 1. A"), b.text("1. X"), b.text("a) x1"), b.text("a2"), b.text("2. Y"), b.text("Điều 2. B"), b.text("Z")
     )
-    assert texts(document) == ["X", "x1", "a2", "Y", "Z"]
+    assert texts(document) == ["# Điều 1. A", "# 1.", "X", "# a)", "x1", "a2", "# 2.", "Y", "# Điều 2. B", "Z"]
     assert [(n.level, n.start, n.end) for n in document.nodes] == [
-        ("dieu", 0, 4),
-        ("khoan", 0, 3),
-        ("diem", 1, 3),
-        ("khoan", 3, 4),
-        ("dieu", 4, 5),
+        ("dieu", 0, 8),
+        ("khoan", 1, 6),
+        ("diem", 3, 6),
+        ("khoan", 6, 8),
+        ("dieu", 8, 10),
     ]
 
 
-def test_empty_nodes_at_the_start() -> None:
-    # Headings with nothing under them (as in a typed table of contents) give empty ranges, even at 0.
+def test_headings_with_nothing_under_them() -> None:
+    # As in a typed table of contents: such a node holds only its own heading segment.
     b = Blocks()
     document = build(b.text("Điều 1. A"), b.text("Điều 2. B"), b.text("Nội dung"))
-    assert [(n.start, n.end) for n in document.nodes] == [(0, 0), (0, 1)]
+    assert [(n.start, n.end) for n in document.nodes] == [(0, 1), (1, 3)]
 
 
 def test_a_plain_paragraph_goes_to_the_parent_of_closing_items() -> None:
     b = Blocks()
     document = build(b.text("Điều 1. A"), b.text("1. X"), b.text("- gạch"), b.text("Đoạn kết khoản"))
+    assert texts(document) == ["# Điều 1. A", "# 1.", "X", "# -", "gạch", "Đoạn kết khoản"]
     assert [(n.level, n.start, n.end) for n in document.nodes] == [
-        ("dieu", 0, 3),
-        ("khoan", 0, 3),  # the closing remark is inside the khoản
-        ("gach", 1, 2),  # but not inside the dash item
+        ("dieu", 0, 6),
+        ("khoan", 1, 6),  # the closing remark is inside the khoản
+        ("gach", 3, 5),  # but not inside the dash item
     ]
 
 
 def test_tables_and_images_stay_inside_the_open_node() -> None:
     b = Blocks()
     document = build(b.text("Điều 1. A"), b.text("- gạch"), b.table(), b.image(), b.text("Đoạn"))
-    assert texts(document) == ["gạch", "[table]", "[image]", "Đoạn"]
-    assert [(n.level, n.start, n.end) for n in document.nodes] == [("dieu", 0, 4), ("gach", 0, 3)]
-    assert isinstance(document.segments[1], TableSegment)
-    assert isinstance(document.segments[2], ImageSegment)
+    assert texts(document) == ["# Điều 1. A", "# -", "gạch", "[table]", "[image]", "Đoạn"]
+    assert [(n.level, n.start, n.end) for n in document.nodes] == [("dieu", 0, 6), ("gach", 1, 5)]
+    assert isinstance(document.segments[3], TableSegment)
+    assert isinstance(document.segments[4], ImageSegment)
 
 
 # ============================================================ end matter
@@ -324,24 +333,24 @@ def test_tables_and_images_stay_inside_the_open_node() -> None:
 def test_end_matter_closes_everything_and_keeps_its_segments() -> None:
     b = Blocks()
     document = build(b.text("Điều 1. A"), b.text("1. X"), b.text("Nơi nhận:"), b.text("- Như Điều 3;"))
-    assert texts(document) == ["X", "Nơi nhận:", "- Như Điều 3;"]
-    assert (document.body_start, document.body_end) == (0, 1)
-    assert [(n.level, n.end) for n in document.nodes] == [("dieu", 1), ("khoan", 1)]
+    assert texts(document) == ["# Điều 1. A", "# 1.", "X", "Nơi nhận:", "- Như Điều 3;"]
+    assert (document.body_start, document.body_end) == (0, 3)
+    assert [(n.level, n.end) for n in document.nodes] == [("dieu", 3), ("khoan", 3)]
 
 
 def test_end_matter_in_a_table() -> None:
     b = Blocks()
     document = build(b.text("Điều 1. A"), b.text("Nội dung"), b.table("Nơi nhận: - Như Điều 26; - Lưu: VT"))
-    assert (document.body_start, document.body_end) == (0, 1)
-    assert texts(document) == ["Nội dung", "[table]"]
+    assert (document.body_start, document.body_end) == (0, 2)
+    assert texts(document) == ["# Điều 1. A", "Nội dung", "[table]"]
 
 
-def test_end_matter_right_after_an_empty_heading() -> None:
-    # The body is empty: it starts and ends at segment 0.
+def test_end_matter_right_after_a_heading_with_nothing_under_it() -> None:
+    # The body holds only that heading.
     b = Blocks()
     document = build(b.text("Điều 1. A"), b.text("Nơi nhận:"))
-    assert (document.body_start, document.body_end) == (0, 0)
-    assert texts(document) == ["Nơi nhận:"]
+    assert (document.body_start, document.body_end) == (0, 1)
+    assert texts(document) == ["# Điều 1. A", "Nơi nhận:"]
 
 
 # ============================================================ assemble_document
@@ -398,23 +407,78 @@ def test_vn_regulation_real_stretch() -> None:
     )
     document = build(*blocks, profile=VN_REGULATION)
     assert texts(document) == [
-        "Theo đề nghị của Giám đốc Ban Công nghệ,",
+        "Theo đề nghị của Giám đốc Ban Công nghệ,",  # 0  front matter
+        "# Chương I QUY ĐỊNH CHUNG",  # 1
+        "# Điều 1. Phạm vi điều chỉnh và đối tượng áp dụng",  # 2
+        "# 1.",  # 3
         "Quy định này quy định về việc quản lý kiến trúc tổng thể CNTT",
+        "# 2.",  # 5
         "Quy định này được áp dụng cho toàn hệ thống",
+        "# Điều 2. Giải thích từ ngữ",  # 7
+        "# 1.",  # 8
         "“Cloud native”: Là một cách tiếp cận",
+        "# -",  # 10
         "Kiến trúc tổng thể CNTT bao gồm các kiến trúc thành phần sau:",
+        "# +",  # 12
         "Kiến trúc ứng dụng",
-        "Các thuật ngữ khác được hiểu theo quy định.",
-        "[table]",
+        "Các thuật ngữ khác được hiểu theo quy định.",  # 14: closes the dash items
+        "[table]",  # 15 end matter
     ]
-    assert (document.body_start, document.body_end) == (1, 7)
+    assert (document.body_start, document.body_end) == (1, 15)
     assert outline(document) == [
-        ("n0", None, "chuong", "I", "Chương I", "QUY ĐỊNH CHUNG", 1, 7),
-        ("n1", "n0", "dieu", "1", "Điều 1.", "Phạm vi điều chỉnh và đối tượng áp dụng", 1, 3),
-        ("n2", "n1", "khoan", "1", "1.", None, 1, 2),
-        ("n3", "n1", "khoan", "2", "2.", None, 2, 3),
-        ("n4", "n0", "dieu", "2", "Điều 2.", "Giải thích từ ngữ", 3, 7),
-        ("n5", "n4", "khoan", "1", "1.", None, 3, 7),
-        ("n6", "n5", "gach", None, "-", None, 4, 6),  # "+" has no `inside`, so it nests under the dash
-        ("n7", "n6", "cong", None, "+", None, 5, 6),
+        ("n0", None, "chuong", "I", "Chương I", "QUY ĐỊNH CHUNG", 1, 15),
+        ("n1", "n0", "dieu", "1", "Điều 1.", "Phạm vi điều chỉnh và đối tượng áp dụng", 2, 7),
+        ("n2", "n1", "khoan", "1", "1.", None, 3, 5),
+        ("n3", "n1", "khoan", "2", "2.", None, 5, 7),
+        ("n4", "n0", "dieu", "2", "Điều 2.", "Giải thích từ ngữ", 7, 15),
+        ("n5", "n4", "khoan", "1", "1.", None, 8, 15),
+        ("n6", "n5", "gach", None, "-", None, 10, 14),  # "+" has no `inside`, so it nests under the dash
+        ("n7", "n6", "cong", None, "+", None, 12, 14),
     ]
+
+
+
+# ============================================================ heading segments
+
+
+def test_every_node_starts_with_its_own_heading_segment() -> None:
+    b = Blocks()
+    document = build(
+        b.text("Chương I"), b.text("QUY ĐỊNH CHUNG"), b.text("Điều 1. A"), b.numbered("Nội dung", "1."), b.text("- gạch")
+    )
+    for node in document.nodes:
+        heading = document.segments[node.start]
+        assert isinstance(heading, HeadingSegment)
+        assert (heading.node_id, heading.marker, heading.title) == (node.id, node.marker, node.title)
+
+
+def test_heading_segment_points_to_the_heading_block() -> None:
+    b = Blocks()
+    chuong, title = b.text("Chương I"), b.text("QUY ĐỊNH CHUNG")
+    document = build(chuong, title)
+    heading = document.segments[0]
+    assert isinstance(heading, HeadingSegment)
+    assert heading.block_id == chuong.id  # the marker's block; the title block is in head_block_ids
+
+
+def test_next_block_title_is_written_into_the_heading_segment() -> None:
+    # The heading segment is emitted before the title arrives and rebuilt when it does.
+    b = Blocks()
+    document = build(b.text("Chương II"), b.text("TỔ CHỨC THỰC HIỆN"), b.text("Đoạn"))
+    heading = document.segments[0]
+    assert isinstance(heading, HeadingSegment) and heading.title == "TỔ CHỨC THỰC HIỆN"
+
+
+def test_heading_segments_and_nodes_correspond_one_to_one() -> None:
+    b = Blocks()
+    document = build(b.text("Điều 1. A"), b.text("1. X"), b.text("Điều 2. B"), b.text("Nội dung"))
+    heading_ids = [s.node_id for s in document.segments if isinstance(s, HeadingSegment)]
+    assert heading_ids == [n.id for n in document.nodes]
+
+
+def test_body_text_of_a_heading_follows_its_heading_segment() -> None:
+    b = Blocks()
+    khoan = b.text("1. Nội dung khoản")
+    document = build(b.text("Điều 1. A"), khoan)
+    assert [type(s).__name__ for s in document.segments] == ["HeadingSegment", "HeadingSegment", "TextSegment"]
+    assert document.segments[1].block_id == document.segments[2].block_id == khoan.id

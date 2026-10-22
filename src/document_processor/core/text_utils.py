@@ -8,10 +8,12 @@ _LINE_SEP_TO_SPACE_MAPPING = str.maketrans(
     }
 )
 
+
 def is_blank_char(c: str) -> bool:
     if len(c) != 1:
         raise ValueError("chr must be a string of length 1")
     return c.isspace() or unicodedata.category(c) == "Cf"
+
 
 def is_invisible(text: str) -> bool:
     """
@@ -42,7 +44,7 @@ def strip_edges(text: str) -> str:
     while (start < n) and is_blank_char(text[start]):
         start += 1
 
-    while (end > start) and is_blank_char(text[end-1]):
+    while (end > start) and is_blank_char(text[end - 1]):
         end -= 1
 
-    return text[start : end]
+    return text[start:end]
