@@ -1,21 +1,23 @@
 from typing import assert_never
 
 from document_processor.core.models import (
-    heading_label,
     HeadingSegment,
     ImageSegment,
     LogicalDocument,
     TableSegment,
     TextSegment,
+    heading_label,
 )
+
 
 def render_segments(document: LogicalDocument, start: int, end: int) -> str:
     if not (0 <= start <= end <= len(document.segments)):
-        raise ValueError(f"required: 0 <= start <= end <= {len(document.segments)}, got start={start}, end={end}")
-    
+        raise ValueError(
+            f"required: 0 <= start <= end <= {len(document.segments)}, got start={start}, end={end}"
+        )
+
     builder: list[str] = []
     for segment in document.segments[start:end]:
-
         if isinstance(segment, HeadingSegment):
             text = heading_label(segment.marker, segment.title)
             if text:

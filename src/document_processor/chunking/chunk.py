@@ -18,10 +18,12 @@ class PathStep:
     @property
     def label(self) -> str:
         return heading_label(self.marker, self.title)
-    
+
     def __post_init__(self) -> None:
         if self.start < 0:
-            raise ValueError(f"PathStep for {self.node_id!r} at level {self.level!r}: required start >= 0, got start={self.start}")
+            raise ValueError(
+                f"PathStep for {self.node_id!r} at level {self.level!r}: required start >= 0, got start={self.start}"
+            )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -72,12 +74,15 @@ class Chunk:
             raise ValueError(
                 f"{error_owner}: a chunk part = 'front_matter' or 'end_matter' should not have node path defined"
             )
-        
-        if not all(self.path[i].start < self.path[i+1].start for i in range(len(self.path) - 1)):
+
+        if not all(
+            self.path[i].start < self.path[i + 1].start
+            for i in range(len(self.path) - 1)
+        ):
             raise ValueError(
                 f"{error_owner}: path starts must be in strictly increasing order"
             )
-        
+
         if self.path and self.path[-1].start > self.start:
             raise ValueError(
                 f"{error_owner}: owner must not start after the chunk: owner start={self.path[-1].start} > chunk start={self.start}"
@@ -109,4 +114,8 @@ class Chunk:
                 f"{error_owner}: required 0 <= self.text_span[0] < self.text_span[1], got [0]={self.text_span[0]}, [1]={self.text_span[1]} "
             )
 
-        object.__setattr__(self, "headings", tuple(step.label for step in self.path if step.start < self.start))
+        object.__setattr__(
+            self,
+            "headings",
+            tuple(step.label for step in self.path if step.start < self.start),
+        )

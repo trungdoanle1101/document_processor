@@ -1,14 +1,16 @@
-"""Tests for chunking/outline_chunker.py, slice 1: sizing without the outline walk.
+"""Tests for chunking/outline_chunker.py: structure first, then size.
 
-Front matter, body and end matter are chunked separately. Inside each, segments
-are grouped greedily at segment boundaries up to max_tokens; a segment too big
-on its own is a chunk by itself. Pieces without a text or table segment (only
-images or headings) give no chunk, and ids are numbered after that, so they
-have no gaps.
+Front matter, body and end matter are chunked separately. In the body, a node
+that fits is one chunk; one that does not is chunked as its children, with the
+text around them (lead-in, gaps, text after the last child) owned by the node;
+a leaf that does not fit is split by size inside its own range. Body text
+outside every root is owned by nothing. Size splitting groups segments greedily
+at segment boundaries up to max_tokens; a segment too big on its own is a
+chunk by itself. Pieces without a text or table segment (only images or
+headings) give no chunk, and ids are numbered after that, so they have no gaps.
 
-The size tests use documents without headings, so they keep holding once the
-body is walked by structure (_chunk_children) instead of as one range. Sizes
-use WordTokenizer: one token per whitespace-separated word.
+The size tests use documents without headings, where the body is one range.
+Sizes use WordTokenizer: one token per whitespace-separated word.
 """
 
 from typing import Any
@@ -30,11 +32,13 @@ from document_processor.core.models import (
 from document_processor.logical.build import build_logical_document
 from document_processor.logical.profiles.vn_regulation import VN_REGULATION
 from tests.factories import (
+    heading_for,
     make_block,
     make_document,
     make_image_info,
     make_image_segment,
     make_logical_document,
+    make_logical_node,
     make_table_block,
     make_text_segment,
 )
@@ -369,3 +373,157 @@ def test_only_single_segments_go_over_the_budget(max_tokens: int) -> None:
     for chunk in chunker(max_tokens).chunk(regulation()):
         if len(chunk.text.split()) > max_tokens:
             assert chunk.end - chunk.start == 1, (chunk.start, chunk.end, chunk.text)
+
+
+
+# ============================================================ structure
+#
+# Node sizes in regulation(), rendered with their headings (words):
+#   n0 Chương I 60 · n1 Điều 1 23 · n2 khoản 1 7 · n3 Điều 2 32 · n4 khoản 1 9 · n5 khoản 2 17 · n6 điểm a 13
+
+
+def body_chunks(max_tokens: int, **options: Any) -> list[tuple[tuple[int, int], str | None, tuple[str, ...]]]:
+    """(range, owner, headings) of each body chunk of regulation()."""
+    return [
+        ((c.start, c.end), c.node_id, c.headings)
+        for c in chunker(max_tokens, **options).chunk(regulation())
+        if c.part == "body"
+    ]
+
+
+CHUONG = "Chương I QUY ĐỊNH CHUNG"
+DIEU_1 = "Điều 1. Phạm vi điều chỉnh"
+DIEU_2 = "Điều 2. Giải thích từ ngữ"
+
+
+def test_a_root_that_fits_is_one_chunk() -> None:
+    assert body_chunks(60) == [((1, 15), "n0", ())]
+
+
+def test_a_root_that_does_not_fit_is_chunked_as_its_children() -> None:
+    # Each Điều fits; the Chương's heading has nothing else before its first child, so it gives no chunk.
+    assert body_chunks(40) == [
+        ((2, 7), "n1", (CHUONG,)),
+        ((7, 15), "n3", (CHUONG,)),
+    ]
+
+
+def test_descends_only_where_needed() -> None:
+    # Điều 2 (32) does not fit in 20, so its khoản become chunks; Điều 1's lead-in and khoản split too (23).
+    assert body_chunks(20) == [
+        ((2, 5), "n1", (CHUONG,)),  # Điều 1's heading, its lead-in and the image
+        ((5, 7), "n2", (CHUONG, DIEU_1)),
+        ((8, 10), "n4", (CHUONG, DIEU_2)),  # Điều 2's heading alone [7, 8) gives no chunk
+        ((10, 15), "n5", (CHUONG, DIEU_2)),
+    ]
+
+
+def test_lead_in_is_owned_by_the_parent() -> None:
+    (lead_in, *_) = chunker(20).chunk(regulation())[1:]
+    assert lead_in.node_id == "n1"
+    assert lead_in.text == "Điều 1. Phạm vi điều chỉnh\nQuy định này quy định về quản lý kiến trúc"
+
+
+def test_a_heading_with_nothing_before_the_first_child_is_only_in_breadcrumbs() -> None:
+    chunks = chunker(20).chunk(regulation())
+    assert all("Điều 2." not in c.text for c in chunks)
+    assert all(DIEU_2 in c.headings for c in chunks if c.start >= 7 and c.part == "body")
+
+
+def test_a_leaf_that_does_not_fit_is_split_inside_its_own_range() -> None:
+    # Điểm a (13) has no children: split by size, both pieces owned by it.
+    assert body_chunks(12)[-2:] == [
+        ((12, 14), "n6", (CHUONG, DIEU_2, "2.")),  # starts with its own heading "a)"
+        ((14, 15), "n6", (CHUONG, DIEU_2, "2.", "a)")),  # the table; the heading moved to the breadcrumb
+    ]
+
+
+def test_a_heading_split_from_its_text_moves_to_the_breadcrumb() -> None:
+    # Khoản 1 of Điều 2 (9) does not fit in 8: "1." alone gives no chunk, the text carries it as a heading.
+    assert ((9, 10), "n4", (CHUONG, DIEU_2, "1.")) in body_chunks(8)
+
+
+def outlined(*layout: tuple[str, str | None, int, int], n_segments: int) -> LogicalDocument:
+    """A document whose nodes are (id, parent, start, end); headings at node starts, two-word text elsewhere.
+
+    The whole document is body.
+    """
+    nodes = tuple(
+        make_logical_node(id=node_id, parent_id=parent, level="x", number=None, marker=f"[{node_id}]", title=None,
+                          head_block_ids=(f"h-{node_id}",), start=start, end=end)
+        for node_id, parent, start, end in layout
+    )
+    segments: list[Segment] = []
+    for index in range(n_segments):
+        starting = [n for n in nodes if n.start == index]
+        segments.append(heading_for(starting[0]) if starting else make_text_segment(block_id=f"pb{index}", text=f"w{index} w{index}"))
+    return make_logical_document(segments=tuple(segments), nodes=nodes, body_start=0, body_end=n_segments)
+
+
+def test_text_after_the_last_child_is_owned_by_the_parent() -> None:
+    #   0 [a]  1 text  2 [a/1]  3 text  4 text (closing remark of a)
+    document = outlined(("a", None, 0, 5), ("a/1", "a", 2, 4), n_segments=5)
+    chunks = chunker(4).chunk(document)
+    assert [((c.start, c.end), c.node_id, c.headings) for c in chunks] == [
+        ((0, 2), "a", ()),
+        ((2, 4), "a/1", ("[a]",)),
+        ((4, 5), "a", ("[a]",)),  # after a/1, so a's heading is in the breadcrumb
+    ]
+
+
+def test_text_between_children_is_owned_by_the_parent() -> None:
+    #   0 [a]  1 [a/1]  2 text  3 text (between)  4 [a/2]  5 text
+    document = outlined(("a", None, 0, 6), ("a/1", "a", 1, 3), ("a/2", "a", 4, 6), n_segments=6)
+    assert [((c.start, c.end), c.node_id) for c in chunker(4).chunk(document)] == [
+        ((1, 3), "a/1"),  # a's heading alone at [0, 1) gives no chunk
+        ((3, 4), "a"),
+        ((4, 6), "a/2"),
+    ]
+
+
+def test_body_text_outside_every_root_is_owned_by_nothing() -> None:
+    #   0 text  1 [a]  2 text  3 text (after the root)  4 [b]  5 text
+    document = outlined(("a", None, 1, 3), ("b", None, 4, 6), n_segments=6)
+    assert [((c.start, c.end), c.node_id, c.headings) for c in chunker(3).chunk(document)] == [
+        ((0, 1), None, ()),
+        ((1, 3), "a", ()),
+        ((3, 4), None, ()),
+        ((4, 6), "b", ()),
+    ]
+
+
+def test_siblings_are_never_merged() -> None:
+    # Both khoản would fit together, but each child is chunked on its own (merging comes later).
+    document = outlined(("a", None, 0, 5), ("a/1", "a", 1, 3), ("a/2", "a", 3, 5), n_segments=5)
+    assert [(c.start, c.end) for c in chunker(6).chunk(document)] == [(1, 3), (3, 5)]
+
+
+# ============================================================ structure invariants
+
+
+@pytest.mark.parametrize("max_tokens", [1, 3, 8, 12, 20, 40, 60])
+def test_chunks_never_cut_through_a_node(max_tokens: int) -> None:
+    # A node is inside one chunk, or holds the chunk, or is disjoint from it.
+    document = regulation()
+    for chunk in chunker(max_tokens).chunk(document):
+        for node in document.nodes:
+            inside = chunk.start <= node.start and node.end <= chunk.end
+            holds = node.start <= chunk.start and chunk.end <= node.end
+            disjoint = node.end <= chunk.start or chunk.end <= node.start
+            assert inside or holds or disjoint, (chunk.id, node.id)
+
+
+@pytest.mark.parametrize("max_tokens", [1, 3, 8, 12, 20, 40, 60])
+def test_owner_is_the_innermost_node_holding_the_chunk(max_tokens: int) -> None:
+    document = regulation()
+    for chunk in chunker(max_tokens).chunk(document):
+        holders = [n for n in document.nodes if n.start <= chunk.start and chunk.end <= n.end]
+        expected = holders[-1].id if holders else None  # pre-order: the last holder is the innermost
+        assert chunk.node_id == expected, chunk.id
+
+
+@pytest.mark.parametrize("max_tokens", [3, 8, 12, 20, 25, 40])
+def test_contextualized_chunks_fit_when_the_breadcrumb_is_counted(max_tokens: int) -> None:
+    for chunk in chunker(max_tokens, include_breadcrumb_in_size=True).chunk(regulation()):
+        if chunk.end - chunk.start > 1:
+            assert len(chunk.contextualize().split()) <= max_tokens, chunk.id
