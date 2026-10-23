@@ -9,7 +9,7 @@ from types import MappingProxyType
 
 import pytest
 
-from document_processor.logical.registry import Registry
+from document_processor.core.registry import Registry
 
 
 def fruit_registry() -> Registry[int]:
@@ -30,7 +30,9 @@ def test_get_unknown_name_raises_key_error() -> None:
         fruit_registry().get("durian")
 
 
-def test_unknown_name_error_names_the_kind_the_name_and_the_known_names_sorted() -> None:
+def test_unknown_name_error_names_the_kind_the_name_and_the_known_names_sorted() -> (
+    None
+):
     with pytest.raises(KeyError) as excinfo:
         fruit_registry().get("durian")
     message = str(excinfo.value)

@@ -3,10 +3,10 @@ import re
 from dataclasses import dataclass
 from itertools import product
 
+from document_processor.core.registry import Registry
 from document_processor.core.text_utils import is_blank_char, normalize_nfc
-from .counter_styles import NAME_PATTERN, CounterStyle
-from .registry import Registry
-from .markers import MatchSource
+from document_processor.logical.counter_styles import NAME_PATTERN, CounterStyle
+from document_processor.logical.markers import MatchSource
 
 
 _WHITESPACE_PATTERN = r"[^\S\r\n]+"

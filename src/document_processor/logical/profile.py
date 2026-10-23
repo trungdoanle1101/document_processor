@@ -9,7 +9,7 @@ from document_processor.logical.glyph_marker import GlyphMarker, compile_glyph_m
 from document_processor.logical.levels import (
     LevelSpec, TemplateMarkerSpec, Marker, GlyphMarkerSpec, MarkerSpec
 )
-from document_processor.logical.registry import Registry
+from document_processor.core.registry import Registry
 from document_processor.logical.markers import NAME_PATTERN, WORD_BULLET
 from document_processor.core.text_utils import normalize_nfc
 

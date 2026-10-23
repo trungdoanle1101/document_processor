@@ -17,8 +17,8 @@ from document_processor.core.numerals import (
     
 )
 from document_processor.core.text_utils import is_blank_char
-from .registry import Registry
-from .markers import NAME_PATTERN
+from document_processor.core.registry import Registry
+from document_processor.logical.markers import NAME_PATTERN
 
 
 @dataclass(frozen=True, kw_only=True)

@@ -18,7 +18,7 @@ import pytest
 
 from document_processor.logical.glyph_marker import GlyphMarker, GlyphMatch, compile_glyph_marker
 from document_processor.logical.glyph_styles import BUILTIN_GLYPH_STYLES, GlyphStyle
-from document_processor.logical.registry import Registry
+from document_processor.core.registry import Registry
 
 VS15 = "︎"  # text presentation
 VS16 = "️"  # emoji presentation
