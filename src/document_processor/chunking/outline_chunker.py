@@ -105,15 +105,15 @@ class OutlineChunker:
 
     def _chunk_node(self, document: LogicalDocument, node: LogicalNode) -> list[_Piece]:
         child_ids = document.get_children(node.id)
-        must_split = self.keep_sections_apart and any (
+        must_split = self.keep_sections_apart and any(
             document.get_node(child_id).is_section for child_id in child_ids
         )
-        
+
         if not must_split and self._fits(document, node.id, node.start, node.end):
             return [
                 _Piece(part="body", owner_id=node.id, start=node.start, end=node.end)
             ]
-        
+
         if not child_ids:
             return self._chunk_range(document, "body", node.start, node.end, node.id)
         return self._chunk_children(document, node.id)
@@ -147,7 +147,11 @@ class OutlineChunker:
         group: list[_ChildOrSegment] = []
         for item in items:
             # A section is never grouped: close the group, chunk the section on its own
-            if self.keep_sections_apart and item.child is not None and item.child.is_section:
+            if (
+                self.keep_sections_apart
+                and item.child is not None
+                and item.child.is_section
+            ):
                 if group:
                     pieces.append(_get_piece_from_group(group, owner_id))
                     group = []
@@ -159,7 +163,7 @@ class OutlineChunker:
                 if self._fits(document, owner_id, group[0].start, item.end):
                     group.append(item)
                     continue
-                
+
                 pieces.append(_get_piece_from_group(group, owner_id))
                 group = []
 
@@ -187,7 +191,7 @@ def _get_piece_from_group(
     group: Sequence[_ChildOrSegment], owner_id: str | None
 ) -> _Piece:
     if not group:
-        raise ValueError(f"can only get piece from non-empty group")
+        raise ValueError("can only get piece from non-empty group")
     if len(group) == 1 and group[0].child is not None:
         owner_id = group[0].child.id
     return _Piece(
