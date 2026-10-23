@@ -17,6 +17,7 @@ from document_processor.pipeline.pipeline import (
     PipelineResult,
     SavedFiles,
 )
+from document_processor.pipeline.review import format_outline
 
 __all__ = [
     "DEFAULT_STEPS",
@@ -35,6 +36,7 @@ __all__ = [
     "build_logical_document",
     "clean_document",
     "extract_physical_document",
+    "format_outline",
     "save_chunks",
     "load_chunks",
     "load_logical_document",
