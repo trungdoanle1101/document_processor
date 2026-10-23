@@ -358,7 +358,8 @@ def test_no_fallback_without_a_word_bullet_level() -> None:
 def test_fallback_candidate_is_placed_at_its_rank() -> None:
     found = summary(find_candidates(profile(DIEU, BULLET, GACH), bulleted("Điều 2. X", "•")))
     assert [level for level, _, _ in found] == ["dieu", "bullet"]
-    found = summary(find_candidates(profile(BULLET, DIEU), bulleted("Điều 2. X", "•")))
+    # Below an item, Điều must be declared an item too (sections rank above items).
+    found = summary(find_candidates(profile(BULLET, dataclasses.replace(DIEU, is_section=False)), bulleted("Điều 2. X", "•")))
     assert [level for level, _, _ in found] == ["bullet", "dieu"]
 
 
@@ -370,7 +371,7 @@ def test_candidates_are_in_rank_order() -> None:
     khoan = LevelSpec(name="khoan", is_section=False, marker=templates("{arabic}."))  # no inside, so it can come first
     block = numbered("Điều 3. Phạm vi", "1.")
     forward = [c.level for c in find_candidates(profile(DIEU, khoan), block)]
-    backward = [c.level for c in find_candidates(profile(khoan, DIEU), block)]
+    backward = [c.level for c in find_candidates(profile(khoan, dataclasses.replace(DIEU, is_section=False)), block)]
     assert forward == ["dieu", "khoan"]
     assert backward == ["khoan", "dieu"]
 

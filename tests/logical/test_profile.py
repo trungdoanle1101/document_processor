@@ -2,8 +2,9 @@
 
 A Profile holds the levels in order (the position is the rank), compiles every
 level's marker once when it is built, and checks what needs more than one level:
-unique names, `inside` naming earlier levels, a template or glyph style used by
-one level only, and `word_bullet` resolved to at most one level. Lookups by
+unique names, `inside` naming earlier levels, sections ranking above items, a
+template or glyph style used by one level only, and `word_bullet` resolved to at
+most one level. Lookups by
 level name raise KeyError for unknown names.
 """
 
@@ -33,6 +34,7 @@ CHUONG = LevelSpec(name="chuong", is_section=True, marker=templates("Chương {u
 DIEU = LevelSpec(name="dieu", is_section=True, marker=templates("Điều {arabic}."), title="rest_of_paragraph")
 KHOAN = LevelSpec(name="khoan", is_section=False, marker=templates("{arabic}."), inside=("dieu",))
 GACH = LevelSpec(name="gach", is_section=False, marker=glyphs("dash"), closes_on_plain_paragraph=True)
+KHOAN_ANYWHERE = LevelSpec(name="khoan", is_section=False, marker=templates("{arabic}."))  # no inside
 
 
 def make(levels: tuple[LevelSpec, ...] | None = (CHUONG, DIEU, KHOAN, GACH), **overrides: object) -> Profile:
@@ -440,3 +442,40 @@ def test_compiled_tables_are_read_only() -> None:
     assert isinstance(profile._marker_by_name, MappingProxyType)
     assert isinstance(profile._rank_by_name, MappingProxyType)
     assert isinstance(profile._level_by_name, MappingProxyType)
+
+
+
+# ============================================================ sections rank above items
+#
+# A node's children are always deeper levels, so this keeps an item (a numbered
+# paragraph) from ever holding a section (a cited unit like Điều).
+
+
+def test_sections_then_items_is_accepted() -> None:
+    assert [level.is_section for level in make().levels or ()] == [True, True, False, False]
+
+
+def test_all_sections_is_accepted() -> None:
+    assert make(levels=(CHUONG, DIEU)).levels == (CHUONG, DIEU)
+
+
+def test_all_items_is_accepted() -> None:
+    assert make(levels=(KHOAN_ANYWHERE, GACH)).levels == (KHOAN_ANYWHERE, GACH)
+
+
+def test_a_section_below_an_item_is_rejected() -> None:
+    phan = LevelSpec(name="phan", is_section=False, marker=templates("Phần {upper_roman}"))
+    with pytest.raises(ValueError, match=r"^profile 'test', level 'chuong': a section cannot rank below an item level \('phan'\)$"):
+        make(levels=(phan, CHUONG, DIEU))
+
+
+def test_the_error_names_the_first_item_above() -> None:
+    # Two items above Điều: the message points at the first one, where the order went wrong.
+    with pytest.raises(ValueError, match=r"level 'dieu': .*\('khoan'\)"):
+        make(levels=(KHOAN_ANYWHERE, GACH, DIEU))
+
+
+def test_a_section_after_items_and_sections_is_rejected() -> None:
+    late = LevelSpec(name="muc", is_section=True, marker=templates("Mục {arabic}"))
+    with pytest.raises(ValueError, match="level 'muc': a section cannot rank below an item level"):
+        make(levels=(CHUONG, DIEU, KHOAN, late))

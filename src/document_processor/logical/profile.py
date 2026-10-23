@@ -51,8 +51,17 @@ class Profile:
             template_owner: dict[str, str] = {}
             glyph_owner: dict[str, str] = {}
 
+            first_item: str | None = None
+
             for rank, level in enumerate(self.levels):
                 where = f"profile {self.name!r}, level {level.name!r}"
+
+                if level.is_section and first_item is not None:
+                    raise ValueError(f"{where}: a section cannot rank below an item level ({first_item!r})")
+
+                if not level.is_section and first_item is None:
+                    first_item = level.name
+
                 if level.name in level_by_name:
                     raise ValueError(f"{where}: duplicate level name")
                 
