@@ -49,11 +49,11 @@ def glyphs(*names: str) -> GlyphMarkerSpec:
     return GlyphMarkerSpec(glyphs=names)
 
 
-DIEU = LevelSpec(name="dieu", marker=templates("Điều {arabic}."))
-KHOAN = LevelSpec(name="khoan", marker=templates("{arabic}."), inside=("dieu",))
-ITEM = LevelSpec(name="item", marker=templates("{lower_roman|lower_vn})"))  # "i)" has two readings
-GACH = LevelSpec(name="gach", marker=glyphs("dash"))
-KHOAN_ANYWHERE = LevelSpec(name="khoan", marker=templates("{arabic}."))
+DIEU = LevelSpec(name="dieu", is_section=True, marker=templates("Điều {arabic}."))
+KHOAN = LevelSpec(name="khoan", is_section=False, marker=templates("{arabic}."), inside=("dieu",))
+ITEM = LevelSpec(name="item", is_section=False, marker=templates("{lower_roman|lower_vn})"))  # "i)" has two readings
+GACH = LevelSpec(name="gach", is_section=False, marker=glyphs("dash"))
+KHOAN_ANYWHERE = LevelSpec(name="khoan", is_section=False, marker=templates("{arabic}."))
 
 
 def profile(*levels: LevelSpec) -> Profile:
@@ -272,8 +272,8 @@ def test_both_readings_of_i() -> None:
 # ============================================================ word_bullet fallback
 
 
-BULLET = LevelSpec(name="bullet", marker=glyphs(WORD_BULLET))
-TICK = LevelSpec(name="tick", marker=glyphs("check", WORD_BULLET))
+BULLET = LevelSpec(name="bullet", is_section=False, marker=glyphs(WORD_BULLET))
+TICK = LevelSpec(name="tick", is_section=False, marker=glyphs("check", WORD_BULLET))
 
 
 def test_unclaimed_word_bullet_falls_back() -> None:
@@ -367,7 +367,7 @@ def test_fallback_candidate_is_placed_at_its_rank() -> None:
 
 def test_candidates_are_in_rank_order() -> None:
     # Reverse the profile: the same block gives the same candidates, reversed.
-    khoan = LevelSpec(name="khoan", marker=templates("{arabic}."))  # no inside, so it can come first
+    khoan = LevelSpec(name="khoan", is_section=False, marker=templates("{arabic}."))  # no inside, so it can come first
     block = numbered("Điều 3. Phạm vi", "1.")
     forward = [c.level for c in find_candidates(profile(DIEU, khoan), block)]
     backward = [c.level for c in find_candidates(profile(khoan, DIEU), block)]
@@ -408,8 +408,8 @@ def test_vn_regulation(block: Any, expected: list[tuple[str, object, object]]) -
 # ============================================================ narrow_candidates (pass 2)
 
 
-LETTER_POINT = LevelSpec(name="diem", marker=templates("{lower_latin|lower_vn})"))  # Latin preferred
-ROMAN_POINT = LevelSpec(name="point", marker=templates("({lower_roman|lower_latin})"))  # roman preferred
+LETTER_POINT = LevelSpec(name="diem", is_section=False, marker=templates("{lower_latin|lower_vn})"))  # Latin preferred
+ROMAN_POINT = LevelSpec(name="point", is_section=False, marker=templates("({lower_roman|lower_latin})"))  # roman preferred
 
 
 def listed(text: str, displayed: str, num_fmt: str) -> Any:
@@ -554,20 +554,20 @@ def test_c_at_the_start_falls_back_to_the_slot_order() -> None:
 
 def test_declared_lower_letter_keeps_the_letter_reading() -> None:
     # "i)" at the start would be roman 1, but Word says the list counts in letters.
-    level = LevelSpec(name="point", marker=templates("{lower_roman|lower_latin})"))
+    level = LevelSpec(name="point", is_section=False, marker=templates("{lower_roman|lower_latin})"))
     [item] = narrowed(profile(level), listed("Nội dung", "i)", "lowerLetter"))
     assert chosen([item]) == [[("point", "lower_latin", 9)]]
 
 
 def test_declared_lower_roman_keeps_the_roman_reading() -> None:
-    level = LevelSpec(name="point", marker=templates("{lower_latin|lower_roman})"))  # letter preferred
+    level = LevelSpec(name="point", is_section=False, marker=templates("{lower_latin|lower_roman})"))  # letter preferred
     [item] = narrowed(profile(level), listed("Nội dung", "c)", "lowerRoman"))
     assert chosen([item]) == [[("point", "lower_roman", 100)]]
 
 
 def test_declared_format_does_not_touch_text_readings() -> None:
     # The block declares decimal, but the typed "i)" is text: both its readings stay in play.
-    level = LevelSpec(name="point", marker=templates("{lower_roman|lower_latin})"))
+    level = LevelSpec(name="point", is_section=False, marker=templates("{lower_roman|lower_latin})"))
     [item] = narrowed(profile(level), listed("i) Nội dung", "1.", "decimal"))
     assert chosen([item]) == [[("point", "lower_roman", 1)]]
 
@@ -601,14 +601,14 @@ def test_disagreement_text_wins_when_the_list_does_not_count() -> None:
 
 def test_glyphs_prefer_the_typed_one_in_a_bullet_list() -> None:
     # One level with two glyph styles: Word shows "–", the author typed "+".
-    item_level = LevelSpec(name="item", marker=glyphs("dash", "plus"))
+    item_level = LevelSpec(name="item", is_section=False, marker=glyphs("dash", "plus"))
     [item] = narrowed(profile(item_level), bulleted("+ Nội dung", "–"))
     [kept] = item.candidates
     assert isinstance(kept.text_match, GlyphMatch) and kept.text_match.style == "plus"
 
 
 def test_typed_glyph_wins_over_the_word_bullet_fallback_of_the_same_level() -> None:
-    item_level = LevelSpec(name="item", marker=glyphs("dash", WORD_BULLET))
+    item_level = LevelSpec(name="item", is_section=False, marker=glyphs("dash", WORD_BULLET))
     [item] = narrowed(profile(item_level), bulleted("- Nội dung", "•"))
     [kept] = item.candidates
     assert kept.text_match is not None and kept.list_match is None
@@ -632,11 +632,11 @@ def test_vn_regulation_legal_text_letters_become_vietnamese_from_dj() -> None:
 # ============================================================ choose_headings (pass 3)
 
 
-CHUONG = LevelSpec(name="chuong", marker=templates("Chương {upper_roman}"), title="next_block")
-GACH_CLOSING = LevelSpec(name="gach", marker=glyphs("dash"), closes_on_plain_paragraph=True)
-CONG_UNDER_GACH = LevelSpec(name="cong", marker=glyphs("plus"), inside=("gach",), closes_on_plain_paragraph=True)
-DIEM_UNDER_KHOAN = LevelSpec(name="diem", marker=templates("{lower_latin})"), inside=("khoan",))
-SUB_UNDER_KHOAN = LevelSpec(name="khoan_cap_2", marker=templates("{arabic}.{arabic}"), inside=("khoan",))
+CHUONG = LevelSpec(name="chuong", is_section=True, marker=templates("Chương {upper_roman}"), title="next_block")
+GACH_CLOSING = LevelSpec(name="gach", is_section=False, marker=glyphs("dash"), closes_on_plain_paragraph=True)
+CONG_UNDER_GACH = LevelSpec(name="cong", is_section=False, marker=glyphs("plus"), inside=("gach",), closes_on_plain_paragraph=True)
+DIEM_UNDER_KHOAN = LevelSpec(name="diem", is_section=False, marker=templates("{lower_latin})"), inside=("khoan",))
+SUB_UNDER_KHOAN = LevelSpec(name="khoan_cap_2", is_section=False, marker=templates("{arabic}.{arabic}"), inside=("khoan",))
 
 STRUCTURE = Profile(
     name="structure",
@@ -697,7 +697,7 @@ def test_count_kept_open_by_plain_paragraph(open_levels: list[str], kept: int) -
 
 def test_a_level_that_stays_open_keeps_its_parents_open() -> None:
     # "note" does not close and sits inside "gach", which does: gach cannot close while note is open.
-    note = LevelSpec(name="note", marker=templates("Ghi chú {arabic}:"))
+    note = LevelSpec(name="note", is_section=False, marker=templates("Ghi chú {arabic}:"))
     shielded = Profile(name="shielded", version="1", levels=(DIEU, GACH_CLOSING, note), end_matter=None)
     assert count_kept_open_by_plain_paragraph(shielded, ["dieu", "gach", "note"]) == 3
 

@@ -26,25 +26,29 @@ from document_processor.logical.profile import Profile
 
 VN_REGULATION = Profile(
     name="vn_regulation",
-    version="3",
+    version="4",
     levels=(
         LevelSpec(
             name="chuong",
+            is_section=True,
             marker=TemplateMarkerSpec(templates=("Chương {upper_roman|arabic}",)),
             title="next_block",
         ),
         LevelSpec(
             name="muc",
+            is_section=True,
             marker=TemplateMarkerSpec(templates=("Mục {upper_roman|arabic}",)),
             title="next_block",
         ),
         LevelSpec(
             name="dieu",
+            is_section=True,
             marker=TemplateMarkerSpec(templates=("Điều {arabic}.", "Điều {arabic}:")),
             title="rest_of_paragraph",
         ),
         LevelSpec(
             name="khoan",
+            is_section=False,
             marker=TemplateMarkerSpec(templates=("{arabic}.",)),
             inside=("dieu",),
         ),
@@ -52,26 +56,31 @@ VN_REGULATION = Profile(
             # "2.1 Nguồn dữ liệu…" under khoản 2. Also reads "2.5 triệu đồng" at the start
             # of a line; `inside` and pass 2 are what keep that out.
             name="khoan_cap_2",
+            is_section=False,
             marker=TemplateMarkerSpec(templates=("{arabic}.{arabic}", "{arabic}.{arabic}.")),
             inside=("khoan",),
         ),
         LevelSpec(
             name="khoan_cap_3",
+            is_section=False,
             marker=TemplateMarkerSpec(templates=("{arabic}.{arabic}.{arabic}", "{arabic}.{arabic}.{arabic}.")),
             inside=("khoan",),
         ),
         LevelSpec(
             name="diem",
+            is_section=False,
             marker=TemplateMarkerSpec(templates=("{lower_latin|lower_vn})", "{lower_latin|lower_vn}.")),
             inside=("dieu",),
         ),
         LevelSpec(
             name="gach",
+            is_section=False,
             marker=GlyphMarkerSpec(glyphs=("dash",)),
             closes_on_plain_paragraph=True,
         ),
         LevelSpec(
             name="cong",
+            is_section=False,
             marker=GlyphMarkerSpec(glyphs=("plus",)),
             closes_on_plain_paragraph=True,
         ),

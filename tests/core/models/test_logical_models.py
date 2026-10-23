@@ -250,6 +250,18 @@ def test_valid_node_is_accepted() -> None:
     assert (n.start, n.end) == (0, 1)
 
 
+@pytest.mark.parametrize("is_section", [True, False])
+def test_node_keeps_is_section(is_section: bool) -> None:
+    assert make_logical_node(is_section=is_section).is_section is is_section
+
+
+def test_node_requires_is_section() -> None:
+    fields = dataclasses.asdict(make_logical_node())
+    del fields["is_section"]
+    with pytest.raises(TypeError, match="is_section"):
+        LogicalNode(**fields)
+
+
 def test_optional_fields_may_be_none() -> None:
     n = make_logical_node(number=None, marker=None, title=None)
     assert (n.number, n.marker, n.title) == (None, None, None)

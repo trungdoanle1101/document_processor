@@ -50,12 +50,12 @@ PROFILE = Profile(
     name="test",
     version="1",
     levels=(
-        LevelSpec(name="mo_dau", marker=templates("MỞ ĐẦU"), title="none"),  # a word-only marker
-        LevelSpec(name="chuong", marker=templates("Chương {upper_roman}"), title="next_block"),
-        LevelSpec(name="dieu", marker=templates("Điều {arabic}."), title="rest_of_paragraph"),
-        LevelSpec(name="khoan", marker=templates("{arabic}."), inside=("dieu",)),
-        LevelSpec(name="diem", marker=templates("{lower_latin})"), inside=("khoan",)),
-        LevelSpec(name="gach", marker=GlyphMarkerSpec(glyphs=("dash",)), closes_on_plain_paragraph=True),
+        LevelSpec(name="mo_dau", is_section=True, marker=templates("MỞ ĐẦU"), title="none"),  # a word-only marker
+        LevelSpec(name="chuong", is_section=True, marker=templates("Chương {upper_roman}"), title="next_block"),
+        LevelSpec(name="dieu", is_section=True, marker=templates("Điều {arabic}."), title="rest_of_paragraph"),
+        LevelSpec(name="khoan", is_section=False, marker=templates("{arabic}."), inside=("dieu",)),
+        LevelSpec(name="diem", is_section=False, marker=templates("{lower_latin})"), inside=("khoan",)),
+        LevelSpec(name="gach", is_section=False, marker=GlyphMarkerSpec(glyphs=("dash",)), closes_on_plain_paragraph=True),
     ),
     end_matter=templates("Nơi nhận:"),
 )
@@ -197,7 +197,7 @@ def test_generated_and_typed_marker_drop_the_typed_one() -> None:
 
 
 def test_multi_numeral_number_is_written_with_its_separators() -> None:
-    sub = LevelSpec(name="sub", marker=templates("{arabic}.{arabic}.{arabic}"))
+    sub = LevelSpec(name="sub", is_section=False, marker=templates("{arabic}.{arabic}.{arabic}"))
     profile = Profile(name="sub", version="1", levels=(sub,), end_matter=None)
     b = Blocks()
     document = build(b.text("2.3.1 Tầng xử lý"), profile=profile)
@@ -482,3 +482,27 @@ def test_body_text_of_a_heading_follows_its_heading_segment() -> None:
     document = build(b.text("Điều 1. A"), khoan)
     assert [type(s).__name__ for s in document.segments] == ["HeadingSegment", "HeadingSegment", "TextSegment"]
     assert document.segments[1].block_id == document.segments[2].block_id == khoan.id
+
+
+# ============================================================ sections
+
+
+def test_nodes_copy_is_section_from_their_level() -> None:
+    b = Blocks()
+    document = build(
+        b.text("Chương I"), b.text("QUY ĐỊNH CHUNG"), b.text("Điều 1. A"), b.text("1. X"), b.text("a) Y"), b.text("- Z")
+    )
+    assert [(n.level, n.is_section) for n in document.nodes] == [
+        ("chuong", True),
+        ("dieu", True),
+        ("khoan", False),
+        ("diem", False),
+        ("gach", False),
+    ]
+
+
+def test_vn_regulation_marks_chuong_and_dieu_as_sections() -> None:
+    b = Blocks()
+    physical = make_document(blocks=(b.text("Chương I"), b.text("QUY ĐỊNH CHUNG"), b.text("Điều 1. A"), b.text("1. X")))
+    document = build_logical_document(VN_REGULATION, physical)
+    assert [(n.level, n.is_section) for n in document.nodes] == [("chuong", True), ("dieu", True), ("khoan", False)]

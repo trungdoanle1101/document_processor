@@ -51,10 +51,10 @@ def full_document() -> LogicalDocument:
                           marker="Điều 1.", title="Phạm vi điều chỉnh",
                           head_block_ids=("pb4",), start=2, end=9),
         make_logical_node(id="chuong-I/dieu-1/khoan-1", parent_id="chuong-I/dieu-1",
-                          level="khoan", number="1", marker="1.", title=None,
+                          level="khoan", is_section=False, number="1", marker="1.", title=None,
                           head_block_ids=("pb6",), start=4, end=7),
         make_logical_node(id="chuong-I/dieu-1/khoan-2", parent_id="chuong-I/dieu-1",
-                          level="khoan", number=None, marker=None, title=None,
+                          level="khoan", is_section=False, number=None, marker=None, title=None,
                           head_block_ids=("pb8",), start=7, end=9),
     )
     segments = (
@@ -204,6 +204,7 @@ def test_node_shape() -> None:
         "id": "chuong-I",
         "parent_id": None,
         "level": "chuong",
+        "is_section": True,
         "number": "I",
         "marker": "Chương I",
         "title": "QUY ĐỊNH CHUNG",
@@ -211,6 +212,18 @@ def test_node_shape() -> None:
         "start": 1,
         "end": 9,
     }
+
+
+def test_is_section_survives_a_round_trip() -> None:
+    loaded = round_trip(full_document())
+    assert [n.is_section for n in loaded.nodes] == [True, True, False, False]
+
+
+def test_missing_is_section_rejected_on_load() -> None:
+    d = through_json(logical_document_to_dict(full_document()))
+    del d["document"]["nodes"][2]["is_section"]
+    with pytest.raises(KeyError, match="is_section"):
+        logical_document_from_dict(d)
 
 
 def test_unset_optional_node_fields_are_written_as_null() -> None:

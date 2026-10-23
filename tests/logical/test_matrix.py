@@ -148,11 +148,11 @@ GENERAL = Profile(
     name="general",
     version="1",
     levels=(
-        LevelSpec(name="part", marker=TemplateMarkerSpec(templates=("Part {upper_roman}",)), title="next_block"),
-        LevelSpec(name="article", marker=TemplateMarkerSpec(templates=("Article {arabic}", "Article {arabic}er")), title="rest_of_paragraph"),
-        LevelSpec(name="section", marker=TemplateMarkerSpec(templates=("§ {arabic}", "§{arabic}"))),
-        LevelSpec(name="annex_item", marker=TemplateMarkerSpec(templates=("{upper_latin}.{arabic}",))),
-        LevelSpec(name="point", marker=TemplateMarkerSpec(templates=("({lower_roman|lower_latin})",))),
+        LevelSpec(name="part", is_section=False, marker=TemplateMarkerSpec(templates=("Part {upper_roman}",)), title="next_block"),
+        LevelSpec(name="article", is_section=False, marker=TemplateMarkerSpec(templates=("Article {arabic}", "Article {arabic}er")), title="rest_of_paragraph"),
+        LevelSpec(name="section", is_section=False, marker=TemplateMarkerSpec(templates=("§ {arabic}", "§{arabic}"))),
+        LevelSpec(name="annex_item", is_section=False, marker=TemplateMarkerSpec(templates=("{upper_latin}.{arabic}",))),
+        LevelSpec(name="point", is_section=False, marker=TemplateMarkerSpec(templates=("({lower_roman|lower_latin})",))),
     ),
     end_matter=TemplateMarkerSpec(templates=("Done at",)),
 )

@@ -45,6 +45,7 @@ type MarkerSpec = TemplateMarkerSpec | GlyphMarkerSpec
 class LevelSpec:
     name: str
     marker: MarkerSpec
+    is_section: bool
     title: TitleRule = "none"
     closes_on_plain_paragraph: bool = False
     inside: tuple[str, ...] = ()

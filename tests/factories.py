@@ -186,6 +186,7 @@ def make_logical_node(**overrides: Any) -> LogicalNode:
         "id": "dieu-1",
         "parent_id": None,
         "level": "dieu",
+        "is_section": True,
         "number": "1",
         "marker": "Điều 1.",
         "title": "Phạm vi điều chỉnh",

@@ -93,6 +93,9 @@ class LogicalNode:
     # Title of this node
     title: str | None
 
+    # Whether a node is a section (or an item), as indicated by the profile definition
+    is_section: bool
+
     # block ids where marker/title came from
     head_block_ids: tuple[str, ...]
 

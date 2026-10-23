@@ -59,7 +59,13 @@ def numbers_read(level: str, text: str) -> set[tuple[str, str, int]]:
 
 def test_identity() -> None:
     assert VN_REGULATION.name == "vn_regulation"
-    assert VN_REGULATION.version == "3"
+    assert VN_REGULATION.version == "4"
+
+
+def test_chuong_muc_and_dieu_are_the_sections() -> None:
+    # Units people cite; everything below an Điều is an item inside it.
+    assert VN_REGULATION.levels is not None
+    assert [level.name for level in VN_REGULATION.levels if level.is_section] == ["chuong", "muc", "dieu"]
 
 
 def test_level_order_is_outermost_first() -> None:

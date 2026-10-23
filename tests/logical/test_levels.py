@@ -30,7 +30,7 @@ DASH = GlyphMarkerSpec(glyphs=("dash",))
 
 
 def level(**overrides: object) -> LevelSpec:
-    fields: dict[str, object] = {"name": "dieu", "marker": DIEU}
+    fields: dict[str, object] = {"name": "dieu", "marker": DIEU, "is_section": True}
     fields.update(overrides)
     return LevelSpec(**fields)  # type: ignore[arg-type]
 
@@ -112,7 +112,7 @@ def test_template_spec_is_frozen() -> None:
 
 def test_template_spec_is_keyword_only() -> None:
     with pytest.raises(TypeError):
-        TemplateMarkerSpec(("Điều {arabic}.",))  # type: ignore[misc]
+        TemplateMarkerSpec(("Điều {arabic}.",))  # type: ignore[call-arg]
 
 
 def test_template_specs_compare_by_value_and_hash() -> None:
@@ -151,7 +151,7 @@ def test_glyph_spec_is_frozen() -> None:
 
 def test_glyph_spec_is_keyword_only() -> None:
     with pytest.raises(TypeError):
-        GlyphMarkerSpec(("dash",))  # type: ignore[misc]
+        GlyphMarkerSpec(("dash",))  # type: ignore[call-arg]
 
 
 def test_glyph_specs_compare_by_value_and_hash() -> None:
@@ -160,14 +160,14 @@ def test_glyph_specs_compare_by_value_and_hash() -> None:
 
 
 def test_the_two_kinds_are_never_equal() -> None:
-    assert TemplateMarkerSpec(templates=("dash",)) != GlyphMarkerSpec(glyphs=("dash",))
+    assert TemplateMarkerSpec(templates=("dash",)) != GlyphMarkerSpec(glyphs=("dash",))  # type: ignore[comparison-overlap]
 
 
 # ============================================================ LevelSpec
 
 
 def test_level_defaults() -> None:
-    spec = LevelSpec(name="dieu", marker=DIEU)
+    spec = LevelSpec(name="dieu", is_section=True, marker=DIEU)
     assert spec.title == "none"
     assert spec.closes_on_plain_paragraph is False
     assert spec.inside == ()
@@ -176,6 +176,7 @@ def test_level_defaults() -> None:
 def test_level_keeps_its_fields() -> None:
     spec = LevelSpec(
         name="khoan",
+        is_section=False,
         marker=TemplateMarkerSpec(templates=("{arabic}.",)),
         title="rest_of_paragraph",
         closes_on_plain_paragraph=True,
@@ -189,13 +190,24 @@ def test_level_keeps_its_fields() -> None:
 
 
 def test_level_with_a_glyph_marker() -> None:
-    assert LevelSpec(name="gach", marker=DASH).marker == DASH
+    assert LevelSpec(name="gach", is_section=False, marker=DASH).marker == DASH
 
 
 def test_level_has_no_rank() -> None:
     # The position in Profile.levels is the rank.
     field_names = {f.name for f in dataclasses.fields(LevelSpec)}
-    assert field_names == {"name", "marker", "title", "closes_on_plain_paragraph", "inside"}
+    assert field_names == {"name", "marker", "is_section", "title", "closes_on_plain_paragraph", "inside"}
+
+
+def test_is_section_is_required() -> None:
+    # Every level states whether it is a section (Chương, Điều) or an item (khoản, gạch); no default.
+    with pytest.raises(TypeError, match="is_section"):
+        LevelSpec(name="dieu", marker=DIEU)  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize("is_section", [True, False])
+def test_is_section_is_kept(is_section: bool) -> None:
+    assert level(is_section=is_section).is_section is is_section
 
 
 def test_level_is_frozen() -> None:
@@ -205,12 +217,12 @@ def test_level_is_frozen() -> None:
 
 def test_level_is_keyword_only() -> None:
     with pytest.raises(TypeError):
-        LevelSpec("dieu", DIEU)  # type: ignore[misc]
+        LevelSpec("dieu", DIEU)  # type: ignore[call-arg]
 
 
 def test_levels_compare_by_value_and_hash() -> None:
-    a = LevelSpec(name="khoan", marker=DIEU, inside=("dieu",))
-    b = LevelSpec(name="khoan", marker=TemplateMarkerSpec(templates=("Điều {arabic}.",)), inside=("dieu",))
+    a = LevelSpec(name="khoan", is_section=False, marker=DIEU, inside=("dieu",))
+    b = LevelSpec(name="khoan", is_section=False, marker=TemplateMarkerSpec(templates=("Điều {arabic}.",)), inside=("dieu",))
     assert a == b
     assert hash(a) == hash(b)
 

@@ -34,6 +34,7 @@ class _NodeDraft:
     number: str | None
     marker: str | None
     title: str | None
+    is_section: bool
     head_block_ids: list[str]
     start: int
     end: int | None = None
@@ -116,6 +117,7 @@ class _Assembly:
                 number=draft.number,
                 marker=draft.marker,
                 title=draft.title,
+                is_section=draft.is_section,
                 head_block_ids=tuple(draft.head_block_ids),
                 start=draft.start,
                 end=draft.end if draft.end is not None else len(self.segments),
@@ -164,6 +166,7 @@ class _Assembly:
             number=heading_parts.number,
             marker=heading_parts.marker,
             title=title,
+            is_section=level_spec.is_section,
             head_block_ids=[block.id],
             start=len(self.segments),
             end=None,
