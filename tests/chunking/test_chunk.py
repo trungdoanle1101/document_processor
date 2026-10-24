@@ -2,11 +2,12 @@
 
 A chunk covers segments [start, end) of a logical document, optionally narrowed
 inside one segment (rows of a table, characters of a text). Its path is the
-outline from the root down to the node that owns it. Each node starts with its
-heading segment, so a chunk starting at its owner's start already has the
-owner's heading as its first line; headings are the labels of the other path
-steps (step.start < chunk.start), and contextualize() puts them in front of the
-text for embedding.
+outline from the root down to the node that owns it, and headings are the
+labels of that whole path: the breadcrumb for display, citations and payloads.
+Each node starts with its heading segment, so a chunk starting at its owner's
+start already has the owner's heading as its first line; contextualize() puts in
+front of the text only the headings not already in it (step.start < chunk.start),
+so nothing is embedded twice.
 """
 
 import dataclasses
@@ -95,20 +96,24 @@ def test_is_keyword_only() -> None:
 
 
 def test_headings_are_the_path_labels_root_first() -> None:
-    # The chunk starts after khoản 10's heading, so every step is a heading line.
     assert make_chunk().headings == ("Chương I QUY ĐỊNH CHUNG", "Điều 2. Giải thích từ ngữ", "10.")
 
 
-def test_owner_heading_already_in_the_text_is_left_out() -> None:
-    # Starting at the owner's start means the text begins with "10."; no second copy.
-    chunk = make_chunk(start=40, end=42, text="10.\n“Hệ thống Log tập trung”: …")
-    assert chunk.headings == ("Chương I QUY ĐỊNH CHUNG", "Điều 2. Giải thích từ ngữ")
-    assert chunk.contextualize() == "Chương I QUY ĐỊNH CHUNG\nĐiều 2. Giải thích từ ngữ\n10.\n“Hệ thống Log tập trung”: …"
+def test_headings_include_the_owner_even_when_its_heading_is_in_the_text() -> None:
+    # The breadcrumb names every node containing the chunk, wherever the chunk starts.
+    chunk = make_chunk(start=40, end=42, text="10. “Hệ thống Log tập trung”: …")
+    assert chunk.headings == ("Chương I QUY ĐỊNH CHUNG", "Điều 2. Giải thích từ ngữ", "10.")
 
 
-def test_a_root_chunk_starting_at_its_owner_has_no_headings() -> None:
+def test_chunks_of_one_owner_share_their_headings() -> None:
+    at_owner_start = make_chunk(start=40, end=41, text="10. Đầu khoản")
+    later = make_chunk(start=41, end=42, text="Phần sau")
+    assert at_owner_start.headings == later.headings
+
+
+def test_a_root_chunk_has_its_root_as_heading() -> None:
     chunk = make_chunk(path=(CHUONG,), start=1, end=5, text="Chương I QUY ĐỊNH CHUNG\n…")
-    assert chunk.headings == ()
+    assert chunk.headings == ("Chương I QUY ĐỊNH CHUNG",)
 
 
 def test_headings_cannot_be_passed_in() -> None:
@@ -154,6 +159,25 @@ def test_node_id_of_a_body_chunk_outside_every_node() -> None:
 def test_contextualize_puts_the_headings_first() -> None:
     chunk = make_chunk(text="Nội dung")
     assert chunk.contextualize() == "Chương I QUY ĐỊNH CHUNG\nĐiều 2. Giải thích từ ngữ\n10.\nNội dung"
+
+
+def test_contextualize_leaves_out_the_owner_heading_already_in_the_text() -> None:
+    # Starting at the owner's start means the text begins with "10."; no second copy.
+    chunk = make_chunk(start=40, end=42, text="10. “Hệ thống Log tập trung”: …")
+    assert chunk.contextualize() == "Chương I QUY ĐỊNH CHUNG\nĐiều 2. Giải thích từ ngữ\n10. “Hệ thống Log tập trung”: …"
+
+
+def test_contextualize_of_a_root_chunk_starting_at_its_owner_is_the_text() -> None:
+    chunk = make_chunk(path=(CHUONG,), start=1, end=5, text="Chương I QUY ĐỊNH CHUNG\n…")
+    assert chunk.contextualize() == "Chương I QUY ĐỊNH CHUNG\n…"
+
+
+def test_contextualize_of_chunks_of_one_owner_reads_alike() -> None:
+    # Whether the owner's heading is in the text or not, it appears exactly once.
+    at_owner_start = make_chunk(start=40, end=41, text="10. Đầu khoản")
+    later = make_chunk(start=41, end=42, text="Phần sau")
+    assert at_owner_start.contextualize().count("10.") == 1
+    assert later.contextualize().splitlines()[:3] == ["Chương I QUY ĐỊNH CHUNG", "Điều 2. Giải thích từ ngữ", "10."]
 
 
 def test_contextualize_without_a_path_is_the_text() -> None:

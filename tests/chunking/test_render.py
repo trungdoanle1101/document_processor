@@ -2,7 +2,10 @@
 
 A heading segment reads as "marker title", a text segment as its text, a table
 as its tab-separated text (step 1; real rendering comes with row splitting),
-and an image as nothing. Lines are joined with "\\n".
+and an image as nothing. Lines are joined with "\\n", except that an item's
+marker and the rest of its own paragraph share a line ("1. Nội dung"): a text
+segment right after an untitled heading with a marker, from the same block, is
+joined to it with a space.
 
 The running example:
 
@@ -18,11 +21,16 @@ The running example:
 import pytest
 
 from document_processor.chunking.render import render_segments
-from document_processor.core.models import LogicalDocument, LogicalNode, Segment
+from document_processor.core.models import BlockType, HeadingSegment, LogicalDocument, LogicalNode, Segment
+from document_processor.logical import VN_REGULATION, build_logical_document
+from tests.chunking.test_outline_chunker import regulation
 from tests.factories import (
     heading_for,
+    make_block,
+    make_document,
     make_heading_segment,
     make_image_segment,
+    make_list_info,
     make_logical_document,
     make_logical_node,
     make_table_segment,
@@ -114,3 +122,80 @@ def test_heading_segment_factory_renders_like_the_node() -> None:
     node = make_logical_node(start=0, end=2)
     rendered = render_segments(make_logical_document(segments=segments, nodes=(node,), body_start=0, body_end=2), 0, 1)
     assert rendered == "Điều 1. Phạm vi điều chỉnh"
+
+
+
+# ============================================================ an item's marker and its text share a line
+#
+# regulation(): segment 5 is khoản 1's heading "1." and segment 6 the rest of the
+# same paragraph, "Áp dụng cho toàn hệ thống".
+
+
+def test_marker_and_its_text_share_a_line() -> None:
+    assert render_segments(regulation(), 5, 7) == "1. Áp dụng cho toàn hệ thống"
+
+
+def test_inside_a_longer_range() -> None:
+    lines = render_segments(regulation(), 2, 7).splitlines()
+    assert lines == [
+        "Điều 1. Phạm vi điều chỉnh",
+        "Quy định này quy định về quản lý kiến trúc",
+        "1. Áp dụng cho toàn hệ thống",
+    ]
+
+
+def test_text_starting_the_range_stands_alone() -> None:
+    # The marker is outside the range (in the chunk's breadcrumb): nothing to join with.
+    assert render_segments(regulation(), 6, 7) == "Áp dụng cho toàn hệ thống"
+
+
+def test_marker_alone_at_the_end_of_the_range() -> None:
+    assert render_segments(regulation(), 5, 6) == "1."
+
+
+def test_a_list_generated_marker_joins_too() -> None:
+    # The marker comes from Word's numbering; the text segment is the whole paragraph, same block.
+    blocks = (
+        make_block(id="pb1", text="Điều 1. Phạm vi"),
+        make_block(
+            id="pb2",
+            block_type=BlockType.LIST_ITEM,
+            text="Nội dung khoản",
+            list_info=make_list_info(displayed_marker="1."),
+        ),
+    )
+    document = build_logical_document(VN_REGULATION, make_document(blocks=blocks))
+    assert render_segments(document, 0, len(document.segments)) == "Điều 1. Phạm vi\n1. Nội dung khoản"
+
+
+def _hand_made(heading: HeadingSegment, *after: Segment, end: int) -> LogicalDocument:
+    node = make_logical_node(
+        id=heading.node_id, marker=heading.marker, title=heading.title, head_block_ids=(heading.block_id,), start=0, end=end
+    )
+    return make_logical_document(segments=(heading, *after), nodes=(node,), body_start=0, body_end=end)
+
+
+def test_a_titled_heading_keeps_its_own_line() -> None:
+    heading = make_heading_segment(block_id="pb1", node_id="a", marker="Điều 1.", title="Phạm vi")
+    document = _hand_made(heading, make_text_segment(block_id="pb1", text="Nội dung"), end=2)
+    assert render_segments(document, 0, 2) == "Điều 1. Phạm vi\nNội dung"
+
+
+def test_text_from_another_block_keeps_its_own_line() -> None:
+    heading = make_heading_segment(block_id="pb1", node_id="a", marker="1.", title=None)
+    document = _hand_made(heading, make_text_segment(block_id="pb2", text="Đoạn khác"), end=2)
+    assert render_segments(document, 0, 2) == "1.\nĐoạn khác"
+
+
+def test_a_heading_without_marker_or_title_adds_nothing_to_join_onto() -> None:
+    heading = make_heading_segment(block_id="pb1", node_id="a", marker=None, title=None)
+    document = _hand_made(heading, make_text_segment(block_id="pb1", text="Nội dung"), end=2)
+    assert render_segments(document, 0, 2) == "Nội dung"
+
+
+def test_only_the_first_text_after_the_marker_joins() -> None:
+    heading = make_heading_segment(block_id="pb1", node_id="a", marker="1.", title=None)
+    document = _hand_made(
+        heading, make_text_segment(block_id="pb1", text="Nội dung"), make_text_segment(block_id="pb2", text="Tiếp"), end=3
+    )
+    assert render_segments(document, 0, 3) == "1. Nội dung\nTiếp"

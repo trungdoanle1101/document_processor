@@ -61,7 +61,8 @@ class Chunk:
         return self.path[-1].node_id if self.path else None
 
     def contextualize(self) -> str:
-        return "\n".join((*(self.headings), self.text))
+        not_in_text = (step.label for step in self.path if step.start < self.start)
+        return "\n".join((*not_in_text, self.text))
 
     def __post_init__(self) -> None:
         error_owner = f"chunk {self.id!r}"
@@ -117,5 +118,5 @@ class Chunk:
         object.__setattr__(
             self,
             "headings",
-            tuple(step.label for step in self.path if step.start < self.start),
+            tuple(step.label for step in self.path),
         )

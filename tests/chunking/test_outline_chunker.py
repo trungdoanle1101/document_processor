@@ -339,7 +339,7 @@ def test_text_keeps_headings_where_they_are() -> None:
         "Chương I QUY ĐỊNH CHUNG",
         "Điều 1. Phạm vi điều chỉnh",
         "Quy định này quy định về quản lý kiến trúc",
-        "1.",
+        "1. Áp dụng cho toàn hệ thống",  # an item's marker and its text on one line
     ]
 
 
@@ -388,12 +388,20 @@ def test_only_single_segments_go_over_the_budget(max_tokens: int) -> None:
 
 
 def body_chunks(max_tokens: int, **options: Any) -> list[tuple[tuple[int, int], str | None, tuple[str, ...]]]:
-    """(range, owner, headings) of each body chunk of regulation()."""
+    """(range, owner, context) of each body chunk of regulation().
+
+    context = the headings contextualize() puts in front of the text: the
+    breadcrumb minus the owner's heading when the text already starts with it.
+    """
     return [
-        ((c.start, c.end), c.node_id, c.headings)
+        ((c.start, c.end), c.node_id, context(c))
         for c in chunker(max_tokens, **options).chunk(regulation())
         if c.part == "body"
     ]
+
+
+def context(chunk: Chunk) -> tuple[str, ...]:
+    return tuple(step.label for step in chunk.path if step.start < chunk.start)
 
 
 CHUONG = "Chương I QUY ĐỊNH CHUNG"
@@ -449,14 +457,15 @@ def test_a_heading_that_fits_nothing_else_is_only_in_breadcrumbs() -> None:
     # and every chunk under Điều 2 carries it in its breadcrumb.
     chunks = chunker(12).chunk(regulation())
     assert all("Điều 2." not in c.text for c in chunks)
-    assert all(DIEU_2 in c.headings for c in chunks if c.start >= 7 and c.part == "body")
+    assert all(DIEU_2 in context(c) for c in chunks if c.start >= 7 and c.part == "body")
 
 
 def test_a_heading_merged_with_its_first_child_stays_in_the_text() -> None:
     chunks = chunker(20).chunk(regulation())
     (merged,) = [c for c in chunks if c.start == 7]
-    assert merged.text.splitlines()[:2] == [DIEU_2, "1."]
-    assert merged.headings == (CHUONG,)
+    assert merged.text.splitlines()[:2] == [DIEU_2, "1. Hệ thống là tập hợp các thành phần"]
+    assert context(merged) == (CHUONG,)
+    assert merged.headings == (CHUONG, DIEU_2)  # the breadcrumb still names the owner
 
 
 def test_a_leaf_that_does_not_fit_is_split_inside_its_own_range() -> None:
@@ -495,7 +504,7 @@ def test_text_after_the_last_child_is_owned_by_the_parent() -> None:
     #   0 [a]  1 text  2 [a/1]  3 text  4 text (closing remark of a)
     document = outlined(("a", None, 0, 5), ("a/1", "a", 2, 4), n_segments=5)
     chunks = chunker(4).chunk(document)
-    assert [((c.start, c.end), c.node_id, c.headings) for c in chunks] == [
+    assert [((c.start, c.end), c.node_id, context(c)) for c in chunks] == [
         ((0, 2), "a", ()),
         ((2, 4), "a/1", ("[a]",)),
         ((4, 5), "a", ("[a]",)),  # after a/1, so a's heading is in the breadcrumb
@@ -515,7 +524,7 @@ def test_text_between_children_is_owned_by_the_parent() -> None:
 def test_body_text_outside_every_root_is_owned_by_nothing() -> None:
     #   0 text  1 [a]  2 text  3 text (after the root)  4 [b]  5 text
     document = outlined(("a", None, 1, 3), ("b", None, 4, 6), n_segments=6)
-    assert [((c.start, c.end), c.node_id, c.headings) for c in chunker(3).chunk(document)] == [
+    assert [((c.start, c.end), c.node_id, context(c)) for c in chunker(3).chunk(document)] == [
         ((0, 1), None, ()),
         ((1, 3), "a", ()),
         ((3, 4), None, ()),
@@ -652,3 +661,21 @@ def test_no_chunk_touches_two_sections_of_the_same_parent(max_tokens: int) -> No
         touched = [n for n in document.nodes if n.is_section and chunk.start < n.end and n.start < chunk.end]
         parents = [n.parent_id for n in touched]
         assert len(parents) == len(set(parents)), (chunk.id, [n.id for n in touched])
+
+
+
+# ============================================================ headings are the whole breadcrumb
+
+
+@pytest.mark.parametrize("max_tokens", [3, 8, 12, 20, 40, 60])
+def test_headings_name_every_node_holding_the_chunk(max_tokens: int) -> None:
+    document = regulation()
+    for chunk in chunker(max_tokens).chunk(document):
+        holders = [n for n in document.nodes if n.start <= chunk.start and chunk.end <= n.end]
+        assert [step.node_id for step in chunk.path] == [n.id for n in holders], chunk.id
+        assert len(chunk.headings) == len(holders)
+
+
+def test_chunks_inside_one_dieu_share_its_breadcrumb() -> None:
+    chunks = [c for c in chunker(12).chunk(regulation()) if c.part == "body" and c.start >= 7]
+    assert all(c.headings[:2] == (CHUONG, DIEU_2) for c in chunks)
