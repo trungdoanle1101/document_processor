@@ -36,12 +36,13 @@ def chunk_from_dict(d: dict[str, Any]) -> Chunk:
         id=chunk_dict["id"],
         logical_document_id=chunk_dict["logical_document_id"],
         part=chunk_dict["part"],
+        text=chunk_dict["text"],
+        token_count=chunk_dict["token_count"],
         path=tuple(PathStep(**step) for step in chunk_dict["path"]),
         start=chunk_dict["start"],
         end=chunk_dict["end"],
         table_rows=_pair_or_none(chunk_dict["table_rows"]),
         text_span=_pair_or_none(chunk_dict["text_span"]),
-        text=chunk_dict["text"],
         block_ids=tuple(chunk_dict["block_ids"]),
     )
 

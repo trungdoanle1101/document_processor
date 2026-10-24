@@ -65,19 +65,14 @@ class OutlineChunker:
             piece for piece in pieces if _has_content(document, piece.start, piece.end)
         ]
         return tuple(
-            _get_chunk_from_piece(document, piece, index)
+            self._get_chunk_from_piece(document, piece, index)
             for index, piece in enumerate(kept)
         )
 
     def _fits(
         self, document: LogicalDocument, owner_id: str | None, start: int, end: int
     ) -> bool:
-        text = render_segments(document, start, end)
-        if self.include_breadcrumb_in_size:
-            path = _path_to(document, owner_id)
-            headings = [step.label for step in path if step.start < start]
-            text = "\n".join((*headings, text))
-        return self.tokenizer.count_tokens(text) <= self.max_tokens
+        return self._count_tokens(document, owner_id, start, end) <= self.max_tokens
 
     def _chunk_range(
         self,
@@ -186,6 +181,48 @@ class OutlineChunker:
 
         return pieces
 
+    def _get_chunk_from_piece(
+        self, document: LogicalDocument, piece: _Piece, index: int
+    ) -> Chunk:
+        text = render_segments(document, piece.start, piece.end)
+        # unique block_ids, in segment order
+        block_ids = tuple(
+            dict.fromkeys(
+                segment.block_id
+                for segment in document.segments[piece.start : piece.end]
+            )
+        )
+
+        path = _path_to(document, piece.owner_id)
+
+        token_count = self._count_tokens(
+            document, piece.owner_id, piece.start, piece.end
+        )
+
+        return Chunk(
+            id=f"c{index}",
+            logical_document_id=document.id,
+            part=piece.part,
+            text=text,
+            token_count=token_count,
+            path=path,
+            start=piece.start,
+            end=piece.end,
+            table_rows=piece.table_rows,
+            text_span=piece.text_span,
+            block_ids=block_ids,
+        )
+
+    def _count_tokens(
+        self, document: LogicalDocument, owner_id: str | None, start: int, end: int
+    ) -> int:
+        text = render_segments(document, start, end)
+        if self.include_breadcrumb_in_size:
+            path = _path_to(document, owner_id)
+            headings = [step.label for step in path if step.start < start]
+            text = "\n".join((*headings, text))
+        return self.tokenizer.count_tokens(text)
+
 
 def _get_piece_from_group(
     group: Sequence[_ChildOrSegment], owner_id: str | None
@@ -196,33 +233,6 @@ def _get_piece_from_group(
         owner_id = group[0].child.id
     return _Piece(
         part="body", owner_id=owner_id, start=group[0].start, end=group[-1].end
-    )
-
-
-def _get_chunk_from_piece(
-    document: LogicalDocument, piece: _Piece, index: int
-) -> Chunk:
-    text = render_segments(document, piece.start, piece.end)
-    # unique block_ids, in segment order
-    block_ids = tuple(
-        dict.fromkeys(
-            segment.block_id for segment in document.segments[piece.start : piece.end]
-        )
-    )
-
-    path = _path_to(document, piece.owner_id)
-
-    return Chunk(
-        id=f"c{index}",
-        logical_document_id=document.id,
-        part=piece.part,
-        path=path,
-        start=piece.start,
-        end=piece.end,
-        table_rows=piece.table_rows,
-        text_span=piece.text_span,
-        text=text,
-        block_ids=block_ids,
     )
 
 

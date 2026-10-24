@@ -34,10 +34,17 @@ class Chunk:
     # "front_matter" |  "body" | "end_matter"
     part: DocumentPart
 
-    # root first, owner last
-    path: tuple[PathStep, ...]
     # 'headings': tuple of path labels displayed to be more readable; derived from 'path'
     headings: tuple[str, ...] = field(init=False, compare=False)
+
+    # text content
+    text: str
+
+    # token count according to the tokenizer
+    token_count: int
+
+    # root first, owner last
+    path: tuple[PathStep, ...]
 
     # covers segments range [start, end) in LogicalDocument
     # optionally narrowed inside one segment for long segments or table
@@ -49,9 +56,6 @@ class Chunk:
 
     # characters [a,b) of the text at segment 'start'
     text_span: tuple[int, int] | None = None
-
-    # text content
-    text: str
 
     # provenance back to original blocks
     block_ids: tuple[str, ...]
@@ -66,6 +70,10 @@ class Chunk:
 
     def __post_init__(self) -> None:
         error_owner = f"chunk {self.id!r}"
+
+        if self.token_count < 0:
+            raise ValueError(f"{error_owner}: required token_count >= 0, got token_count={self.token_count}")
+        
         if not (0 <= self.start < self.end):
             raise ValueError(
                 f"{error_owner}: required 0 <= start < end, got start={self.start}, end={self.end}"

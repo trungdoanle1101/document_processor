@@ -1,8 +1,8 @@
 from .chunk import Chunk
 from .chunker import Chunker
 from .outline_chunker import OutlineChunker
+from .serialization import load_chunks, save_chunks
 from .tokenizer import Tokenizer, WordTokenizer
-from .serialization import save_chunks, load_chunks
 
 __all__ = [
     "Chunk",
@@ -10,6 +10,6 @@ __all__ = [
     "OutlineChunker",
     "Tokenizer",
     "WordTokenizer",
+    "load_chunks",
     "save_chunks",
-    "load_chunks"
 ]

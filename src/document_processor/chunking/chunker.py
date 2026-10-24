@@ -5,4 +5,6 @@ from document_processor.core.models import LogicalDocument
 
 
 class Chunker(Protocol):
+    max_tokens: int
+
     def chunk(self, document: LogicalDocument) -> tuple[Chunk, ...]: ...
