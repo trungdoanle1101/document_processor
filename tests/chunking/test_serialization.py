@@ -37,6 +37,7 @@ def make_chunk(**overrides: Any) -> Chunk:
         "start": 8,
         "end": 10,
         "text": "1.\nHệ thống là tập hợp các thành phần",
+        "token_count": 9,
         "block_ids": ("pb9",),
     }
     fields.update(overrides)
@@ -65,6 +66,10 @@ def test_path_steps_come_back_as_path_steps() -> None:
     assert all(isinstance(step, PathStep) for step in loaded.path)
     assert loaded.path == (CHUONG, DIEU)
     assert loaded.headings == ("Chương I QUY ĐỊNH CHUNG", "Điều 2. Giải thích từ ngữ")
+
+
+def test_token_count_survives() -> None:
+    assert round_trip(make_chunk(token_count=321)).token_count == 321
 
 
 def test_unset_narrowing_stays_none() -> None:
@@ -108,7 +113,7 @@ def test_record_shape() -> None:
     assert (d["kind"], d["schema_version"]) == (CHUNK_KIND, CHUNK_SCHEMA_VERSION) == ("chunk", 1)
     assert set(d["chunk"]) == {
         "id", "logical_document_id", "part", "path", "headings", "start", "end",
-        "table_rows", "text_span", "text", "block_ids",
+        "table_rows", "text_span", "text", "token_count", "block_ids",
     }
 
 

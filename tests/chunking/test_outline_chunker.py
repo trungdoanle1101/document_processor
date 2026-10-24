@@ -679,3 +679,30 @@ def test_headings_name_every_node_holding_the_chunk(max_tokens: int) -> None:
 def test_chunks_inside_one_dieu_share_its_breadcrumb() -> None:
     chunks = [c for c in chunker(12).chunk(regulation()) if c.part == "body" and c.start >= 7]
     assert all(c.headings[:2] == (CHUONG, DIEU_2) for c in chunks)
+
+
+
+# ============================================================ token_count
+
+
+@pytest.mark.parametrize("max_tokens", [3, 12, 60])
+def test_token_count_is_what_the_chunker_measured(max_tokens: int) -> None:
+    for chunk in chunker(max_tokens).chunk(regulation()):
+        assert chunk.token_count == WordTokenizer().count_tokens(chunk.text), chunk.id
+
+
+@pytest.mark.parametrize("max_tokens", [8, 20, 40])
+def test_token_count_includes_the_breadcrumb_when_it_is_counted(max_tokens: int) -> None:
+    for chunk in chunker(max_tokens, include_breadcrumb_in_size=True).chunk(regulation()):
+        assert chunk.token_count == WordTokenizer().count_tokens(chunk.contextualize()), chunk.id
+
+
+@pytest.mark.parametrize("max_tokens", [1, 3, 8, 12, 20, 40, 60])
+def test_token_count_is_within_budget_except_for_single_segments(max_tokens: int) -> None:
+    for chunk in chunker(max_tokens).chunk(regulation()):
+        assert chunk.token_count <= max_tokens or chunk.end - chunk.start == 1, chunk.id
+
+
+def test_a_too_big_segment_reports_its_real_size() -> None:
+    (chunk,) = [c for c in chunker(3).chunk(plain("a", "b c d e f", "g")) if c.text == "b c d e f"]
+    assert chunk.token_count == 5

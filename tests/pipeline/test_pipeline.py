@@ -7,7 +7,10 @@ stage; errors propagate. run_batch(paths) runs each file and turns input
 problems (ValueError, KeyError, OSError) into PipelineFailure values, in input
 order; anything else is a bug and still raises. result.save(out_dir) writes
 <stem>.physical.json, <stem>.logical.json and <stem>.chunks.jsonl, replacing
-files already there, and returns their paths.
+files already there, and returns their paths. result.summarize() counts what
+the run produced and warns about chunks over the chunker's budget (each chunk
+records its own token_count) and about a document where the profile found no
+headings.
 """
 
 from pathlib import Path
@@ -23,6 +26,8 @@ from document_processor.pipeline import (
     Pipeline,
     PipelineFailure,
     PipelineResult,
+    ResultSummary,
+    ReviewWarning,
     SavedFiles,
     WordTokenizer,
     build_logical_document,
@@ -250,6 +255,8 @@ def test_empty_batch() -> None:
 class _BrokenChunker:
     """A chunker with a bug: errors that are not input problems must stop the batch."""
 
+    max_tokens = 100
+
     def chunk(self, document: LogicalDocument) -> tuple[Chunk, ...]:
         raise TypeError("bug in the chunker")
 
@@ -330,3 +337,199 @@ def test_saving_every_result_of_a_batch(tmp_path: Path) -> None:
     outcomes = pipeline().run_batch([*paths, tmp_path / "missing.txt"])
     saved = [o.save(tmp_path / "out") for o in outcomes if isinstance(o, PipelineResult)]
     assert [f.chunks.name for f in saved] == ["a.chunks.jsonl", "b.chunks.jsonl"]
+
+
+
+# ============================================================ summarize
+
+
+def test_result_records_the_chunkers_budget(tmp_path: Path) -> None:
+    assert pipeline(chunker=chunker(37)).run(write_txt(tmp_path, "a.txt")).max_tokens == 37
+
+
+def test_summary_counts(tmp_path: Path) -> None:
+    result = pipeline().run(write_txt(tmp_path, "quy_dinh.txt"))
+    summary = result.summarize()
+    assert isinstance(summary, ResultSummary)
+    assert summary.source == result.source
+    assert summary.block_count == len(result.physical.blocks) == 10
+    assert summary.segment_count == len(result.logical.segments)
+    assert summary.chunk_count == len(result.chunks)
+    assert summary.chunk_tokens == tuple(c.token_count for c in result.chunks)
+
+
+def test_summary_counts_nodes_per_level_in_outline_order(tmp_path: Path) -> None:
+    summary = pipeline().run(write_txt(tmp_path, "quy_dinh.txt")).summarize()
+    assert summary.nodes_by_levels == (("chuong", 1), ("dieu", 2), ("khoan", 2))
+
+
+def test_summary_front_and_end_matter(tmp_path: Path) -> None:
+    result = pipeline().run(write_txt(tmp_path, "quy_dinh.txt"))
+    summary = result.summarize()
+    assert summary.front_matter == (0, result.logical.body_start) == (0, 1)
+    assert summary.end_matter == (result.logical.body_end, len(result.logical.segments))
+    assert summary.end_matter[0] < summary.end_matter[1]  # "Nơi nhận:" was found
+
+
+def test_a_clean_document_has_no_warnings(tmp_path: Path) -> None:
+    assert pipeline().run(write_txt(tmp_path, "quy_dinh.txt")).summarize().warnings == ()
+
+
+def test_chunk_over_budget_is_warned(tmp_path: Path) -> None:
+    long_line = " ".join(["từ"] * 12)
+    path = write_txt(tmp_path, "a.txt", f"Điều 1. Phạm vi\n{long_line}\nNgắn\n")
+    result = pipeline(chunker=chunker(5)).run(path)
+    over = [c for c in result.chunks if c.token_count > 5]
+    assert len(over) == 1
+    (warning,) = result.summarize().warnings
+    assert isinstance(warning, ReviewWarning)
+    assert warning.code == "chunk_over_budget"
+    assert warning.chunk_id == over[0].id
+    assert str(over[0].token_count) in warning.message and "5" in warning.message
+
+
+def test_every_chunk_over_budget_gets_its_own_warning(tmp_path: Path) -> None:
+    long_line = " ".join(["từ"] * 12)
+    path = write_txt(tmp_path, "a.txt", f"Điều 1. Phạm vi\n{long_line}\n{long_line}\n")
+    warnings = pipeline(chunker=chunker(5)).run(path).summarize().warnings
+    assert [w.code for w in warnings] == ["chunk_over_budget", "chunk_over_budget"]
+    assert len({w.chunk_id for w in warnings}) == 2
+
+
+def test_a_chunk_exactly_at_the_budget_is_not_warned(tmp_path: Path) -> None:
+    path = write_txt(tmp_path, "a.txt", "Điều 1. Phạm vi\nmột hai ba bốn năm\n")
+    result = pipeline(chunker=chunker(5)).run(path)
+    assert max(c.token_count for c in result.chunks) == 5
+    assert result.summarize().warnings == ()
+
+
+def test_no_headings_is_warned(tmp_path: Path) -> None:
+    path = write_txt(tmp_path, "a.txt", "Một đoạn văn\nMột đoạn khác\n")
+    result = pipeline().run(path)
+    assert result.logical.nodes == ()
+    warnings = result.summarize().warnings
+    assert [w.code for w in warnings] == ["no_headings"]
+    assert "vn_regulation" in warnings[0].message
+    assert warnings[0].chunk_id is None
+
+
+def test_summary_of_a_result_without_chunks(tmp_path: Path) -> None:
+    path = tmp_path / "empty.txt"
+    path.write_text("\n\n", encoding="utf-8")
+    summary = pipeline().run(path).summarize()
+    assert (summary.block_count, summary.chunk_count, summary.chunk_tokens) == (0, 0, ())
+    assert [w.code for w in summary.warnings] == ["no_headings"]
+
+
+def test_summary_records_the_budget(tmp_path: Path) -> None:
+    assert pipeline(chunker=chunker(37)).run(write_txt(tmp_path, "a.txt")).summarize().max_tokens == 37
+
+
+def _summary(chunk_tokens: tuple[int, ...]) -> ResultSummary:
+    return ResultSummary(
+        source=Path("a.txt"), block_count=0, segment_count=0, nodes_by_levels=(), front_matter=(0, 0),
+        end_matter=(0, 0), chunk_count=len(chunk_tokens), chunk_tokens=chunk_tokens, warnings=(), max_tokens=300,
+    )
+
+
+def test_chunk_size_statistics() -> None:
+    summary = _summary((40, 12, 847, 180))
+    assert (summary.smallest_chunk_tokens, summary.median_chunk_tokens, summary.largest_chunk_tokens) == (12, 110, 847)
+
+
+def test_median_of_an_even_count_falls_between_two_sizes() -> None:
+    assert _summary((180, 181)).median_chunk_tokens == 180.5
+
+
+def test_median_of_an_odd_count_is_the_middle_size() -> None:
+    assert _summary((5, 300, 7)).median_chunk_tokens == 7
+
+
+def test_statistics_of_no_chunks_are_none() -> None:
+    summary = _summary(())
+    assert (summary.smallest_chunk_tokens, summary.median_chunk_tokens, summary.largest_chunk_tokens) == (None, None, None)
+
+
+def test_statistics_come_from_the_runs_chunks(tmp_path: Path) -> None:
+    result = pipeline(chunker=chunker(5)).run(write_txt(tmp_path, "quy_dinh.txt"))
+    summary = result.summarize()
+    sizes = [c.token_count for c in result.chunks]
+    assert summary.smallest_chunk_tokens == min(sizes)
+    assert summary.largest_chunk_tokens == max(sizes)
+
+
+# ============================================================ ResultSummary.format
+
+
+def test_format_a_clean_document(tmp_path: Path) -> None:
+    summary = pipeline().run(write_txt(tmp_path, "quy_dinh.txt")).summarize()
+    assert summary.format() == "\n".join([
+        "quy_dinh.txt",
+        "  10 blocks → 11 segments, 5 nodes, 4 chunks",
+        "  front matter [0, 1) · end matter [9, 11)",
+        "  nodes: chuong 1 · dieu 2 · khoan 2",
+        "  chunk tokens: min 4 · median 12 · max 29 (budget 200)",
+        "  no warnings",
+    ])
+
+
+def test_format_lists_each_warning(tmp_path: Path) -> None:
+    long_line = " ".join(["từ"] * 12)
+    path = write_txt(tmp_path, "a.txt", f"Điều 1. Phạm vi\n{long_line}\nNgắn\n")
+    lines = pipeline(chunker=chunker(5)).run(path).summarize().format().splitlines()
+    assert lines[4] == "  chunk tokens: min 1 · median 6 · max 12 (budget 5)"
+    assert lines[5:] == ["  ⚠ chunk_over_budget  chunk c0 has 12 tokens (budget 5)"]
+
+
+def test_format_without_nodes_or_chunks(tmp_path: Path) -> None:
+    path = tmp_path / "empty.txt"
+    path.write_text("\n", encoding="utf-8")
+    lines = pipeline().run(path).summarize().format().splitlines()
+    assert lines[:5] == [
+        "empty.txt",
+        "  0 blocks → 0 segments, 0 nodes, 0 chunks",
+        "  front matter [0, 0) · end matter [0, 0)",
+        "  nodes: none",
+        "  chunk tokens: none",
+    ]
+    assert lines[5].startswith("  ⚠ no_headings  profile 'vn_regulation'")
+
+
+def test_format_shows_the_file_name_not_the_whole_path(tmp_path: Path) -> None:
+    path = write_txt(tmp_path / "deep" / "folder", "quy_dinh.txt")
+    assert pipeline().run(path).summarize().format().splitlines()[0] == "quy_dinh.txt"
+
+
+def test_format_does_not_end_with_a_newline(tmp_path: Path) -> None:
+    assert not pipeline().run(write_txt(tmp_path, "a.txt")).summarize().format().endswith("\n")
+
+
+# ============================================================ level order
+
+
+def test_result_records_the_profiles_level_order(tmp_path: Path) -> None:
+    result = pipeline().run(write_txt(tmp_path, "a.txt"))
+    assert result.level_order == tuple(level.name for level in VN_REGULATION.levels or ())
+    assert result.level_order[:3] == ("chuong", "muc", "dieu")
+
+
+def test_levels_are_summarized_in_profile_order_not_first_appearance(tmp_path: Path) -> None:
+    # Chương I has a Điều and a dash item before Chương II brings the first Mục.
+    text = """Chương I
+QUY ĐỊNH CHUNG
+Điều 1. Phạm vi
+1. Nội dung khoản
+- gạch đầu dòng
+Chương II
+TỔ CHỨC
+Mục 1
+THÀNH PHẦN
+Điều 2. Thành phần
+a) Điểm a
+"""
+    result = pipeline().run(write_txt(tmp_path, "a.txt", text))
+    first_seen = list(dict.fromkeys(n.level for n in result.logical.nodes))
+    assert first_seen.index("gach") < first_seen.index("muc")  # the case this test is about
+    summary = result.summarize()
+    assert [level for level, _ in summary.nodes_by_levels] == ["chuong", "muc", "dieu", "khoan", "diem", "gach"]
+    assert dict(summary.nodes_by_levels) == {"chuong": 2, "muc": 1, "dieu": 2, "khoan": 1, "diem": 1, "gach": 1}

@@ -33,6 +33,7 @@ def make_chunk(**overrides: Any) -> Chunk:
         "start": 41,
         "end": 42,
         "text": "“Hệ thống Log tập trung”: Là hệ thống cho phép tập trung hóa dữ liệu log",
+        "token_count": 13,
         "block_ids": ("pb30",),
     }
     fields.update(overrides)
@@ -89,7 +90,23 @@ def test_is_frozen() -> None:
 
 def test_is_keyword_only() -> None:
     with pytest.raises(TypeError):
-        Chunk("c0", "ld1", "body", (), 0, 1, None, None, "x", ())  # type: ignore[call-arg]
+        Chunk("c0", "ld1", "body", (), 0, 1, None, None, "x", ())  # type: ignore[call-arg, arg-type]
+
+
+# ---------- token_count
+
+
+def test_keeps_its_token_count() -> None:
+    assert make_chunk(token_count=42).token_count == 42
+
+
+def test_token_count_may_be_zero() -> None:
+    assert make_chunk(token_count=0).token_count == 0
+
+
+def test_negative_token_count_rejected() -> None:
+    with pytest.raises(ValueError, match="token_count >= 0"):
+        make_chunk(token_count=-1)
 
 
 # ---------- headings
