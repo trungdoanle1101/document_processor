@@ -1,7 +1,7 @@
 """Tests for chunking/render.py: a range of segments as plain text.
 
 A heading segment reads as "marker title", a text segment as its text, a table
-as its tab-separated text (step 1; real rendering comes with row splitting),
+as render_table_rows in the requested layout (tested in test_render_table.py),
 and an image as nothing. Lines are joined with "\\n", except that an item's
 marker and the rest of its own paragraph share a line ("1. Nội dung"): a text
 segment right after an untitled heading with a marker, from the same block, is
@@ -50,7 +50,7 @@ SEGMENTS: tuple[Segment, ...] = (
     make_table_segment(block_id="pb6"),
     make_text_segment(block_id="pb7", text="Nơi nhận:"),
 )
-TABLE_TEXT = "TT\tNội dung\n1\tPhạm vi điều chỉnh"
+TABLE_TEXT = "TT | Nội dung\n1 | Phạm vi điều chỉnh"
 
 
 def document(segments: tuple[Segment, ...] = SEGMENTS, nodes: tuple[LogicalNode, ...] = (DIEU, KHOAN)) -> LogicalDocument:
@@ -61,17 +61,17 @@ def document(segments: tuple[Segment, ...] = SEGMENTS, nodes: tuple[LogicalNode,
 
 
 def test_whole_document() -> None:
-    assert render_segments(document(), 0, 7) == "\n".join(
+    assert render_segments(document(), 0, 7, "grid") == "\n".join(
         ["CHÍNH PHỦ", "Điều 1. Phạm vi điều chỉnh", "Nghị định này quy định về:", "1.", TABLE_TEXT, "Nơi nhận:"]
     )
 
 
 def test_heading_reads_as_marker_and_title() -> None:
-    assert render_segments(document(), 1, 2) == "Điều 1. Phạm vi điều chỉnh"
+    assert render_segments(document(), 1, 2, "grid") == "Điều 1. Phạm vi điều chỉnh"
 
 
 def test_heading_without_a_title_is_its_marker() -> None:
-    assert render_segments(document(), 4, 5) == "1."
+    assert render_segments(document(), 4, 5, "grid") == "1."
 
 
 def test_heading_with_neither_marker_nor_title_adds_no_line() -> None:
@@ -82,45 +82,45 @@ def test_heading_with_neither_marker_nor_title_adds_no_line() -> None:
         make_text_segment(block_id="pb3", text="B"),
         make_text_segment(block_id="pb4", text="C"),
     )
-    assert render_segments(document(segments, (bare,)), 0, 3) == "A\nB"  # not "A\n\nB"
+    assert render_segments(document(segments, (bare,)), 0, 3, "grid") == "A\nB"  # not "A\n\nB"
 
 
 def test_text_is_kept_as_written() -> None:
-    assert render_segments(document(), 2, 3) == "Nghị định này quy định về:"
+    assert render_segments(document(), 2, 3, "grid") == "Nghị định này quy định về:"
 
 
 def test_table_renders_its_text() -> None:
-    assert render_segments(document(), 5, 6) == TABLE_TEXT
+    assert render_segments(document(), 5, 6, "grid") == TABLE_TEXT
 
 
 def test_image_renders_nothing() -> None:
-    assert render_segments(document(), 3, 4) == ""
-    assert render_segments(document(), 2, 5) == "Nghị định này quy định về:\n1."  # no blank line for the image
+    assert render_segments(document(), 3, 4, "grid") == ""
+    assert render_segments(document(), 2, 5, "grid") == "Nghị định này quy định về:\n1."  # no blank line for the image
 
 
 def test_a_node_range_starts_with_its_heading() -> None:
-    assert render_segments(document(), KHOAN.start, KHOAN.end) == "1.\n" + TABLE_TEXT
+    assert render_segments(document(), KHOAN.start, KHOAN.end, "grid") == "1.\n" + TABLE_TEXT
 
 
 # ---------- ranges
 
 
 def test_empty_range_is_empty_text() -> None:
-    assert render_segments(document(), 3, 3) == ""
-    assert render_segments(document(), 7, 7) == ""
+    assert render_segments(document(), 3, 3, "grid") == ""
+    assert render_segments(document(), 7, 7, "grid") == ""
 
 
 @pytest.mark.parametrize(("start", "end"), [(-1, 2), (3, 2), (0, 8), (8, 8)])
 def test_range_outside_the_segments_rejected(start: int, end: int) -> None:
     with pytest.raises(ValueError, match=r"0 <= start <= end <= 7"):
-        render_segments(document(), start, end)
+        render_segments(document(), start, end, "grid")
 
 
 def test_heading_segment_factory_renders_like_the_node() -> None:
     # The chunk breadcrumb (PathStep.label) and the rendered heading use the same heading_label.
     segments = (make_heading_segment(block_id="pb1", node_id="dieu-1"), make_text_segment(block_id="pb2"))
     node = make_logical_node(start=0, end=2)
-    rendered = render_segments(make_logical_document(segments=segments, nodes=(node,), body_start=0, body_end=2), 0, 1)
+    rendered = render_segments(make_logical_document(segments=segments, nodes=(node,), body_start=0, body_end=2), 0, 1, "grid")
     assert rendered == "Điều 1. Phạm vi điều chỉnh"
 
 
@@ -132,11 +132,11 @@ def test_heading_segment_factory_renders_like_the_node() -> None:
 
 
 def test_marker_and_its_text_share_a_line() -> None:
-    assert render_segments(regulation(), 5, 7) == "1. Áp dụng cho toàn hệ thống"
+    assert render_segments(regulation(), 5, 7, "grid") == "1. Áp dụng cho toàn hệ thống"
 
 
 def test_inside_a_longer_range() -> None:
-    lines = render_segments(regulation(), 2, 7).splitlines()
+    lines = render_segments(regulation(), 2, 7, "grid").splitlines()
     assert lines == [
         "Điều 1. Phạm vi điều chỉnh",
         "Quy định này quy định về quản lý kiến trúc",
@@ -146,11 +146,11 @@ def test_inside_a_longer_range() -> None:
 
 def test_text_starting_the_range_stands_alone() -> None:
     # The marker is outside the range (in the chunk's breadcrumb): nothing to join with.
-    assert render_segments(regulation(), 6, 7) == "Áp dụng cho toàn hệ thống"
+    assert render_segments(regulation(), 6, 7, "grid") == "Áp dụng cho toàn hệ thống"
 
 
 def test_marker_alone_at_the_end_of_the_range() -> None:
-    assert render_segments(regulation(), 5, 6) == "1."
+    assert render_segments(regulation(), 5, 6, "grid") == "1."
 
 
 def test_a_list_generated_marker_joins_too() -> None:
@@ -165,7 +165,7 @@ def test_a_list_generated_marker_joins_too() -> None:
         ),
     )
     document = build_logical_document(VN_REGULATION, make_document(blocks=blocks))
-    assert render_segments(document, 0, len(document.segments)) == "Điều 1. Phạm vi\n1. Nội dung khoản"
+    assert render_segments(document, 0, len(document.segments), "grid") == "Điều 1. Phạm vi\n1. Nội dung khoản"
 
 
 def _hand_made(heading: HeadingSegment, *after: Segment, end: int) -> LogicalDocument:
@@ -178,19 +178,19 @@ def _hand_made(heading: HeadingSegment, *after: Segment, end: int) -> LogicalDoc
 def test_a_titled_heading_keeps_its_own_line() -> None:
     heading = make_heading_segment(block_id="pb1", node_id="a", marker="Điều 1.", title="Phạm vi")
     document = _hand_made(heading, make_text_segment(block_id="pb1", text="Nội dung"), end=2)
-    assert render_segments(document, 0, 2) == "Điều 1. Phạm vi\nNội dung"
+    assert render_segments(document, 0, 2, "grid") == "Điều 1. Phạm vi\nNội dung"
 
 
 def test_text_from_another_block_keeps_its_own_line() -> None:
     heading = make_heading_segment(block_id="pb1", node_id="a", marker="1.", title=None)
     document = _hand_made(heading, make_text_segment(block_id="pb2", text="Đoạn khác"), end=2)
-    assert render_segments(document, 0, 2) == "1.\nĐoạn khác"
+    assert render_segments(document, 0, 2, "grid") == "1.\nĐoạn khác"
 
 
 def test_a_heading_without_marker_or_title_adds_nothing_to_join_onto() -> None:
     heading = make_heading_segment(block_id="pb1", node_id="a", marker=None, title=None)
     document = _hand_made(heading, make_text_segment(block_id="pb1", text="Nội dung"), end=2)
-    assert render_segments(document, 0, 2) == "Nội dung"
+    assert render_segments(document, 0, 2, "grid") == "Nội dung"
 
 
 def test_only_the_first_text_after_the_marker_joins() -> None:
@@ -198,4 +198,17 @@ def test_only_the_first_text_after_the_marker_joins() -> None:
     document = _hand_made(
         heading, make_text_segment(block_id="pb1", text="Nội dung"), make_text_segment(block_id="pb2", text="Tiếp"), end=3
     )
-    assert render_segments(document, 0, 3) == "1. Nội dung\nTiếp"
+    assert render_segments(document, 0, 3, "grid") == "1. Nội dung\nTiếp"
+
+
+
+# ============================================================ table layout
+
+
+def test_tables_render_in_the_requested_layout() -> None:
+    assert render_segments(document(), 5, 6, "grid") == "TT | Nội dung\n1 | Phạm vi điều chỉnh"
+    assert render_segments(document(), 5, 6, "key_value") == "TT: 1; Nội dung: Phạm vi điều chỉnh"
+
+
+def test_the_layout_only_changes_tables() -> None:
+    assert render_segments(document(), 0, 5, "grid") == render_segments(document(), 0, 5, "key_value")

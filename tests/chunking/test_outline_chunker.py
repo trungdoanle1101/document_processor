@@ -24,10 +24,12 @@ import pytest
 
 from document_processor.chunking.chunk import Chunk, PathStep
 from document_processor.chunking.chunker import Chunker
-from document_processor.chunking.outline_chunker import OutlineChunker, _path_to
+from document_processor.chunking.outline_chunker import OutlineChunker, _ChunkingRun, _path_to, _Piece
 from document_processor.chunking.tokenizer import WordTokenizer
 from document_processor.core.models import (
     BlockType,
+    TableCell,
+    TableInfo,
     LogicalDocument,
     PhysicalBlock,
     Segment,
@@ -45,6 +47,7 @@ from tests.factories import (
     make_logical_document,
     make_logical_node,
     make_table_block,
+    make_table_segment,
     make_text_segment,
 )
 
@@ -65,6 +68,12 @@ def plain(*items: str | None, body: tuple[int, int] | None = None) -> LogicalDoc
     ]
     body_start, body_end = body if body is not None else (0, len(segments))
     return make_logical_document(segments=tuple(segments), body_start=body_start, body_end=body_end)
+
+
+def fits(chunker: OutlineChunker, document: LogicalDocument, owner_id: str | None, start: int, end: int) -> bool:
+    """Whether segments [start, end), owned by owner_id, fit the chunker's budget."""
+    piece = _Piece(part="body", owner_id=owner_id, start=start, end=end)
+    return _ChunkingRun(chunker, document)._fits(piece)
 
 
 def ranges(chunks: tuple[Chunk, ...]) -> list[tuple[int, int]]:
@@ -191,34 +200,34 @@ def test_unknown_owner_raises() -> None:
 
 def test_fits_counts_the_rendered_text() -> None:
     document = plain("a b", "c d e")
-    assert chunker(5)._fits(document, None, 0, 2)  # exactly at the budget
-    assert not chunker(4)._fits(document, None, 0, 2)
+    assert fits(chunker(5), document, None, 0, 2)  # exactly at the budget
+    assert not fits(chunker(4), document, None, 0, 2)
 
 
 def test_fits_counts_headings_inside_the_range() -> None:
     # Segment 9's khoản starts at 8: rendering [8, 10) gives "1." plus 8 words.
     document = regulation()
-    assert chunker(9)._fits(document, "n4", 8, 10)
-    assert not chunker(8)._fits(document, "n4", 8, 10)
+    assert fits(chunker(9), document, "n4", 8, 10)
+    assert not fits(chunker(8), document, "n4", 8, 10)
 
 
 def test_fits_ignores_the_breadcrumb_by_default() -> None:
-    assert chunker(8)._fits(regulation(), "n4", 9, 10)  # 8 words; the 12-word breadcrumb is not counted
+    assert fits(chunker(8), regulation(), "n4", 9, 10)  # 8 words; the 12-word breadcrumb is not counted
 
 
 def test_fits_counts_the_breadcrumb_when_asked() -> None:
     # Range [9, 10) is after khoản 1's heading, so the breadcrumb is
     # "Chương I QUY ĐỊNH CHUNG" (5) + "Điều 2. Giải thích từ ngữ" (6) + "1." (1) = 12, plus 8 words.
     document = regulation()
-    assert chunker(20, include_breadcrumb_in_size=True)._fits(document, "n4", 9, 10)
-    assert not chunker(19, include_breadcrumb_in_size=True)._fits(document, "n4", 9, 10)
+    assert fits(chunker(20, include_breadcrumb_in_size=True), document, "n4", 9, 10)
+    assert not fits(chunker(19, include_breadcrumb_in_size=True), document, "n4", 9, 10)
 
 
 def test_fits_does_not_count_the_owners_heading_twice() -> None:
     # [8, 10) starts with khoản 1's heading, so the breadcrumb leaves "1." out: 11 + 9 = 20, not 21.
     document = regulation()
-    assert chunker(20, include_breadcrumb_in_size=True)._fits(document, "n4", 8, 10)
-    assert not chunker(19, include_breadcrumb_in_size=True)._fits(document, "n4", 8, 10)
+    assert fits(chunker(20, include_breadcrumb_in_size=True), document, "n4", 8, 10)
+    assert not fits(chunker(19, include_breadcrumb_in_size=True), document, "n4", 8, 10)
 
 
 # ============================================================ grouping by size
@@ -384,7 +393,8 @@ def test_only_single_segments_go_over_the_budget(max_tokens: int) -> None:
 # ============================================================ structure
 #
 # Node sizes in regulation(), rendered with their headings (words):
-#   n0 Chương I 60 · n1 Điều 1 23 · n2 khoản 1 7 · n3 Điều 2 32 · n4 khoản 1 9 · n5 khoản 2 17 · n6 điểm a 13
+#   n0 Chương I 62 · n1 Điều 1 23 · n2 khoản 1 7 · n3 Điều 2 34 · n4 khoản 1 9 · n5 khoản 2 19 · n6 điểm a 15
+#   (the table renders as a grid, "TT | Nội dung": each "|" counts as a word)
 
 
 def body_chunks(max_tokens: int, **options: Any) -> list[tuple[tuple[int, int], str | None, tuple[str, ...]]]:
@@ -410,16 +420,16 @@ DIEU_2 = "Điều 2. Giải thích từ ngữ"
 
 
 def test_a_root_that_fits_is_one_chunk() -> None:
-    assert body_chunks(60, keep_sections_apart=False) == [((1, 15), "n0", ())]
+    assert body_chunks(62, keep_sections_apart=False) == [((1, 15), "n0", ())]
 
 
 def test_a_node_holding_sections_is_split_even_when_it_fits() -> None:
-    # The whole Chương fits in 60, but its Điều are sections: one chunk each, never one for both.
-    assert body_chunks(60) == [((2, 7), "n1", (CHUONG,)), ((7, 15), "n3", (CHUONG,))]
+    # The whole Chương fits in 62, but its Điều are sections: one chunk each, never one for both.
+    assert body_chunks(62) == [((2, 7), "n1", (CHUONG,)), ((7, 15), "n3", (CHUONG,))]
 
 
 def test_a_root_that_does_not_fit_is_chunked_as_its_children() -> None:
-    # The Chương (60) does not fit in 40. Each Điều is a section, so each is chunked on its own, and the
+    # The Chương (62) does not fit in 40. Each Điều is a section, so each is chunked on its own, and the
     # Chương's heading, alone, gives no chunk: it is in their breadcrumbs.
     assert body_chunks(40) == [
         ((2, 7), "n1", (CHUONG,)),
@@ -437,7 +447,7 @@ def test_packing_across_sections_when_they_are_not_kept_apart() -> None:
 
 def test_descends_only_where_needed() -> None:
     # In 20, neither Điều fits whole. Inside Điều 1 the lead-in and khoản 1 do not fit together;
-    # inside Điều 2 the heading and khoản 1 do (15), khoản 2 goes alone (17).
+    # inside Điều 2 the heading and khoản 1 do (15), khoản 2 goes alone (19).
     assert body_chunks(20) == [
         ((2, 5), "n1", (CHUONG,)),  # Điều 1's heading, its lead-in and the image
         ((5, 7), "n2", (CHUONG, DIEU_1)),
@@ -469,7 +479,7 @@ def test_a_heading_merged_with_its_first_child_stays_in_the_text() -> None:
 
 
 def test_a_leaf_that_does_not_fit_is_split_inside_its_own_range() -> None:
-    # Điểm a (13) has no children: split by size, both pieces owned by it.
+    # Điểm a (15) has no children: split by size, both pieces owned by it.
     assert body_chunks(12)[-2:] == [
         ((12, 14), "n6", (CHUONG, DIEU_2, "2.")),  # starts with its own heading "a)"
         ((14, 15), "n6", (CHUONG, DIEU_2, "2.", "a)")),  # the table; the heading moved to the breadcrumb
@@ -706,3 +716,161 @@ def test_token_count_is_within_budget_except_for_single_segments(max_tokens: int
 def test_a_too_big_segment_reports_its_real_size() -> None:
     (chunk,) = [c for c in chunker(3).chunk(plain("a", "b c d e f", "g")) if c.text == "b c d e f"]
     assert chunk.token_count == 5
+
+
+# ============================================================ splitting a table that does not fit
+#
+# A table with a header "STT | Nội dung" (4 words in grid) and body rows "i | từ từ từ" (5 words each).
+# With a budget of 15, a piece holds the header and two rows (4 + 5 + 5 = 14).
+
+
+def big_table(n_body_rows: int = 6, words: int = 3) -> TableInfo:
+    cells = [TableCell(row=0, col=0, row_span=1, col_span=1, paragraphs=("STT",)),
+             TableCell(row=0, col=1, row_span=1, col_span=1, paragraphs=("Nội dung",))]
+    for r in range(1, n_body_rows + 1):
+        cells.append(TableCell(row=r, col=0, row_span=1, col_span=1, paragraphs=(str(r),)))
+        cells.append(TableCell(row=r, col=1, row_span=1, col_span=1, paragraphs=(" ".join(["từ"] * words),)))
+    return TableInfo(n_rows=n_body_rows + 1, n_cols=2, n_header_rows=1, cells=tuple(cells))
+
+
+def table_document(table: TableInfo, where: str) -> LogicalDocument:
+    """The table as the only content of a leaf node ("leaf"), next to a child ("gap"), or in front matter."""
+    table_segment = make_table_segment(block_id="pb-table", table=table)
+    if where == "front":
+        segments: tuple[Segment, ...] = (table_segment, make_text_segment(block_id="pb2", text="Nội dung"))
+        return make_logical_document(segments=segments, body_start=1, body_end=2)
+    if where == "leaf":
+        node = make_logical_node(id="a", level="dieu", marker="Điều 1.", title="Bảng", head_block_ids=("h-a",), start=0, end=2)
+        return make_logical_document(segments=(heading_for(node), table_segment), nodes=(node,), body_start=0, body_end=2)
+    parent = make_logical_node(id="a", level="dieu", marker="Điều 1.", title="Bảng", head_block_ids=("h-a",), start=0, end=4)
+    child = make_logical_node(id="a/1", parent_id="a", level="khoan", is_section=False, marker="1.", title=None,
+                              head_block_ids=("h-a1",), start=2, end=4)
+    segments = (heading_for(parent), table_segment, heading_for(child), make_text_segment(block_id="pb3", text="Nội dung khoản"))
+    return make_logical_document(segments=segments, nodes=(parent, child), body_start=0, body_end=4)
+
+
+def table_chunks(chunks: tuple[Chunk, ...]) -> list[Chunk]:
+    return [c for c in chunks if "pb-table" in c.block_ids]
+
+
+@pytest.mark.parametrize("where", ["leaf", "gap", "front"])
+def test_a_table_that_does_not_fit_is_split_into_row_groups(where: str) -> None:
+    pieces = table_chunks(chunker(15).chunk(table_document(big_table(), where)))
+    assert [c.table_rows for c in pieces] == [(1, 3), (3, 5), (5, 7)]
+    assert all(c.end - c.start == 1 for c in pieces)
+
+
+def test_every_piece_repeats_the_header_and_stays_within_budget() -> None:
+    pieces = table_chunks(chunker(15).chunk(table_document(big_table(), "leaf")))
+    assert all(c.text.splitlines()[0] == "STT | Nội dung" for c in pieces)
+    assert all(c.token_count <= 15 for c in pieces)
+    assert pieces[1].text == "STT | Nội dung\n3 | từ từ từ\n4 | từ từ từ"
+
+
+def test_row_groups_cover_every_body_row_once_in_order() -> None:
+    for max_tokens in (10, 15, 20, 31):
+        pieces = table_chunks(chunker(max_tokens).chunk(table_document(big_table(), "leaf")))
+        rows = [r for c in pieces for r in range(*(c.table_rows or (0, 0)))]
+        assert rows == list(range(1, 7)), max_tokens
+
+
+def test_a_table_that_fits_is_not_split() -> None:
+    (piece,) = table_chunks(chunker(100).chunk(table_document(big_table(), "leaf")))
+    assert piece.table_rows is None
+
+
+def test_a_table_piece_is_owned_by_the_node_holding_the_table() -> None:
+    for where, owner in (("leaf", "a"), ("gap", "a")):
+        pieces = table_chunks(chunker(15).chunk(table_document(big_table(), where)))
+        assert {c.node_id for c in pieces} == {owner}
+    front = table_chunks(chunker(15).chunk(table_document(big_table(), "front")))
+    assert {(c.part, c.node_id) for c in front} == {("front_matter", None)}
+
+
+def test_a_row_too_big_on_its_own_is_a_piece_by_itself() -> None:
+    table = big_table(n_body_rows=3, words=3)
+    cells = list(table.cells)
+    cells[5] = TableCell(row=2, col=1, row_span=1, col_span=1, paragraphs=(" ".join(["từ"] * 30),))
+    table = TableInfo(n_rows=table.n_rows, n_cols=2, n_header_rows=1, cells=tuple(cells))
+    pieces = table_chunks(chunker(15).chunk(table_document(table, "leaf")))
+    assert [c.table_rows for c in pieces] == [(1, 2), (2, 3), (3, 4)]
+    assert pieces[1].token_count > 15
+
+
+def test_a_table_of_header_rows_only_stays_whole() -> None:
+    table = TableInfo(n_rows=1, n_cols=1, n_header_rows=1,
+                      cells=(TableCell(row=0, col=0, row_span=1, col_span=1, paragraphs=(" ".join(["từ"] * 30),)),))
+    (piece,) = table_chunks(chunker(15).chunk(table_document(table, "leaf")))
+    assert piece.table_rows is None
+
+
+def test_key_value_pieces() -> None:
+    # Each key_value line is 7 words and there is no header line: two rows per piece in a budget of 20.
+    pieces = table_chunks(chunker(20, table_layout="key_value").chunk(table_document(big_table(), "leaf")))
+    assert [c.table_rows for c in pieces] == [(1, 3), (3, 5), (5, 7)]
+    assert pieces[0].text == "STT: 1; Nội dung: từ từ từ\nSTT: 2; Nội dung: từ từ từ"
+    assert all(c.token_count <= 20 for c in pieces)
+
+
+def test_split_table_pieces_have_their_own_ids_in_order() -> None:
+    chunks = chunker(15).chunk(table_document(big_table(), "gap"))
+    assert [c.id for c in chunks] == [f"c{i}" for i in range(len(chunks))]
+    starts = [(c.start, (c.table_rows or (0, 0))[0]) for c in chunks]
+    assert starts == sorted(starts)
+
+
+def test_token_count_of_a_piece_counts_only_its_rows() -> None:
+    pieces = table_chunks(chunker(15).chunk(table_document(big_table(), "leaf")))
+    assert all(c.token_count == WordTokenizer().count_tokens(c.text) for c in pieces)
+
+
+def test_a_merge_across_a_split_is_printed_again_in_the_next_piece() -> None:
+    cells = [TableCell(row=0, col=0, row_span=1, col_span=1, paragraphs=("Nhóm",)),
+             TableCell(row=0, col=1, row_span=1, col_span=1, paragraphs=("Nội dung",)),
+             TableCell(row=1, col=0, row_span=4, col_span=1, paragraphs=("Nhóm A",))]
+    for r in range(1, 5):
+        cells.append(TableCell(row=r, col=1, row_span=1, col_span=1, paragraphs=(" ".join(["từ"] * 3),)))
+    table = TableInfo(n_rows=5, n_cols=2, n_header_rows=1, cells=tuple(cells))
+    pieces = table_chunks(chunker(15).chunk(table_document(table, "leaf")))
+    assert len(pieces) > 1
+    assert all("Nhóm A" in c.text for c in pieces)
+
+
+def test_a_table_in_end_matter_is_split() -> None:
+    table_segment = make_table_segment(block_id="pb-table", table=big_table())
+    segments: tuple[Segment, ...] = (make_text_segment(block_id="pb1", text="Nội dung"), table_segment)
+    document = make_logical_document(segments=segments, body_start=0, body_end=1)
+    pieces = table_chunks(chunker(15).chunk(document))
+    assert [(c.part, c.table_rows) for c in pieces] == [("end_matter", (1, 3)), ("end_matter", (3, 5)), ("end_matter", (5, 7))]
+
+
+def test_text_around_a_split_table_is_chunked_as_before() -> None:
+    #   0 [Điều 1.]  1 paragraph  2 table (too big)  3 paragraph
+    node = make_logical_node(id="a", level="dieu", marker="Điều 1.", title=None, head_block_ids=("h-a",), start=0, end=4)
+    segments: tuple[Segment, ...] = (
+        heading_for(node),
+        make_text_segment(block_id="pb1", text="Đoạn trước bảng"),
+        make_table_segment(block_id="pb-table", table=big_table()),
+        make_text_segment(block_id="pb3", text="Đoạn sau bảng"),
+    )
+    document = make_logical_document(segments=segments, nodes=(node,), body_start=0, body_end=4)
+    chunks = chunker(15).chunk(document)
+    assert [(c.start, c.end, c.table_rows) for c in chunks] == [
+        (0, 2, None),  # the heading and the paragraph before the table, together
+        (2, 3, (1, 3)),
+        (2, 3, (3, 5)),
+        (2, 3, (5, 7)),
+        (3, 4, None),
+    ]
+    assert chunks[0].text == "Điều 1.\nĐoạn trước bảng"
+    assert chunks[-1].text == "Đoạn sau bảng"
+
+
+def test_a_table_without_header_rows_is_split_without_a_header() -> None:
+    # Header detection is the adapter's job: with n_header_rows == 0 every row is a body row.
+    table = big_table()
+    table = TableInfo(n_rows=table.n_rows, n_cols=table.n_cols, n_header_rows=0, cells=table.cells)
+    pieces = table_chunks(chunker(15).chunk(table_document(table, "leaf")))
+    assert pieces[0].table_rows is not None and pieces[0].table_rows[0] == 0
+    assert pieces[0].text.splitlines()[0] == "STT | Nội dung"
+    assert all("STT | Nội dung" not in c.text for c in pieces[1:])
