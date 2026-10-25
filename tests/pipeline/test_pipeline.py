@@ -20,25 +20,19 @@ import pytest
 
 from document_processor.core.models import LogicalDocument, TableSegment
 from document_processor.logical.profiles.vn_regulation import VN_REGULATION
+from document_processor.adapters import ADAPTERS, DocxAdapter
+from document_processor.chunking import Chunk, OutlineChunker, WordTokenizer, load_chunks
+from document_processor.core.cleaning import clean_document
+from document_processor.core.serialization import load_logical_document, load_physical_document
+from document_processor.logical import PROFILES, build_logical_document
 from document_processor.pipeline import (
-    ADAPTERS,
-    PROFILES,
-    Chunk,
-    DocxAdapter,
-    OutlineChunker,
     Pipeline,
     PipelineFailure,
     PipelineResult,
     ResultSummary,
     ReviewWarning,
     SavedFiles,
-    WordTokenizer,
-    build_logical_document,
-    clean_document,
     extract_physical_document,
-    load_chunks,
-    load_logical_document,
-    load_physical_document,
 )
 from tests.adapters.docx.test_adapter import BOLD_HEADER_TABLE, build_docx, p
 

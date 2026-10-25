@@ -1,4 +1,5 @@
-from document_processor.pipeline import OutlineChunker, Pipeline, WordTokenizer, format_outline
+from document_processor.pipeline import Pipeline, format_outline
+from document_processor.chunking import OutlineChunker, WordTokenizer
 
 if __name__ == "__main__":
 
