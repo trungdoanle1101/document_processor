@@ -1,8 +1,8 @@
 """Tests for pipeline/pipeline.py: Pipeline, PipelineResult, PipelineFailure.
 
 A Pipeline holds configuration only: a profile (a registry name or a Profile),
-a chunker, and cleaning steps (DEFAULT_STEPS unless told otherwise; () skips
-cleaning). run(path) does extract → clean → build → chunk and returns every
+a chunker, cleaning steps (DEFAULT_STEPS unless told otherwise; () skips
+cleaning), and the adapter registry (ADAPTERS unless told otherwise). run(path) does extract → clean → build → chunk and returns every
 stage; errors propagate. run_batch(paths) runs each file and turns input
 problems (ValueError, KeyError, OSError) into PipelineFailure values, in input
 order; anything else is a bug and still raises. result.save(out_dir) writes
@@ -20,8 +20,10 @@ import pytest
 from document_processor.core.models import LogicalDocument
 from document_processor.logical.profiles.vn_regulation import VN_REGULATION
 from document_processor.pipeline import (
+    ADAPTERS,
     PROFILES,
     Chunk,
+    DocxAdapter,
     OutlineChunker,
     Pipeline,
     PipelineFailure,
@@ -37,7 +39,7 @@ from document_processor.pipeline import (
     load_logical_document,
     load_physical_document,
 )
-from tests.adapters.docx.test_adapter import build_docx, p
+from tests.adapters.docx.test_adapter import BOLD_HEADER_TABLE, build_docx, p
 
 REGULATION = """BAN HÀNH QUY ĐỊNH
 Chương I
@@ -106,6 +108,40 @@ def test_is_frozen() -> None:
 def test_is_keyword_only() -> None:
     with pytest.raises(TypeError):
         Pipeline("vn_regulation", chunker())  # type: ignore[call-arg]
+
+
+def test_adapters_are_the_registry_by_default() -> None:
+    assert pipeline().adapters is ADAPTERS
+
+
+def write_bold_header_table(folder: Path, name: str) -> Path:
+    path = folder / name
+    path.write_bytes(build_docx(p("Bảng 1") + BOLD_HEADER_TABLE))
+    return path
+
+
+def table_header_rows(result: PipelineResult) -> int:
+    (info,) = [b.table_info for b in result.physical.blocks if b.table_info is not None]
+    return info.n_header_rows
+
+
+MARKED_ONLY = ADAPTERS.replace({".docx": DocxAdapter(header_row_rule="marked")})
+
+
+def test_run_reads_with_the_given_adapters(tmp_path: Path) -> None:
+    path = write_bold_header_table(tmp_path, "bang.docx")
+    assert table_header_rows(pipeline().run(path)) == 1
+    assert table_header_rows(pipeline(adapters=MARKED_ONLY).run(path)) == 0
+
+
+def test_run_batch_reads_with_the_given_adapters(tmp_path: Path) -> None:
+    paths = [write_bold_header_table(tmp_path, "a.docx"), write_txt(tmp_path, "b.txt")]
+    outcomes = pipeline(adapters=MARKED_ONLY).run_batch(paths)
+    assert isinstance(outcomes[0], PipelineResult)
+    assert table_header_rows(outcomes[0]) == 0
+    # The .txt file is still read by its own adapter.
+    assert isinstance(outcomes[1], PipelineResult)
+    assert outcomes[1].physical.adapter_name == "plain_text"
 
 
 def test_cleaning_is_on_by_default() -> None:

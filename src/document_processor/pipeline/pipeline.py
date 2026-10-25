@@ -4,9 +4,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from statistics import median
 
+from document_processor.adapters import ADAPTERS, Adapter
 from document_processor.chunking import Chunk, Chunker, save_chunks
 from document_processor.core.cleaning import DEFAULT_STEPS, CleaningStep, clean_document
 from document_processor.core.models import LogicalDocument, PhysicalDocument
+from document_processor.core.registry import Registry
 from document_processor.core.serialization import (
     save_logical_document,
     save_physical_document,
@@ -157,6 +159,7 @@ class Pipeline:
     profile: Profile | str
     chunker: Chunker
     cleaning_steps: tuple[CleaningStep, ...] = DEFAULT_STEPS
+    adapters: Registry[Adapter] = ADAPTERS
 
     _resolved_profile: Profile = field(init=False, repr=False)
 
@@ -170,7 +173,7 @@ class Pipeline:
 
     def run(self, path: Path | str) -> PipelineResult:
         path = Path(path)
-        physical = extract_physical_document(path)
+        physical = extract_physical_document(path, self.adapters)
         physical = clean_document(physical, self.cleaning_steps)
         logical = build_logical_document(self._resolved_profile, physical)
         chunks = self.chunker.chunk(logical)

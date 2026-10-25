@@ -2,7 +2,10 @@
 
 A registry never changes after it is built. ``extend`` returns a new registry
 and refuses to replace a name that already exists, so a profile can add its own
-items without touching (or silently overriding) the built-ins.
+items without touching (or silently overriding) the built-ins. ``replace`` is
+the opposite: it returns a new registry with existing entries swapped, and
+refuses a name that is not registered, so a typo fails instead of adding an
+entry nobody looks up.
 """
 
 from types import MappingProxyType
@@ -30,9 +33,7 @@ def test_get_unknown_name_raises_key_error() -> None:
         fruit_registry().get("durian")
 
 
-def test_unknown_name_error_names_the_kind_the_name_and_the_known_names_sorted() -> (
-    None
-):
+def test_unknown_name_error_names_the_kind_the_name_and_the_known_names_sorted() -> None:
     with pytest.raises(KeyError) as excinfo:
         fruit_registry().get("durian")
     message = str(excinfo.value)
@@ -150,3 +151,62 @@ def test_changing_the_extension_dict_does_not_change_the_new_registry() -> None:
     extra["fig"] = 6
     assert extended.get("durian") == 4
     assert "fig" not in extended
+
+
+# ---------- replace
+
+
+def test_replace_swaps_the_item() -> None:
+    assert fruit_registry().replace({"apple": 10}).get("apple") == 10
+
+
+def test_replace_keeps_the_other_items() -> None:
+    replaced = fruit_registry().replace({"apple": 10})
+    assert (replaced.get("banana"), replaced.get("cherry")) == (2, 3)
+    assert replaced.names() == ("apple", "banana", "cherry")
+
+
+def test_replace_several_at_once() -> None:
+    replaced = fruit_registry().replace({"apple": 10, "cherry": 30})
+    assert [replaced.get(name) for name in replaced.names()] == [10, 2, 30]
+
+
+def test_replace_leaves_the_original_unchanged() -> None:
+    original = fruit_registry()
+    original.replace({"apple": 10})
+    assert original.get("apple") == 1
+
+
+def test_replace_with_nothing_is_the_same_lookup() -> None:
+    replaced = fruit_registry().replace({})
+    assert [replaced.get(name) for name in replaced.names()] == [1, 2, 3]
+
+
+def test_replace_refuses_an_unknown_name() -> None:
+    with pytest.raises(KeyError, match="unknown fruit: durian"):
+        fruit_registry().replace({"durian": 4})
+
+
+def test_replace_lists_every_unknown_name_sorted() -> None:
+    with pytest.raises(KeyError, match="unknown fruit: durian, fig"):
+        fruit_registry().replace({"fig": 6, "apple": 10, "durian": 4})
+
+
+def test_failed_replace_changes_nothing() -> None:
+    original = fruit_registry()
+    with pytest.raises(KeyError):
+        original.replace({"apple": 10, "durian": 4})
+    assert original.get("apple") == 1
+    assert "durian" not in original
+
+
+def test_replaced_registry_keeps_its_kind() -> None:
+    with pytest.raises(KeyError, match="unknown fruit 'fig'"):
+        fruit_registry().replace({"apple": 10}).get("fig")
+
+
+def test_changing_the_replacement_dict_does_not_change_the_new_registry() -> None:
+    replacement = {"apple": 10}
+    replaced = fruit_registry().replace(replacement)
+    replacement["apple"] = 100
+    assert replaced.get("apple") == 10

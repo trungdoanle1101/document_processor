@@ -1,3 +1,4 @@
+from document_processor.adapters import ADAPTERS, Adapter, DocxAdapter, PlainTextAdapter
 from document_processor.chunking import (
     Chunk,
     Chunker,
@@ -25,15 +26,19 @@ from document_processor.pipeline.pipeline import (
 from document_processor.pipeline.review import format_outline
 
 __all__ = [
+    "ADAPTERS",
     "DEFAULT_STEPS",
     "PROFILES",
+    "Adapter",
     "Chunk",
     "Chunker",
     "CleaningStep",
+    "DocxAdapter",
     "OutlineChunker",
     "Pipeline",
     "PipelineFailure",
     "PipelineResult",
+    "PlainTextAdapter",
     "Profile",
     "Tokenizer",
     "ReviewWarning",

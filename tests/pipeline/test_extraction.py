@@ -1,8 +1,11 @@
 """Tests for pipeline/extraction.py and the ADAPTERS registry: picking the adapter by file extension.
 
-`extract_physical_document(path)` looks the lowercased suffix up in ADAPTERS
-and lets that adapter read the file. Keys are lowercase suffixes with the dot,
-so ".DOCX" works and a mistyped key fails a test instead of never matching.
+`extract_physical_document(path, adapters=ADAPTERS)` looks the lowercased
+suffix up in the registry and lets that adapter read the file. Keys are
+lowercase suffixes with the dot, so ".DOCX" works and a mistyped key fails a
+test instead of never matching. Passing another registry (usually
+ADAPTERS.replace(...)) changes which adapter, or which adapter settings, read
+a file.
 """
 
 from pathlib import Path
@@ -10,9 +13,11 @@ from pathlib import Path
 import pytest
 
 from document_processor.adapters import ADAPTERS, Adapter, DocxAdapter, PlainTextAdapter
+from document_processor.core.models.physical import DocSourceFormat, PhysicalDocument
+from document_processor.core.registry import Registry
 from document_processor.pipeline import extract_physical_document
-from document_processor.core.models.physical import DocSourceFormat
-from tests.adapters.docx.test_adapter import build_docx, p
+from tests.adapters.docx.test_adapter import BOLD_HEADER_TABLE, build_docx, p
+from tests.factories import make_document
 
 
 def write_docx(folder: Path, name: str, *paragraphs: str) -> Path:
@@ -25,6 +30,18 @@ def write_txt(folder: Path, name: str, text: str) -> Path:
     path = folder / name
     path.write_text(text, encoding="utf-8")
     return path
+
+
+def write_bold_header_table(folder: Path, name: str = "bang.docx") -> Path:
+    path = folder / name
+    path.write_bytes(build_docx(BOLD_HEADER_TABLE))
+    return path
+
+
+def header_rows(document: PhysicalDocument) -> int:
+    info = document.blocks[0].table_info
+    assert info is not None
+    return info.n_header_rows
 
 
 # ============================================================ the registry
@@ -85,6 +102,55 @@ def test_extension_case_does_not_matter(tmp_path: Path, name: str) -> None:
 def test_uppercase_txt(tmp_path: Path) -> None:
     document = extract_physical_document(write_txt(tmp_path, "GHI_CHU.TXT", "Nội dung"))
     assert document.source_format is DocSourceFormat.TXT
+
+
+# ============================================================ another registry
+
+
+def test_default_registry_is_adapters(tmp_path: Path) -> None:
+    path = write_bold_header_table(tmp_path)
+    assert extract_physical_document(path) == extract_physical_document(path, ADAPTERS)
+
+
+def test_replaced_adapter_reads_the_file(tmp_path: Path) -> None:
+    path = write_bold_header_table(tmp_path)
+    marked_only = ADAPTERS.replace({".docx": DocxAdapter(header_row_rule="marked")})
+    assert header_rows(extract_physical_document(path)) == 1
+    assert header_rows(extract_physical_document(path, marked_only)) == 0
+
+
+def test_replacing_docx_keeps_txt(tmp_path: Path) -> None:
+    marked_only = ADAPTERS.replace({".docx": DocxAdapter(header_row_rule="marked")})
+    document = extract_physical_document(write_txt(tmp_path, "a.txt", "Nội dung"), marked_only)
+    assert document.source_format is DocSourceFormat.TXT
+
+
+class StubAdapter:
+    """Records the paths it was asked to read; returns a fixed document."""
+
+    name = "stub"
+    version = "0.0.0"
+
+    def __init__(self) -> None:
+        self.paths: list[Path] = []
+
+    def parse_file(self, file_path: Path | str) -> PhysicalDocument:
+        self.paths.append(Path(file_path))
+        return make_document()
+
+
+def test_any_adapter_in_the_registry_is_used(tmp_path: Path) -> None:
+    stub = StubAdapter()
+    adapters = ADAPTERS.extend({".md": stub})
+    path = tmp_path / "ghi_chu.md"
+    assert extract_physical_document(path, adapters) == make_document()
+    assert stub.paths == [path]
+
+
+def test_only_the_given_registry_is_looked_up(tmp_path: Path) -> None:
+    docx_only: Registry[Adapter] = Registry("adapter", {".docx": DocxAdapter()})
+    with pytest.raises(KeyError, match=r"unknown adapter '\.txt'; known: \.docx\W*$"):
+        extract_physical_document(write_txt(tmp_path, "a.txt", "Nội dung"), docx_only)
 
 
 # ============================================================ refusals
