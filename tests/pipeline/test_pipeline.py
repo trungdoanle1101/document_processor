@@ -9,15 +9,16 @@ order; anything else is a bug and still raises. result.save(out_dir) writes
 <stem>.physical.json, <stem>.logical.json and <stem>.chunks.jsonl, replacing
 files already there, and returns their paths. result.summarize() counts what
 the run produced and warns about chunks over the chunker's budget (each chunk
-records its own token_count) and about a document where the profile found no
-headings.
+records its own token_count), about a document where the profile found no
+headings, and about a table split across chunks without header rows (once per
+table: the chunks after the first lose the column names).
 """
 
 from pathlib import Path
 
 import pytest
 
-from document_processor.core.models import LogicalDocument
+from document_processor.core.models import LogicalDocument, TableSegment
 from document_processor.logical.profiles.vn_regulation import VN_REGULATION
 from document_processor.pipeline import (
     ADAPTERS,
@@ -459,6 +460,96 @@ def test_summary_of_a_result_without_chunks(tmp_path: Path) -> None:
 
 def test_summary_records_the_budget(tmp_path: Path) -> None:
     assert pipeline(chunker=chunker(37)).run(write_txt(tmp_path, "a.txt")).summarize().max_tokens == 37
+
+
+# ---------- table_without_header
+
+
+def table_xml(*rows: tuple[str, str], bold_first_row: bool) -> str:
+    """A body-level table; with bold_first_row the adapter reads row 0 as the header."""
+
+    def cell(text: str, bold: bool) -> str:
+        rpr = "<w:rPr><w:b/></w:rPr>" if bold else ""
+        return f"<w:tc><w:p><w:r>{rpr}<w:t>{text}</w:t></w:r></w:p></w:tc>"
+
+    trs = "".join(
+        f"<w:tr>{cell(a, bold_first_row and i == 0)}{cell(b, bold_first_row and i == 0)}</w:tr>"
+        for i, (a, b) in enumerate(rows)
+    )
+    return f"<w:tbl><w:tblPr/><w:tblGrid/>{trs}</w:tbl>"
+
+
+TABLE_ROWS = (
+    ("TT", "Nội dung"),
+    ("1", "một hai ba bốn"),
+    ("2", "năm sáu bảy tám"),
+    ("3", "chín mười một hai"),
+    ("4", "ba bốn năm sáu"),
+)  # 2 + 4 x 5 = 22 words
+
+
+def write_table_docx(folder: Path, name: str, *tables: str) -> Path:
+    body = p("Điều 1. Phạm vi điều chỉnh") + "".join(p("Bảng") + table for table in tables)
+    path = folder / name
+    path.write_bytes(build_docx(body))
+    return path
+
+
+def table_warnings(result: PipelineResult) -> list[ReviewWarning]:
+    return [w for w in result.summarize().warnings if w.code == "table_without_header"]
+
+
+def test_split_table_without_header_is_warned(tmp_path: Path) -> None:
+    path = write_table_docx(tmp_path, "bang.docx", table_xml(*TABLE_ROWS, bold_first_row=False))
+    result = pipeline(chunker=chunker(12)).run(path)
+    (warning,) = table_warnings(result)
+
+    (index,) = [i for i, s in enumerate(result.logical.segments) if isinstance(s, TableSegment)]
+    pieces = [c for c in result.chunks if c.table_rows is not None]
+    assert len(pieces) > 1
+    assert warning.segment == index
+    assert warning.chunk_id is None
+    block_id = result.logical.segments[index].block_id
+    assert warning.message.startswith(
+        f"table at segment {index} (block {block_id}) is split into {len(pieces)} chunks but has no header rows"
+    )
+
+
+def test_split_table_with_header_is_not_warned(tmp_path: Path) -> None:
+    path = write_table_docx(tmp_path, "bang.docx", table_xml(*TABLE_ROWS, bold_first_row=True))
+    result = pipeline(chunker=chunker(12)).run(path)
+    assert len([c for c in result.chunks if c.table_rows is not None]) > 1
+    assert table_warnings(result) == []
+
+
+def test_table_in_one_chunk_without_header_is_not_warned(tmp_path: Path) -> None:
+    path = write_table_docx(tmp_path, "bang.docx", table_xml(*TABLE_ROWS, bold_first_row=False))
+    result = pipeline(chunker=chunker(200)).run(path)
+    assert all(c.table_rows is None for c in result.chunks)
+    assert table_warnings(result) == []
+
+
+def test_table_split_into_one_piece_is_not_warned(tmp_path: Path) -> None:
+    # A single row too big on its own: one piece with table_rows set, nothing lost.
+    one_row = table_xml(("1", "một hai ba bốn năm sáu bảy tám chín mười"), bold_first_row=False)
+    result = pipeline(chunker=chunker(5)).run(write_table_docx(tmp_path, "bang.docx", one_row))
+    assert [c.table_rows for c in result.chunks if c.table_rows is not None] == [(0, 1)]
+    assert table_warnings(result) == []
+
+
+def test_each_split_table_without_header_is_warned_once_in_document_order(tmp_path: Path) -> None:
+    table = table_xml(*TABLE_ROWS, bold_first_row=False)
+    result = pipeline(chunker=chunker(12)).run(write_table_docx(tmp_path, "bang.docx", table, table))
+    indexes = [i for i, s in enumerate(result.logical.segments) if isinstance(s, TableSegment)]
+    assert [w.segment for w in table_warnings(result)] == indexes
+    assert len(indexes) == 2
+
+
+def test_format_shows_the_table_warning(tmp_path: Path) -> None:
+    path = write_table_docx(tmp_path, "bang.docx", table_xml(*TABLE_ROWS, bold_first_row=False))
+    text = pipeline(chunker=chunker(12)).run(path).summarize().format()
+    assert "  ⚠ table_without_header  table at segment " in text
+    assert "Hint: mark the header row" in text
 
 
 def _summary(chunk_tokens: tuple[int, ...]) -> ResultSummary:

@@ -7,7 +7,7 @@ from statistics import median
 from document_processor.adapters import ADAPTERS, Adapter
 from document_processor.chunking import Chunk, Chunker, save_chunks
 from document_processor.core.cleaning import DEFAULT_STEPS, CleaningStep, clean_document
-from document_processor.core.models import LogicalDocument, PhysicalDocument
+from document_processor.core.models import LogicalDocument, PhysicalDocument, TableSegment
 from document_processor.core.registry import Registry
 from document_processor.core.serialization import (
     save_logical_document,
@@ -129,6 +129,24 @@ class PipelineResult:
                     message=f"profile {self.logical.profile_name!r} produces no node in the logical document. Hint: Determine the suitability of the profile for this document.",
                 )
             )
+
+        chunks_per_table = Counter(c.start for c in self.chunks if c.table_rows is not None)
+        for segment_index, chunk_count in chunks_per_table.items():
+            segment = self.logical.segments[segment_index]
+            assert isinstance(segment, TableSegment)
+            if chunk_count > 1 and segment.table.n_header_rows == 0:
+                warnings.append(
+                    ReviewWarning(
+                        code="table_without_header",
+                        message=(
+                            f"table at segment {segment_index} (block {segment.block_id}) is split into {chunk_count} chunks "
+                            "but has no header rows: chunks after the first have no column names. "
+                            "Hint: mark the header row (Repeat Header Rows in Word) or make it bold."
+                        ),
+                        segment=segment_index,
+                    )
+                )
+
 
         counts = Counter([node.level for node in self.logical.nodes])
         rank = {name: index for index, name in enumerate(self.level_order)}
