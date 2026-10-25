@@ -10,14 +10,13 @@ from lxml import etree
 from lxml.etree import _Element
 
 from document_processor.adapters.docx._xml import (
+    read_on_off,
     xpath_element_or_none,
     xpath_int_or_none,
     xpath_str_or_none,
 )
 
-W = nsdecls(
-    "w"
-)  # 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+W = nsdecls("w")  # 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
 
 
 def paragraph(inner: str = "") -> _Element:
@@ -57,7 +56,7 @@ def test_str_returns_none_when_missing(inner: str) -> None:
 def test_str_rejects_multiple_results() -> None:
     # Invalid for Word, but nothing stops a broken file from containing it.
     p = paragraph('<w:pPr><w:jc w:val="left"/><w:jc w:val="center"/></w:pPr>')
-    with pytest.raises(ValueError, match=r"Expected 0 or 1 results, got 2"):
+    with pytest.raises(ValueError, match=r"XPath: \./w:pPr/w:jc/@w:val\..*2"):
         xpath_str_or_none(p, "./w:pPr/w:jc/@w:val")
 
 
@@ -77,9 +76,7 @@ def test_str_rejects_a_path_that_does_not_return_a_list() -> None:
 def test_str_works_on_a_plain_lxml_element() -> None:
     # Elements python-docx has no class for (e.g. <w:lvl> in numbering.xml)
     # only work because the helper passes the namespace map itself.
-    lvl = plain_element(
-        f'<w:lvl {W} w:ilvl="1"><w:numFmt w:val="lowerLetter"/></w:lvl>'
-    )
+    lvl = plain_element(f'<w:lvl {W} w:ilvl="1"><w:numFmt w:val="lowerLetter"/></w:lvl>')
     assert xpath_str_or_none(lvl, "./w:numFmt/@w:val") == "lowerLetter"
 
 
@@ -110,9 +107,7 @@ def test_int_keeps_the_original_error_as_cause() -> None:
 
 
 def test_int_passes_on_multiple_results_error() -> None:
-    p = paragraph(
-        '<w:pPr><w:numPr><w:ilvl w:val="0"/><w:ilvl w:val="1"/></w:numPr></w:pPr>'
-    )
+    p = paragraph('<w:pPr><w:numPr><w:ilvl w:val="0"/><w:ilvl w:val="1"/></w:numPr></w:pPr>')
     with pytest.raises(ValueError, match="Expected 0 or 1 results, got 2"):
         xpath_int_or_none(p, "./w:pPr/w:numPr/w:ilvl/@w:val")
 
@@ -143,9 +138,7 @@ def test_element_returns_the_single_element() -> None:
 
 
 def test_element_returns_none_when_missing() -> None:
-    root = numbering(
-        '<w:abstractNum w:abstractNumId="3"><w:lvl w:ilvl="0"/></w:abstractNum>'
-    )
+    root = numbering('<w:abstractNum w:abstractNumId="3"><w:lvl w:ilvl="0"/></w:abstractNum>')
     assert xpath_element_or_none(root, LVL_PATH) is None
 
 
@@ -162,8 +155,29 @@ def test_element_rejects_multiple_results() -> None:
 
 def test_element_rejects_a_path_that_selects_an_attribute() -> None:
     # The mirror image of the str helper's test: "/@w:ilvl" selects a value.
-    root = numbering(
-        '<w:abstractNum w:abstractNumId="3"><w:lvl w:ilvl="1"/></w:abstractNum>'
-    )
+    root = numbering('<w:abstractNum w:abstractNumId="3"><w:lvl w:ilvl="1"/></w:abstractNum>')
     with pytest.raises(TypeError, match="Expected an _Element, got '1'"):
         xpath_element_or_none(root, f"{LVL_PATH}/@w:ilvl")
+
+
+# ---------- read_on_off
+
+
+def on_off_element(val: str | None) -> _Element:
+    attr = f' w:val="{val}"' if val is not None else ""
+    return parse_xml(f"<w:b {W}{attr}/>")
+
+
+@pytest.mark.parametrize("val", [None, "1", "true", "on"], ids=["no-val", "1", "true", "on"])
+def test_on_off_on(val: str | None) -> None:
+    assert read_on_off(on_off_element(val), "w:b") is True
+
+
+@pytest.mark.parametrize("val", ["0", "false", "off"])
+def test_on_off_off(val: str) -> None:
+    assert read_on_off(on_off_element(val), "w:b") is False
+
+
+def test_on_off_unknown_value_names_the_owner() -> None:
+    with pytest.raises(ValueError, match=r"Unrecognized w:b/@w:val 'very'"):
+        read_on_off(on_off_element("very"), "w:b")

@@ -1,5 +1,5 @@
 from document_processor.adapters.plain_text import PlainTextAdapter
-from document_processor.adapters.docx import DocxAdapter
+from document_processor.adapters.docx.adapter import DocxAdapter
 from document_processor.adapters.adapter import Adapter
 from document_processor.core.registry import Registry
 

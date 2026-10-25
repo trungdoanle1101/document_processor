@@ -8,6 +8,7 @@ from lxml.etree import _Element
 from document_processor.core.models.physical import TableCell, TableInfo
 
 from ._xml import (
+    read_on_off,
     xpath_element_or_none,
     xpath_element_zero_or_more,
     xpath_int_or_none,
@@ -22,23 +23,11 @@ TC_VMERGE_XPATH = "./w:tcPr/w:vMerge"
 VAL_XPATH = "./@w:val"
 ROW_TEXT_RUNS_XPATH = "./w:tc//w:r[w:t]"
 RUN_TEXT_XPATH = "./w:t"
-RUN_BOLD_XPATH = "./w:rPr/w:b"
-
 VMERGE_RESTART = "restart"
 VMERGE_CONTINUE = "continue"
 
 
 type HeaderRowRule = Literal["marked", "marked_or_bold_first"]
-
-
-def read_on_off(element: _Element, owner: str) -> bool:
-    """An on/off property: no w:val means on"""
-    val = xpath_str_or_none(element, VAL_XPATH)
-    if (val is None) or (val in {"1", "true", "on"}):
-        return True
-    if val in {"0", "false", "off"}:
-        return False
-    raise ValueError(f"Unrecognized {owner}/@w:val {val!r}")
 
 
 def read_tblheader(tr: _Element) -> bool:
@@ -72,19 +61,14 @@ def read_run_text(r: _Element) -> str:
     return "".join(t.text or "" for t in xpath_element_zero_or_more(r, RUN_TEXT_XPATH))
 
 
-def read_run_is_bold(r: _Element) -> bool:
-    b = xpath_element_or_none(r, RUN_BOLD_XPATH)
-    return b is not None and read_on_off(b, "w:b")
-
-
-def read_row_is_bold(tr: _Element) -> bool:
+def read_row_is_bold(tr: _Element, is_run_bold: Callable[[_Element], bool]) -> bool:
     """Every run with visible text in the row has direct bold; a row with no text is not bold"""
     runs = [
         r
         for r in xpath_element_zero_or_more(tr, ROW_TEXT_RUNS_XPATH)
         if read_run_text(r).strip()
     ]
-    return bool(runs) and all(read_run_is_bold(r) for r in runs)
+    return bool(runs) and all(is_run_bold(r) for r in runs)
 
 
 def read_gridspan(tc: _Element) -> int:
@@ -155,7 +139,9 @@ class _RawRow:
 
 
 def _parse_row(
-    tr: _Element, read_paragraph_func: Callable[[_Element], str | None]
+    tr: _Element,
+    read_paragraph_func: Callable[[_Element], str | None],
+    is_run_bold: Callable[[_Element], bool],
 ) -> _RawRow:
     cell_list: list[_RawCell] = []
     for el in tr:
@@ -173,7 +159,7 @@ def _parse_row(
         grid_before=read_gridbefore(tr),
         grid_after=read_gridafter(tr),
         cells=tuple(cell_list),
-        is_bold=read_row_is_bold(tr),
+        is_bold=read_row_is_bold(tr, is_run_bold),
     )
 
 
@@ -286,9 +272,13 @@ def _count_header_rows(
             break
         n_header_rows += 1
 
-    if header_row_rule == "marked_or_bold_first" and n_header_rows == 0:
-        if raw_rows[0].is_bold and not all(row.is_bold for row in raw_rows):
-            n_header_rows = 1
+    if (
+        header_row_rule == "marked_or_bold_first"
+        and n_header_rows == 0
+        and raw_rows[0].is_bold
+        and not all(row.is_bold for row in raw_rows)
+    ):
+        n_header_rows = 1
 
     n_header_rows = _extend_header_past_merges(n_header_rows, cells)
     return n_header_rows if n_header_rows < len(raw_rows) else 0
@@ -322,12 +312,13 @@ def _extend_header_past_merges(n_header_rows: int, cells: Sequence[TableCell]) -
 def parse_table(
     tbl: _Element,
     read_paragraph_func: Callable[[_Element], str | None],
+    is_run_bold: Callable[[_Element], bool],
     header_row_rule: HeaderRowRule,
 ) -> TableInfo | None:
     raw_rows: list[_RawRow] = []
     for el in tbl:
         if el.tag == qn("w:tr"):
-            parsed = _parse_row(el, read_paragraph_func)
+            parsed = _parse_row(el, read_paragraph_func, is_run_bold)
             raw_rows.append(parsed)
         elif el.tag == qn("w:tblPr") or el.tag == qn("w:tblGrid"):
             # Skip deliberately

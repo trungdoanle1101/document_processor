@@ -18,7 +18,8 @@ def _xpath_zero_or_more(element: _Element, path: str) -> list[object]:
         raise TypeError(
             f"XPath: {path}. Unexpected result type from xpath: Expected list, got {type(result).__name__}"
         )
-    return result
+    items: list[object] = list(result)
+    return items
 
 
 def _xpath_one_or_none(element: _Element, path: str) -> object | None:
@@ -87,3 +88,13 @@ def xpath_int_or_none(element: _Element, path: str) -> int | None:
         return int(value)
     except ValueError as e:
         raise ValueError(f"XPath: {path}. Failed to convert {value!r} to int") from e
+
+
+def read_on_off(element: _Element, owner: str) -> bool:
+    """An on/off property: no w:val means on"""
+    val = xpath_str_or_none(element, "./@w:val")
+    if (val is None) or (val in {"1", "true", "on"}):
+        return True
+    if val in {"0", "false", "off"}:
+        return False
+    raise ValueError(f"Unrecognized {owner}/@w:val {val!r}")

@@ -6,7 +6,9 @@ the table logic only; numbering and real paragraph text are covered by the
 adapter tests.
 
 Header rows: the leading w:tblHeader rows, or (with "marked_or_bold_first") a
-bold first row when no row is marked; then moved down past any merged cell
+bold first row when no row is marked (whether a run is bold is the reader's
+callback, Stylist.resolve_run_is_bold; here it is a Stylist without styles,
+so direct w:b only); then moved down past any merged cell
 that crosses the boundary; and 0 if no body row would be left.
 """
 
@@ -27,15 +29,17 @@ from document_processor.adapters.docx.tables import (
     read_gridbefore,
     read_gridspan,
     read_row_is_bold,
-    read_run_is_bold,
     read_run_text,
     read_tblheader,
     read_vmerge,
 )
+from document_processor.adapters.docx.styles import Stylist
 from document_processor.core.models.physical import TableCell, TableInfo
 from document_processor.core.text_utils import is_invisible
 
 W = nsdecls("w")
+
+DIRECT_BOLD = Stylist(None).resolve_run_is_bold
 
 
 # ---------- builders
@@ -102,7 +106,7 @@ def tbl(*rows: str, extra: str = "") -> _Element:
 
 
 def parse(*rows: str, rule: HeaderRowRule = "marked_or_bold_first") -> TableInfo:
-    result = parse_table(tbl(*rows), read_paragraph, rule)
+    result = parse_table(tbl(*rows), read_paragraph, DIRECT_BOLD, rule)
     assert result is not None
     return result
 
@@ -209,74 +213,79 @@ def test_run_text_joins_its_text_elements() -> None:
     assert read_run_text(run) == "Nội dung"
 
 
-def test_run_without_properties_is_not_bold() -> None:
-    assert read_run_is_bold(run_el(r("TT"))) is False
-
-
-def test_run_with_other_properties_is_not_bold() -> None:
-    assert read_run_is_bold(run_el("<w:r><w:rPr><w:i/></w:rPr><w:t>TT</w:t></w:r>")) is False
-
-
-@pytest.mark.parametrize("value", ["", "1", "true", "on"], ids=["bare", "1", "true", "on"])
-def test_run_bold_on(value: str) -> None:
-    assert read_run_is_bold(run_el(r("TT", bold=value))) is True
-
-
-@pytest.mark.parametrize("value", ["0", "false", "off"])
-def test_run_bold_off(value: str) -> None:
-    assert read_run_is_bold(run_el(r("TT", bold=value))) is False
-
-
-def test_run_bold_unknown_value_rejected() -> None:
-    with pytest.raises(ValueError, match="Unrecognized w:b/@w:val 'very'"):
-        read_run_is_bold(run_el(r("TT", bold="very")))
-
-
 def row_el(*cells: str) -> _Element:
     return el(tr(*cells))
 
 
+def row_is_bold(*cells: str) -> bool:
+    return read_row_is_bold(row_el(*cells), DIRECT_BOLD)
+
+
+def test_the_callback_decides_for_each_run() -> None:
+    seen: list[str] = []
+
+    def everything_bold(run: _Element) -> bool:
+        seen.append(read_run_text(run))
+        return True
+
+    # No w:b anywhere, but the callback says bold.
+    assert read_row_is_bold(row_el(tc("TT"), tc("Nội dung")), everything_bold) is True
+    assert seen == ["TT", "Nội dung"]
+
+
+def test_blank_runs_are_not_passed_to_the_callback() -> None:
+    seen: list[str] = []
+
+    def spy(run: _Element) -> bool:
+        seen.append(read_run_text(run))
+        return True
+
+    cell = f"<w:tc><w:p>{r('Nội')}{r(' ')}{r('dung')}</w:p></w:tc>"
+    read_row_is_bold(row_el(cell, tc()), spy)
+    assert seen == ["Nội", "dung"]
+
+
 def test_row_is_bold_when_every_run_is_bold() -> None:
-    assert read_row_is_bold(row_el(tc("TT", bold=""), tc("Nội dung", bold=""))) is True
+    assert row_is_bold(tc("TT", bold=""), tc("Nội dung", bold="")) is True
 
 
 def test_row_with_one_plain_cell_is_not_bold() -> None:
-    assert read_row_is_bold(row_el(tc("TT", bold=""), tc("Nội dung"))) is False
+    assert row_is_bold(tc("TT", bold=""), tc("Nội dung")) is False
 
 
 def test_row_with_one_plain_run_is_not_bold() -> None:
     cell = f"<w:tc><w:p>{r('Nội ', bold='')}{r('dung')}</w:p></w:tc>"
-    assert read_row_is_bold(row_el(tc("TT", bold=""), cell)) is False
+    assert row_is_bold(tc("TT", bold=""), cell) is False
 
 
 def test_row_with_bold_switched_off_is_not_bold() -> None:
-    assert read_row_is_bold(row_el(tc("TT", bold="0"))) is False
+    assert row_is_bold(tc("TT", bold="0")) is False
 
 
 def test_blank_plain_run_does_not_count() -> None:
     cell = f"<w:tc><w:p>{r('Nội', bold='')}{r(' ')}{r('dung', bold='')}</w:p></w:tc>"
-    assert read_row_is_bold(row_el(cell)) is True
+    assert row_is_bold(cell) is True
 
 
 def test_empty_cell_does_not_count() -> None:
-    assert read_row_is_bold(row_el(tc("TT", bold=""), tc())) is True
+    assert row_is_bold(tc("TT", bold=""), tc()) is True
 
 
 def test_row_without_text_is_not_bold() -> None:
-    assert read_row_is_bold(row_el(tc(), tc())) is False
+    assert row_is_bold(tc(), tc()) is False
 
 
 def test_run_inside_a_hyperlink_counts() -> None:
     plain_link = f"<w:tc><w:p><w:hyperlink>{r('xem')}</w:hyperlink></w:p></w:tc>"
     bold_link = f"<w:tc><w:p><w:hyperlink>{r('xem', bold='')}</w:hyperlink></w:p></w:tc>"
-    assert read_row_is_bold(row_el(tc("TT", bold=""), plain_link)) is False
-    assert read_row_is_bold(row_el(tc("TT", bold=""), bold_link)) is True
+    assert row_is_bold(tc("TT", bold=""), plain_link) is False
+    assert row_is_bold(tc("TT", bold=""), bold_link) is True
 
 
 def test_paragraph_mark_bold_is_not_run_bold() -> None:
     # w:pPr/w:rPr formats the paragraph mark, not the text.
     cell = f"<w:tc><w:p><w:pPr><w:rPr><w:b/></w:rPr></w:pPr>{r('TT')}</w:p></w:tc>"
-    assert read_row_is_bold(row_el(cell)) is False
+    assert row_is_bold(cell) is False
 
 
 # ======================================================================
@@ -319,7 +328,7 @@ def test_callback_sees_every_cell_paragraph_in_order() -> None:
         seen.append(text or "<empty>")
         return text
 
-    parse_table(tbl(tr(tc("a", "b"), tc()), tr(tc("c"), tc("d"))), spy, "marked_or_bold_first")
+    parse_table(tbl(tr(tc("a", "b"), tc()), tr(tc("c"), tc("d"))), spy, DIRECT_BOLD, "marked_or_bold_first")
     # Empty paragraphs are still passed to the callback (numbering must see them).
     assert seen == ["a", "b", "<empty>", "c", "d"]
 
@@ -688,11 +697,11 @@ def test_merge_ending_at_the_boundary_does_not_move_it() -> None:
 
 
 def test_table_without_rows_is_none() -> None:
-    assert parse_table(tbl(), read_paragraph, "marked_or_bold_first") is None
+    assert parse_table(tbl(), read_paragraph, DIRECT_BOLD, "marked_or_bold_first") is None
 
 
 def test_rows_without_cells_is_none() -> None:
-    assert parse_table(tbl("<w:tr/>", "<w:tr/>"), read_paragraph, "marked_or_bold_first") is None
+    assert parse_table(tbl("<w:tr/>", "<w:tr/>"), read_paragraph, DIRECT_BOLD, "marked_or_bold_first") is None
 
 
 def test_table_of_empty_cells_is_valid() -> None:
@@ -725,7 +734,7 @@ def test_unknown_element_in_row_rejected() -> None:
 
 def test_unknown_element_in_table_rejected() -> None:
     with pytest.raises(ValueError, match=r"/w:tbl/w:sdt: Unknown tag"):
-        parse_table(tbl(tr(tc("a")), extra="<w:sdt/>"), read_paragraph, "marked_or_bold_first")
+        parse_table(tbl(tr(tc("a")), extra="<w:sdt/>"), read_paragraph, DIRECT_BOLD, "marked_or_bold_first")
 
 
 def test_row_properties_are_skipped() -> None:

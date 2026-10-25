@@ -5,8 +5,8 @@ from itertools import product
 
 from document_processor.core.registry import Registry
 from document_processor.core.text_utils import is_blank_char, normalize_nfc
-from document_processor.logical.counter_styles import NAME_PATTERN, CounterStyle
-from document_processor.logical.markers import MatchSource
+from document_processor.logical.counter_styles import CounterStyle
+from document_processor.logical.markers import MatchSource, NAME_PATTERN
 
 
 _WHITESPACE_PATTERN = r"[^\S\r\n]+"

@@ -1,1 +1,0 @@
-from document_processor.adapters.docx.adapter import DocxAdapter

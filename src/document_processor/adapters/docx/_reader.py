@@ -180,7 +180,10 @@ class _DocxReader:
         blocks: list[PhysicalBlock] = []
         try:
             table_info = parse_table(
-                tbl, self._read_cell_paragraph, self._header_row_rule
+                tbl=tbl,
+                read_paragraph_func=self._read_cell_paragraph,
+                is_run_bold=self._stylist.resolve_run_is_bold,
+                header_row_rule=self._header_row_rule,
             )
         except ValueError as e:
             raise ValueError(

@@ -451,6 +451,38 @@ def test_marked_rule_ignores_a_bold_first_row() -> None:
     assert info.n_header_rows == 0
 
 
+LIBREOFFICE_STYLES = '<w:style w:type="paragraph" w:styleId="Normal"><w:name w:val="Normal"/><w:rPr><w:b/></w:rPr></w:style>'
+
+
+def libreoffice_cell(text: str, *, bold_off: bool) -> str:
+    """A cell as LibreOffice writes it: Normal is bold, a plain run says w:b="false"."""
+    b = '<w:b w:val="false"/>' if bold_off else ""
+    return (
+        f'<w:tc><w:p><w:pPr><w:pStyle w:val="Normal"/></w:pPr>'
+        f'<w:r><w:rPr>{b}<w:lang w:val="sv-SE"/></w:rPr><w:t>{text}</w:t></w:r></w:p></w:tc>'
+    )
+
+
+def test_header_bold_through_the_paragraph_style() -> None:
+    # The real document: the header row inherits bold from Normal, body rows switch it off.
+    header = "".join(libreoffice_cell(t, bold_off=False) for t in ("TT", "Tầng/Vùng dữ liệu"))
+    body = "".join(libreoffice_cell(t, bold_off=True) for t in ("1", "Tầng xử lý"))
+    table = f"<w:tbl><w:tblPr/><w:tblGrid/><w:tr>{header}</w:tr><w:tr>{body}</w:tr></w:tbl>"
+    info = parse(table, styles=LIBREOFFICE_STYLES).blocks[0].table_info
+    assert info is not None
+    assert info.n_header_rows == 1
+
+
+def test_whole_table_bold_through_the_paragraph_style_has_no_header() -> None:
+    rows = "".join(
+        f"<w:tr>{libreoffice_cell(a, bold_off=False)}{libreoffice_cell(b, bold_off=False)}</w:tr>"
+        for a, b in (("TT", "Nội dung"), ("1", "Phạm vi"))
+    )
+    info = parse(f"<w:tbl><w:tblPr/><w:tblGrid/>{rows}</w:tbl>", styles=LIBREOFFICE_STYLES).blocks[0].table_info
+    assert info is not None
+    assert info.n_header_rows == 0
+
+
 def test_default_header_row_rule() -> None:
     assert DocxAdapter().header_row_rule == "marked_or_bold_first"
 
