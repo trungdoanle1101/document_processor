@@ -1,11 +1,18 @@
-from lxml.etree import _Element
-from docx.oxml.ns import qn
-from ._xml import xpath_str_or_none, xpath_element_or_none, xpath_int_or_none
-from typing import Any
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import Literal
 
-from document_processor.core.models.physical import TableInfo, TableCell
+from docx.oxml.ns import qn
+from lxml.etree import _Element
+
+from document_processor.core.models.physical import TableCell, TableInfo
+
+from ._xml import (
+    xpath_element_or_none,
+    xpath_element_zero_or_more,
+    xpath_int_or_none,
+    xpath_str_or_none,
+)
 
 TR_TBLHEADER_XPATH = "./w:trPr/w:tblHeader"
 TR_GRIDBEFORE_VAL_XPATH = "./w:trPr/w:gridBefore/@w:val"
@@ -13,21 +20,30 @@ TR_GRIDAFTER_VAL_XPATH = "./w:trPr/w:gridAfter/@w:val"
 TC_GRIDSPAN_VAL_XPATH = "./w:tcPr/w:gridSpan/@w:val"
 TC_VMERGE_XPATH = "./w:tcPr/w:vMerge"
 VAL_XPATH = "./@w:val"
+ROW_TEXT_RUNS_XPATH = "./w:tc//w:r[w:t]"
+RUN_TEXT_XPATH = "./w:t"
+RUN_BOLD_XPATH = "./w:rPr/w:b"
 
 VMERGE_RESTART = "restart"
 VMERGE_CONTINUE = "continue"
 
 
-def read_tblheader(tr: _Element) -> bool:
-    tblheader_el = xpath_element_or_none(tr, TR_TBLHEADER_XPATH)
-    if tblheader_el is None:
-        return False
-    val = xpath_str_or_none(tblheader_el, VAL_XPATH)
+type HeaderRowRule = Literal["marked", "marked_or_bold_first"]
+
+
+def read_on_off(element: _Element, owner: str) -> bool:
+    """An on/off property: no w:val means on"""
+    val = xpath_str_or_none(element, VAL_XPATH)
     if (val is None) or (val in {"1", "true", "on"}):
         return True
     if val in {"0", "false", "off"}:
         return False
-    raise ValueError(f"Unrecognized w:tblHeader/@w:val {val!r}")
+    raise ValueError(f"Unrecognized {owner}/@w:val {val!r}")
+
+
+def read_tblheader(tr: _Element) -> bool:
+    tblheader_el = xpath_element_or_none(tr, TR_TBLHEADER_XPATH)
+    return tblheader_el is not None and read_on_off(tblheader_el, "w:tblHeader")
 
 
 def read_gridbefore(tr: _Element) -> int:
@@ -50,6 +66,25 @@ def read_gridafter(tr: _Element) -> int:
     if val < default_val:
         raise ValueError(f"gridAfter must be >= {default_val}, got {val}")
     return val
+
+
+def read_run_text(r: _Element) -> str:
+    return "".join(t.text or "" for t in xpath_element_zero_or_more(r, RUN_TEXT_XPATH))
+
+
+def read_run_is_bold(r: _Element) -> bool:
+    b = xpath_element_or_none(r, RUN_BOLD_XPATH)
+    return b is not None and read_on_off(b, "w:b")
+
+
+def read_row_is_bold(tr: _Element) -> bool:
+    """Every run with visible text in the row has direct bold; a row with no text is not bold"""
+    runs = [
+        r
+        for r in xpath_element_zero_or_more(tr, ROW_TEXT_RUNS_XPATH)
+        if read_run_text(r).strip()
+    ]
+    return bool(runs) and all(read_run_is_bold(r) for r in runs)
 
 
 def read_gridspan(tc: _Element) -> int:
@@ -113,6 +148,7 @@ def _parse_cell(
 @dataclass(frozen=True)
 class _RawRow:
     is_header: bool
+    is_bold: bool
     grid_before: int
     grid_after: int
     cells: tuple[_RawCell, ...]
@@ -137,6 +173,7 @@ def _parse_row(
         grid_before=read_gridbefore(tr),
         grid_after=read_gridafter(tr),
         cells=tuple(cell_list),
+        is_bold=read_row_is_bold(tr),
     )
 
 
@@ -158,23 +195,12 @@ class _CellBuilder:
         )
 
 
-def _build_table_info(raw_rows: tuple[_RawRow, ...]) -> TableInfo | None:
-    # Count header rows
-    n_header_rows = 0
-    for raw_row in raw_rows:
-        if not raw_row.is_header:
-            break
-        n_header_rows += 1
+def _build_table_info(
+    raw_rows: Sequence[_RawRow], header_row_rule: HeaderRowRule
+) -> TableInfo | None:
 
     # Count n_cols
-    n_cols = 0
-    for raw_row in raw_rows:
-        # Number of cells row has
-        row_width = raw_row.grid_before + raw_row.grid_after
-        for cell in raw_row.cells:
-            row_width += cell.grid_span
-        if n_cols < row_width:
-            n_cols = row_width
+    n_cols = _count_columns(raw_rows)
     if n_cols == 0:
         return None
 
@@ -241,12 +267,62 @@ def _build_table_info(raw_rows: tuple[_RawRow, ...]) -> TableInfo | None:
     cells = tuple(b.build() for b in builders)
 
     return TableInfo(
-        n_rows=len(raw_rows), n_cols=n_cols, n_header_rows=n_header_rows, cells=cells
+        n_rows=len(raw_rows),
+        n_cols=n_cols,
+        n_header_rows=_count_header_rows(raw_rows, cells, header_row_rule),
+        cells=cells,
     )
 
 
+def _count_header_rows(
+    raw_rows: Sequence[_RawRow],
+    cells: Sequence[TableCell],
+    header_row_rule: HeaderRowRule,
+) -> int:
+    """Marked rows, or a bold first row; then past merges; at least one body row stays"""
+    n_header_rows = 0
+    for raw_row in raw_rows:
+        if not raw_row.is_header:
+            break
+        n_header_rows += 1
+
+    if header_row_rule == "marked_or_bold_first" and n_header_rows == 0:
+        if raw_rows[0].is_bold and not all(row.is_bold for row in raw_rows):
+            n_header_rows = 1
+
+    n_header_rows = _extend_header_past_merges(n_header_rows, cells)
+    return n_header_rows if n_header_rows < len(raw_rows) else 0
+
+
+def _count_columns(raw_rows: Sequence[_RawRow]) -> int:
+    n_cols = 0
+    for raw_row in raw_rows:
+        # Number of cells row has
+        row_width = raw_row.grid_before + raw_row.grid_after
+        for cell in raw_row.cells:
+            row_width += cell.grid_span
+        n_cols = max(n_cols, row_width)
+    return n_cols
+
+
+def _extend_header_past_merges(n_header_rows: int, cells: Sequence[TableCell]) -> int:
+    """Move the header/body boundary down until no merged cell crosses it"""
+    moved = True
+    while moved:
+        moved = False
+        for cell in cells:
+            cell_end = cell.row + cell.row_span
+            if cell.row < n_header_rows < cell_end:
+                n_header_rows = cell_end
+                moved = True
+
+    return n_header_rows
+
+
 def parse_table(
-    tbl: _Element, read_paragraph_func: Callable[[_Element], str | None]
+    tbl: _Element,
+    read_paragraph_func: Callable[[_Element], str | None],
+    header_row_rule: HeaderRowRule,
 ) -> TableInfo | None:
     raw_rows: list[_RawRow] = []
     for el in tbl:
@@ -260,4 +336,4 @@ def parse_table(
             ref = el.getroottree().getpath(el)
             raise ValueError(f"{ref}: Unknown tag {el.tag!r}")
 
-    return _build_table_info(tuple(raw_rows))
+    return _build_table_info(tuple(raw_rows), header_row_rule)

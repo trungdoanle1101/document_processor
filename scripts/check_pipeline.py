@@ -1,6 +1,3 @@
-from collections import Counter
-from statistics import median
-
 from document_processor.pipeline import OutlineChunker, Pipeline, WordTokenizer, format_outline
 
 if __name__ == "__main__":

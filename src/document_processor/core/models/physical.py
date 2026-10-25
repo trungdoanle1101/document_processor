@@ -172,6 +172,11 @@ class TableInfo:
                 raise ValueError(
                     f"TableCell ({cell.row}, {cell.col}). Cell spanning out of col limit: Required cell.col + cell.col_span <= n_cols, got {cell.col + cell.col_span} > {self.n_cols}"
                 )
+            if cell.row < self.n_header_rows < cell.row + cell.row_span:
+                raise ValueError(
+                    f"TableCell ({cell.row}, {cell.col}). Cell crosses the header boundary: spans rows [{cell.row}, {cell.row + cell.row_span}), n_header_rows={self.n_header_rows}"
+                )
+            
 
         # Check cells reading order
         for i in range(len(self.cells) - 1):

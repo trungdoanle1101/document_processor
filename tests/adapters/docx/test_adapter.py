@@ -430,6 +430,36 @@ def test_header_rows_reach_the_block() -> None:
     assert info.n_header_rows == 1
 
 
+BOLD_HEADER_TABLE = (
+    "<w:tbl><w:tblPr/><w:tblGrid/>"
+    "<w:tr><w:tc><w:p><w:r><w:rPr><w:b/></w:rPr><w:t>TT</w:t></w:r></w:p></w:tc></w:tr>"
+    f"<w:tr><w:tc>{p('1')}</w:tc></w:tr>"
+    "</w:tbl>"
+)
+
+
+def test_bold_first_row_is_the_header_by_default() -> None:
+    info = parse(BOLD_HEADER_TABLE).blocks[0].table_info
+    assert info is not None
+    assert info.n_header_rows == 1
+
+
+def test_marked_rule_ignores_a_bold_first_row() -> None:
+    doc = DocxAdapter(header_row_rule="marked").parse_bytes(build_docx(BOLD_HEADER_TABLE), FILENAME)
+    info = doc.blocks[0].table_info
+    assert info is not None
+    assert info.n_header_rows == 0
+
+
+def test_default_header_row_rule() -> None:
+    assert DocxAdapter().header_row_rule == "marked_or_bold_first"
+
+
+def test_header_row_rule_is_keyword_only() -> None:
+    with pytest.raises(TypeError):
+        DocxAdapter("marked")  # type: ignore[call-arg]
+
+
 def test_merged_table_reaches_the_block() -> None:
     rows = (
         f"<w:tr><w:tc><w:tcPr><w:gridSpan w:val=\"2\"/></w:tcPr>{p('Trường hợp áp dụng')}</w:tc></w:tr>"

@@ -1,40 +1,45 @@
+from collections.abc import Iterator
+from typing import Any
+
 from docx.document import Document
-from docx.text.paragraph import Paragraph, Hyperlink
-from docx.text.run import Run
-from docx.text.hyperlink import Hyperlink
 from docx.drawing import Drawing
-from docx.oxml.text.paragraph import CT_P
-from docx.oxml.ns import qn
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.opc.part import XmlPart
-from lxml.etree import _Element
+from docx.oxml.ns import qn
+from docx.oxml.text.paragraph import CT_P
+from docx.text.hyperlink import Hyperlink
+from docx.text.paragraph import Paragraph
+from docx.text.run import Run
 from lxml import etree
+from lxml.etree import _Element
+
 from document_processor.core.models.physical import (
-    PhysicalBlock,
     BlockType,
-    Region,
+    ImageInfo,
     ListInfo,
     ParagraphFormat,
-    ImageInfo,
+    PhysicalBlock,
+    Region,
 )
 from document_processor.core.text_utils import is_invisible
-from typing import Any, Iterator
 
-from .numbering import Numberer, read_num_id, read_ilvl
-from .styles import Stylist
-from .tables import parse_table
 from .images import read_drawing_image
-
+from .numbering import Numberer, read_ilvl, read_num_id
+from .styles import Stylist
+from .tables import HeaderRowRule, parse_table
 
 RELATION_TYPE_MAPPER = {"styles": RT.STYLES, "numbering": RT.NUMBERING}
 
 
 class _DocxReader:
-    def __init__(self, doc: Document, filename: str) -> None:
+    def __init__(
+        self, doc: Document, filename: str, header_row_rule: HeaderRowRule
+    ) -> None:
         self._doc = doc
         self._filename = filename
         self._block_count: int = 0
         self._tree = etree.ElementTree(doc.element)
+        self._header_row_rule = header_row_rule
 
         numbering_root = self._get_root("numbering")
 
@@ -50,7 +55,6 @@ class _DocxReader:
             raise ValueError(
                 f"File {filename!r}: unable to create Stylist object"
             ) from e
-
 
     def read_blocks(self) -> tuple[PhysicalBlock, ...]:
         blocks: list[PhysicalBlock] = []
@@ -75,21 +79,19 @@ class _DocxReader:
                 )
 
         return tuple(blocks)
-    
-    
+
     def _paragraph_blocks(self, p: _Element) -> list[PhysicalBlock]:
         paragraph = self._paragraph(p)
         list_info = self._list_info(p)
 
-
         segments = [
-            s for s in paragraph_segments(paragraph)
+            s
+            for s in paragraph_segments(paragraph)
             if not (isinstance(s, str) and is_invisible(s))
         ]
 
         if not segments:
             return []
-
 
         paragraph_format = self._paragraph_format(p)
 
@@ -101,7 +103,9 @@ class _DocxReader:
             if isinstance(segment, str):
                 if is_invisible(segment):
                     continue
-                block = self._text_block(segment, pending_list_info, paragraph_format, ref)
+                block = self._text_block(
+                    segment, pending_list_info, paragraph_format, ref
+                )
                 blocks.append(block)
                 pending_list_info = None
             elif isinstance(segment, Drawing):
@@ -115,7 +119,13 @@ class _DocxReader:
 
         return blocks
 
-    def _text_block(self, text: str, list_info: ListInfo | None, paragraph_format: ParagraphFormat, ref: str) -> PhysicalBlock :
+    def _text_block(
+        self,
+        text: str,
+        list_info: ListInfo | None,
+        paragraph_format: ParagraphFormat,
+        ref: str,
+    ) -> PhysicalBlock:
         block_type = (
             BlockType.LIST_ITEM if list_info is not None else BlockType.PARAGRAPH
         )
@@ -125,16 +135,15 @@ class _DocxReader:
             text=text,
             paragraph_format=paragraph_format,
             list_info=list_info,
-            source_reference=ref
+            source_reference=ref,
         )
 
     def _paragraph(self, p: _Element) -> Paragraph:
         if not isinstance(p, CT_P):
             raise ValueError(f"File {self._filename!r}, at {self._ref(p)}: not a CT_P")
         return Paragraph(p, self._doc)
-    
-    
-    def _list_info(self, p:_Element) -> ListInfo | None:
+
+    def _list_info(self, p: _Element) -> ListInfo | None:
         num_id = read_num_id(p)
         ilvl = read_ilvl(p)
         if ilvl is None:
@@ -150,13 +159,12 @@ class _DocxReader:
             except ValueError as e:
                 raise ValueError(
                     f"File {self._filename!r}, at {self._ref(p)}, num_id {num_id}, ilvl {ilvl}: error occurred: {e}"
-                )  from e
+                ) from e
 
         else:
             list_info = None
 
         return list_info
-    
 
     def _paragraph_format(self, p: _Element) -> ParagraphFormat:
         try:
@@ -165,14 +173,15 @@ class _DocxReader:
             raise ValueError(
                 f"File {self._filename!r}, at {self._ref(p)}: unable to resolve paragraph format: {e}"
             ) from e
-        
-        return paragraph_format
 
+        return paragraph_format
 
     def _table_blocks(self, tbl: _Element) -> list[PhysicalBlock]:
         blocks: list[PhysicalBlock] = []
         try:
-            table_info = parse_table(tbl, self._read_cell_paragraph)
+            table_info = parse_table(
+                tbl, self._read_cell_paragraph, self._header_row_rule
+            )
         except ValueError as e:
             raise ValueError(
                 f"File {self._filename!r}, at {self._ref(tbl)}: error occurred when parsing table: {e}"
@@ -180,23 +189,21 @@ class _DocxReader:
 
         if table_info is None:
             return []
-        
+
         table_text = table_info.text()
         if is_invisible(table_text):
             return []
-
 
         block = self._new_block(
             block_type=BlockType.TABLE,
             text=table_text,
             paragraph_format=ParagraphFormat(alignment=None, style_name=None),
             table_info=table_info,
-            source_reference=self._ref(tbl)
+            source_reference=self._ref(tbl),
         )
         blocks.append(block)
-    
+
         return blocks
-    
 
     def _read_cell_paragraph(self, p: _Element) -> str | None:
         paragraph = self._paragraph(p)
@@ -205,36 +212,37 @@ class _DocxReader:
 
         if is_invisible(text):
             return None
-        
+
         # Prefix marker for paragraph
         # Do this because list_info is lost for list items within table cells
         if list_info is not None and list_info.displayed_marker is not None:
             return f"{list_info.displayed_marker} {text}"
         return text
-    
 
-    def _image_block(self, image_info: ImageInfo, paragraph_format: ParagraphFormat, ref: str) -> PhysicalBlock:
+    def _image_block(
+        self, image_info: ImageInfo, paragraph_format: ParagraphFormat, ref: str
+    ) -> PhysicalBlock:
         return self._new_block(
             block_type=BlockType.IMAGE,
-            text="", # Not giving text for IMAGE blocks
+            text="",  # Not giving text for IMAGE blocks
             paragraph_format=paragraph_format,
             image_info=image_info,
             source_reference=ref,
         )
-    
+
     def _image_info(self, segment: Drawing, p: _Element) -> ImageInfo | None:
         if not segment.has_picture:
             return None
-        
+
         related_parts = self._doc.part.related_parts
-        try: 
+        try:
             image_info = read_drawing_image(segment._element, related_parts)
         except ValueError as e:
-            raise ValueError(f"File {self._filename!r}, at {self._ref(p)}: error occurred: {e}") from e
-
+            raise ValueError(
+                f"File {self._filename!r}, at {self._ref(p)}: error occurred: {e}"
+            ) from e
 
         return image_info
-    
 
     def _get_root(self, root_type: str) -> _Element | None:
         if root_type not in RELATION_TYPE_MAPPER:
@@ -256,11 +264,9 @@ class _DocxReader:
 
         root: _Element = part.element
         return root
-    
 
     def _ref(self, el: _Element) -> str:
         return self._tree.getpath(el)
-    
 
     def _new_block(self, **fields: Any) -> PhysicalBlock:
         self._block_count += 1
@@ -270,12 +276,12 @@ class _DocxReader:
             page=None,
             char_spans=(),
             changelog=(),
-            **fields
+            **fields,
         )
 
 
 def paragraph_segments(paragraph: Paragraph) -> list[str | Drawing]:
-    segments: list[str | _Element] = []
+    segments: list[str | Drawing] = []
     buffer: list[str] = []
 
     def runs() -> Iterator[Run]:
@@ -284,7 +290,6 @@ def paragraph_segments(paragraph: Paragraph) -> list[str | Drawing]:
                 yield from item.runs
             else:
                 yield item
-
 
     for run in runs():
         for piece in run.iter_inner_content():
@@ -296,7 +301,7 @@ def paragraph_segments(paragraph: Paragraph) -> list[str | Drawing]:
                     buffer = []
                 segments.append(piece)
             # Ignore RenderedPageBreak
-        
+
     if buffer:
         segments.append("".join(buffer))
     return segments

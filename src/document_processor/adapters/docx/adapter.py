@@ -1,17 +1,24 @@
-from pathlib import Path
-from docx import Document as DocumentFactory
+from dataclasses import dataclass
 from io import BytesIO
-from document_processor.core.models.physical import (
-    PhysicalDocument,
-    DocSourceFormat,
-)
+from pathlib import Path
+
+from docx import Document as DocumentFactory
+
 from document_processor.core.identity import compute_hash
+from document_processor.core.models.physical import (
+    DocSourceFormat,
+    PhysicalDocument,
+)
 
 from ._reader import _DocxReader
+from .tables import HeaderRowRule
 
+
+@dataclass(frozen=True, kw_only=True)
 class DocxAdapter:
     name = "docx"
-    version = "1.0.0"
+    version = "1.1.0"
+    header_row_rule: HeaderRowRule = "marked_or_bold_first"
 
     def parse_bytes(self, data: bytes, filename: str) -> PhysicalDocument:
 
@@ -26,7 +33,9 @@ class DocxAdapter:
 
         # Create a reader once per parse
         # Call read_blocks once
-        reader = _DocxReader(doc, filename)
+        reader = _DocxReader(
+            doc=doc, filename=filename, header_row_rule=self.header_row_rule
+        )
         blocks = reader.read_blocks()
 
         return PhysicalDocument(
