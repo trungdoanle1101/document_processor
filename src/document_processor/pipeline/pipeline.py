@@ -55,6 +55,7 @@ class PipelineResult:
     def write_review_page(self, path: Path | str) -> Path:
         """Write the review page for this result as one self-contained HTML file; returns its path"""
         path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(render_review_html(build_review_data(self)), encoding="utf-8")
         return path
 
