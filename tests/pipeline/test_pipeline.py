@@ -11,7 +11,9 @@ files already there, and returns their paths. result.summarize() counts what
 the run produced and warns about chunks over the chunker's budget (each chunk
 records its own token_count), about a document where the profile found no
 headings, and about a table split across chunks without header rows (once per
-table: the chunks after the first lose the column names).
+table: the chunks after the first lose the column names). Every warning that has a
+place to point at carries chunk_id (a split table: its first piece); only
+document-wide warnings (no_headings) have none.
 """
 
 from pathlib import Path
@@ -502,11 +504,20 @@ def test_split_table_without_header_is_warned(tmp_path: Path) -> None:
     pieces = [c for c in result.chunks if c.table_rows is not None]
     assert len(pieces) > 1
     assert warning.segment == index
-    assert warning.chunk_id is None
+    assert warning.chunk_id == pieces[0].id  # the first piece: where the column names are still shown
     block_id = result.logical.segments[index].block_id
     assert warning.message.startswith(
         f"table at segment {index} (block {block_id}) is split into {len(pieces)} chunks but has no header rows"
     )
+
+
+def test_each_table_warning_points_at_its_own_first_piece(tmp_path: Path) -> None:
+    table = table_xml(*TABLE_ROWS, bold_first_row=False)
+    result = pipeline(chunker=chunker(12)).run(write_table_docx(tmp_path, "bang.docx", table, table))
+    for warning in table_warnings(result):
+        (first_piece, *_) = [c for c in result.chunks if c.table_rows is not None and c.start == warning.segment]
+        assert warning.chunk_id == first_piece.id
+        assert first_piece.table_rows is not None and first_piece.table_rows[0] == 0  # no header rows: starts at row 0
 
 
 def test_split_table_with_header_is_not_warned(tmp_path: Path) -> None:

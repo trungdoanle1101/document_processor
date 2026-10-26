@@ -2,7 +2,6 @@ from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from statistics import median
 
 from document_processor.adapters import ADAPTERS, Adapter
 from document_processor.chunking import Chunk, Chunker, save_chunks
@@ -15,72 +14,13 @@ from document_processor.core.serialization import (
 )
 from document_processor.logical import PROFILES, Profile, build_logical_document
 from document_processor.pipeline.extraction import extract_physical_document
-
+from document_processor.pipeline.review import ResultSummary, ReviewWarning 
 
 @dataclass(frozen=True, kw_only=True)
 class SavedFiles:
     physical: Path
     logical: Path
     chunks: Path
-
-
-@dataclass(frozen=True, kw_only=True)
-class ReviewWarning:
-    code: str
-    message: str
-    chunk_id: str | None = None
-    segment: int | None = None
-
-
-@dataclass(frozen=True, kw_only=True)
-class ResultSummary:
-    source: Path
-    block_count: int
-    segment_count: int
-    nodes_by_levels: tuple[tuple[str, int], ...]
-    front_matter: tuple[int, int]
-    end_matter: tuple[int, int]
-    chunk_count: int
-    chunk_tokens: tuple[int, ...]
-    warnings: tuple[ReviewWarning, ...]
-    max_tokens: int
-
-    @property
-    def smallest_chunk_tokens(self) -> int | None:
-        return min(self.chunk_tokens) if self.chunk_tokens else None
-
-    @property
-    def median_chunk_tokens(self) -> float | None:
-        return median(self.chunk_tokens) if self.chunk_tokens else None
-
-    @property
-    def largest_chunk_tokens(self) -> int | None:
-        return max(self.chunk_tokens) if self.chunk_tokens else None
-
-    def format(self) -> str:
-        node_count = sum(count for _, count in self.nodes_by_levels)
-        levels = (
-            " · ".join(f"{level} {count}" for level, count in self.nodes_by_levels)
-            or "none"
-        )
-        if self.chunk_tokens:
-            sizes = (
-                f"min {self.smallest_chunk_tokens} · median {round(self.median_chunk_tokens or 0)}"
-                f" · max {self.largest_chunk_tokens} (budget {self.max_tokens})"
-            )
-        else:
-            sizes = "none"
-        lines = [
-            self.source.name,
-            f"  {self.block_count} blocks → {self.segment_count} segments, {node_count} nodes, {self.chunk_count} chunks",
-            f"  front matter [{self.front_matter[0]}, {self.front_matter[1]}) · end matter [{self.end_matter[0]}, {self.end_matter[1]})",
-            f"  nodes: {levels}",
-            f"  chunk tokens: {sizes}",
-        ]
-        lines.extend(f"  ⚠ {w.code}  {w.message}" for w in self.warnings)
-        if not self.warnings:
-            lines.append("  no warnings")
-        return "\n".join(lines)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -135,6 +75,7 @@ class PipelineResult:
             segment = self.logical.segments[segment_index]
             assert isinstance(segment, TableSegment)
             if chunk_count > 1 and segment.table.n_header_rows == 0:
+                first_chunk = next(c for c in self.chunks if c.table_rows is not None and c.start == segment_index)
                 warnings.append(
                     ReviewWarning(
                         code="table_without_header",
@@ -143,6 +84,7 @@ class PipelineResult:
                             "but has no header rows: chunks after the first have no column names. "
                             "Hint: mark the header row (Repeat Header Rows in Word) or make it bold."
                         ),
+                        chunk_id=first_chunk.id,
                         segment=segment_index,
                     )
                 )
