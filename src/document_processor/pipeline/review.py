@@ -1,25 +1,26 @@
 from __future__ import annotations
-from collections.abc import Sequence
-from dataclasses import dataclass
+
+from collections.abc import Mapping, Sequence
+from collections.abc import Set as AbstractSet
+from dataclasses import dataclass, replace
+from itertools import groupby
 from pathlib import Path
 from statistics import median
-from typing import TYPE_CHECKING, assert_never
+from typing import TYPE_CHECKING
 
 from document_processor.chunking import Chunk
 from document_processor.core.models import (
     DocumentPart,
+    HeadingSegment,
     LogicalDocument,
     LogicalNode,
-    TextSegment,
+    Segment,
+    TableCell,
     TableInfo,
-    TableSegment,
-    ImageSegment,
-    HeadingSegment,
     heading_label,
 )
 
-type ReviewSegment = ReviewHeading | ReviewText | ReviewTable | ReviewImage
-type ReviewItem = ReviewChunk | ReviewGap
+type ChunkOrGap = Chunk | Gap
 
 if TYPE_CHECKING:
     from document_processor.pipeline.pipeline import PipelineResult
@@ -85,57 +86,15 @@ class ResultSummary:
 
 
 @dataclass(frozen=True, kw_only=True)
-class BaseReviewSegment:
-    index: int
-    block_id: str
-
-
-@dataclass(frozen=True, kw_only=True)
-class ReviewHeading(BaseReviewSegment):
-    label: str
-    level: str
-    depth: int
-
-
-@dataclass(frozen=True, kw_only=True)
-class ReviewText(BaseReviewSegment):
-    text: str
-
-
-@dataclass(frozen=True, kw_only=True)
-class ReviewCell:
-    text: str
-    # clipped to the rows this piece shows
-    row_span: int
-    col_span: int
-
-
-@dataclass(frozen=True, kw_only=True)
-class ReviewTable(BaseReviewSegment):
-    n_header_rows: int
-    # header rows, body rows
-    rows: tuple[tuple[ReviewCell, ...], ...]
-
-
-@dataclass(frozen=True, kw_only=True)
-class ReviewImage(BaseReviewSegment):
-    pass
-
-
-@dataclass(frozen=True, kw_only=True)
-class ReviewChunk:
-    chunk: Chunk
-    segments: tuple[ReviewSegment, ...]
-
-
-@dataclass(frozen=True, kw_only=True)
-class ReviewGap:
-    """Segments that end up in no chunk"""
+class Gap:
+    """Segments [start, end) in no chunk: headings a later breadcrumb carries, or dropped"""
 
     # "gap-<first segment index>"; warning anchors and HTML ids use it
     id: str
     part: DocumentPart
-    segments: tuple[ReviewSegment, ...]
+    start: int
+    end: int
+    in_breadcrumb: bool
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -152,16 +111,45 @@ class ReviewNode:
 @dataclass(frozen=True, kw_only=True)
 class ReviewData:
     summary: ResultSummary
+    document: LogicalDocument
+    depths: Mapping[str, int]  # node id -> depth
     outline: tuple[ReviewNode, ...]
     # document order, covering every segment
-    items: tuple[ReviewItem, ...]
+    chunks_or_gaps: tuple[ChunkOrGap, ...]
 
 
 def build_review_data(result: PipelineResult) -> ReviewData:
+    depths = _node_depths(result.logical.nodes)
     return ReviewData(
         summary=result.summarize(),
-        outline=_build_outline(result.logical, result.chunks),
-        items=_build_items(result.logical, result.chunks),
+        document=result.logical,
+        depths=depths,
+        outline=_build_outline(result.logical, result.chunks, depths),
+        chunks_or_gaps=_build_chunks_or_gaps(result.logical, result.chunks),
+    )
+
+
+def build_table_rows(
+    table: TableInfo, start: int, end: int
+) -> tuple[tuple[TableCell, ...], ...]:
+    """The header rows, then body rows [start, end), as render_table_rows show them"""
+
+    shown_rows = [*range(table.n_header_rows), *range(start, end)]
+
+    cells_by_row: dict[int, list[TableCell]] = {row: [] for row in shown_rows}
+
+    for cell in table.cells:
+        if cell.row < table.n_header_rows:
+            cells_by_row[cell.row].append(cell)
+            continue
+        first_row = max(cell.row, start)
+        last_row = min(cell.row + cell.row_span, end)
+        if first_row < last_row:
+            cells_by_row[first_row].append(replace(cell, row=first_row, row_span=last_row - first_row))
+
+    return tuple(
+        tuple(sorted(cells_by_row[row], key=lambda cell: cell.col))
+        for row in shown_rows
     )
 
 
@@ -195,10 +183,9 @@ def format_outline(
 
 
 def _build_outline(
-    document: LogicalDocument, chunks: Sequence[Chunk]
+    document: LogicalDocument, chunks: Sequence[Chunk], depths: Mapping[str, int]
 ) -> tuple[ReviewNode, ...]:
     outline: list[ReviewNode] = []
-    depths = _node_depths(document.nodes)
 
     for node in document.nodes:
         outline.append(
@@ -216,38 +203,38 @@ def _build_outline(
     return tuple(outline)
 
 
-def _build_items(
+def _build_chunks_or_gaps(
     document: LogicalDocument, chunks: Sequence[Chunk]
-) -> tuple[ReviewItem, ...]:
-    items: list[ReviewItem] = []
-    depths = _node_depths(document.nodes)
+) -> tuple[ChunkOrGap, ...]:
+    chunks_and_gaps: list[ChunkOrGap] = []
+
+    breadcrumb_node_ids = {
+        step.node_id
+        for chunk in chunks
+        for step in chunk.path
+        if step.start < chunk.start
+    }
+
     cursor = 0
     for chunk in chunks:
-        if chunk.start > cursor:
-            items.extend(_build_gaps(document, cursor, chunk.start, depths))
-        items.append(
-            ReviewChunk(
-                chunk=chunk,
-                segments=tuple(
-                    _build_segment(
-                        document,
-                        index,
-                        table_rows=chunk.table_rows,
-                        depths=depths,
-                    )
-                    for index in range(chunk.start, chunk.end)
-                ),
-            )
+        chunks_and_gaps.extend(
+            _build_uncovered(document, cursor, chunk.start, breadcrumb_node_ids)
         )
+        chunks_and_gaps.append(chunk)
         cursor = max(cursor, chunk.end)
-    items.extend(_build_gaps(document, cursor, len(document.segments), depths))
+    chunks_and_gaps.extend(
+        _build_uncovered(document, cursor, len(document.segments), breadcrumb_node_ids)
+    )
 
-    return tuple(items)
+    return tuple(chunks_and_gaps)
 
 
-def _build_gaps(
-    document: LogicalDocument, start: int, end: int, depths: dict[str, int]
-) -> tuple[ReviewGap, ...]:
+def _build_uncovered(
+    document: LogicalDocument,
+    start: int,
+    end: int,
+    breadcrumb_node_ids: AbstractSet[str],
+) -> tuple[Gap, ...]:
     """Segments [start, end) that no chunk covers, one gap per part they fall in"""
     parts: tuple[tuple[DocumentPart, int, int], ...] = (
         ("front_matter", 0, document.body_start),
@@ -255,97 +242,33 @@ def _build_gaps(
         ("end_matter", document.body_end, len(document.segments)),
     )
 
-    gaps: list[ReviewGap] = []
+    gaps: list[Gap] = []
     for part, part_start, part_end in parts:
-        gap_start, gap_end = max(start, part_start), min(end, part_end)
-        if gap_start < gap_end:
+        run_start, run_end = max(start, part_start), min(end, part_end)
+        runs = groupby(
+            range(run_start, run_end),
+            key=lambda index: _is_in_breadcrumb(
+                document.segments[index], breadcrumb_node_ids
+            ),
+        )
+
+        for in_breadcrumb, run in runs:
+            indexes = list(run)
             gaps.append(
-                ReviewGap(
-                    id=f"gap-{gap_start}",
+                Gap(
+                    id=f"gap-{indexes[0]}",
                     part=part,
-                    segments=tuple(
-                        _build_segment(document, index, None, depths)
-                        for index in range(gap_start, gap_end)
-                    ),
+                    start=indexes[0],
+                    end=indexes[-1] + 1,
+                    in_breadcrumb=in_breadcrumb,
                 )
             )
-
     return tuple(gaps)
 
 
-def _build_segment(
-    document: LogicalDocument,
-    index: int,
-    table_rows: tuple[int, int] | None,
-    depths: dict[str, int],
-) -> ReviewSegment:
-
-    segment = document.segments[index]
-    if isinstance(segment, TextSegment):
-        review_segment: ReviewSegment = ReviewText(
-            index=index, block_id=segment.block_id, text=segment.text
-        )
-    elif isinstance(segment, ImageSegment):
-        review_segment = ReviewImage(index=index, block_id=segment.block_id)
-    elif isinstance(segment, HeadingSegment):
-        node = document.get_node(segment.node_id)
-        review_segment = ReviewHeading(
-            index=index,
-            block_id=segment.block_id,
-            label=_node_label(node),
-            level=node.level,
-            depth=depths[segment.node_id],
-        )
-    elif isinstance(segment, TableSegment):
-        table = segment.table
-        if table_rows is not None:
-            start, end = table_rows
-        else:
-            start, end = table.n_header_rows, table.n_rows
-        review_segment = ReviewTable(
-            index=index,
-            block_id=segment.block_id,
-            n_header_rows=table.n_header_rows,
-            rows=_build_table_rows(table, start, end),
-        )
-    else:
-        assert_never(segment)
-    return review_segment
-
-
-def _build_table_rows(
-    table: TableInfo, start: int, end: int
-) -> tuple[tuple[ReviewCell, ...], ...]:
-    """The header rows, then body rows [start, end), as render_table_rows show them"""
-
-    shown_rows = [*range(table.n_header_rows), *range(start, end)]
-
-    cells_by_row: dict[int, list[tuple[int, ReviewCell]]] = {
-        row: [] for row in shown_rows
-    }
-
-    for cell in table.cells:
-        cell_end = cell.row + cell.row_span
-        if cell.row < table.n_header_rows:
-            first_row, row_span = cell.row, cell.row_span
-        elif cell.row < end and start < cell_end:
-            first_row = max(cell.row, start)
-            row_span = min(cell_end, end) - first_row
-        else:
-            continue
-        cells_by_row[first_row].append(
-            (
-                cell.col,
-                ReviewCell(text=cell.text(), row_span=row_span, col_span=cell.col_span),
-            )
-        )
-
-    return tuple(
-        tuple(
-            review_cell
-            for _, review_cell in sorted(cells_by_row[row], key=lambda pair: pair[0])
-        )
-        for row in shown_rows
+def _is_in_breadcrumb(segment: Segment, breadcrumb_node_ids: AbstractSet[str]) -> bool:
+    return (
+        isinstance(segment, HeadingSegment) and segment.node_id in breadcrumb_node_ids
     )
 
 
