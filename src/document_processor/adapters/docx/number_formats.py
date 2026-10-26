@@ -1,9 +1,9 @@
 from document_processor.core.numerals import (
     int_to_arabic,
-    int_to_upper_latin,
     int_to_lower_latin,
+    int_to_lower_roman,
+    int_to_upper_latin,
     int_to_upper_roman,
-    int_to_lower_roman
 )
 
 

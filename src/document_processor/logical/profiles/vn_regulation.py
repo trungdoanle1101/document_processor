@@ -21,7 +21,11 @@ Words are matched case-insensitively ("CHƯƠNG I" and "Chương I" both count);
 numerals are not. The document ends at "Nơi nhận:" (the distribution list).
 """
 
-from document_processor.logical.levels import GlyphMarkerSpec, LevelSpec, TemplateMarkerSpec
+from document_processor.logical.levels import (
+    GlyphMarkerSpec,
+    LevelSpec,
+    TemplateMarkerSpec,
+)
 from document_processor.logical.profile import Profile
 
 VN_REGULATION = Profile(

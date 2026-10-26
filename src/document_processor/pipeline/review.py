@@ -59,7 +59,7 @@ class ResultSummary:
     def largest_chunk_tokens(self) -> int | None:
         return max(self.chunk_tokens) if self.chunk_tokens else None
 
-    def format(self) -> str:
+    def format_statistics(self) -> str:
         node_count = sum(count for _, count in self.nodes_by_levels)
         levels = (
             " · ".join(f"{level} {count}" for level, count in self.nodes_by_levels)
@@ -79,10 +79,12 @@ class ResultSummary:
             f"  nodes: {levels}",
             f"  chunk tokens: {sizes}",
         ]
-        lines.extend(f"  ⚠ {w.code}  {w.message}" for w in self.warnings)
-        if not self.warnings:
-            lines.append("  no warnings")
         return "\n".join(lines)
+
+
+    def format(self) -> str:
+        warning_lines = [f"  ⚠ {w.code}  {w.message}" for w in self.warnings] or ["  no warnings"]
+        return "\n".join([self.format_statistics(), *warning_lines])
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -168,7 +170,7 @@ def format_outline(
     for node in document.nodes:
         if sections_only and not node.is_section:
             continue
-        label = _node_label(node)
+        label = node_label(node)
         line = f"{indent * depths[node.id] * ' '}{label}  [{node.start}, {node.end})"
         outline_builder.append(line)
 
@@ -191,7 +193,7 @@ def _build_outline(
         outline.append(
             ReviewNode(
                 node_id=node.id,
-                label=_node_label(node),
+                label=node_label(node),
                 level=node.level,
                 depth=depths[node.id],
                 is_section=node.is_section,
@@ -272,7 +274,7 @@ def _is_in_breadcrumb(segment: Segment, breadcrumb_node_ids: AbstractSet[str]) -
     )
 
 
-def _node_label(node: LogicalNode) -> str:
+def node_label(node: LogicalNode) -> str:
     return heading_label(node.marker, node.title) or f"[{node.level}]"
 
 

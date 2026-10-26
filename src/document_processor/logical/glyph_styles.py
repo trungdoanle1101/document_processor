@@ -1,8 +1,9 @@
 import unicodedata
 from dataclasses import dataclass
 
-from document_processor.logical.markers import NAME_PATTERN
 from document_processor.core.registry import Registry
+from document_processor.logical.markers import NAME_PATTERN
+
 
 @dataclass(frozen=True, kw_only=True)
 class GlyphStyle:

@@ -6,7 +6,11 @@ from pathlib import Path
 from document_processor.adapters import ADAPTERS, Adapter
 from document_processor.chunking import Chunk, Chunker, save_chunks
 from document_processor.core.cleaning import DEFAULT_STEPS, CleaningStep, clean_document
-from document_processor.core.models import LogicalDocument, PhysicalDocument, TableSegment
+from document_processor.core.models import (
+    LogicalDocument,
+    PhysicalDocument,
+    TableSegment,
+)
 from document_processor.core.registry import Registry
 from document_processor.core.serialization import (
     save_logical_document,
@@ -14,7 +18,10 @@ from document_processor.core.serialization import (
 )
 from document_processor.logical import PROFILES, Profile, build_logical_document
 from document_processor.pipeline.extraction import extract_physical_document
-from document_processor.pipeline.review import ResultSummary, ReviewWarning 
+from document_processor.pipeline.review import ResultSummary, ReviewWarning
+from document_processor.pipeline.review import ResultSummary, ReviewWarning, build_review_data
+from document_processor.pipeline.review_page import render_review_html
+
 
 @dataclass(frozen=True, kw_only=True)
 class SavedFiles:
@@ -44,6 +51,13 @@ class PipelineResult:
         save_logical_document(self.logical, files.logical)
         save_chunks(self.chunks, files.chunks)
         return files
+
+    def write_review_page(self, path: Path | str) -> Path:
+        """Write the review page for this result as one self-contained HTML file; returns its path"""
+        path = Path(path)
+        path.write_text(render_review_html(build_review_data(self)), encoding="utf-8")
+        return path
+
 
     def summarize(self) -> ResultSummary:
 

@@ -2,7 +2,6 @@ from docx.oxml.ns import nsmap
 from lxml import etree
 from lxml.etree import _Element
 
-
 NAMESPACES = {
     "w": nsmap["w"],
     "r": nsmap["r"],

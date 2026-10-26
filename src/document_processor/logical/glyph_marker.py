@@ -1,10 +1,10 @@
-from dataclasses import dataclass
 from collections.abc import Mapping
+from dataclasses import dataclass
 from types import MappingProxyType
 
-from document_processor.logical.markers import MatchSource
-from document_processor.logical.glyph_styles import GlyphStyle
 from document_processor.core.registry import Registry
+from document_processor.logical.glyph_styles import GlyphStyle
+from document_processor.logical.markers import MatchSource
 
 _VARIATION_SELECTORS = frozenset({"\ufe0e", "\ufe0f"})
 

@@ -1,23 +1,32 @@
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
-from collections.abc import Callable
 
 from document_processor.core.numerals import (
-    letters_to_int, int_to_letters,
-    lower_roman_to_int, upper_roman_to_int,
-    int_to_lower_roman, int_to_upper_roman,
-    arabic_to_int, int_to_arabic,
-    lower_latin_to_int, int_to_lower_latin,
-    upper_latin_to_int, int_to_upper_latin,
-    lower_vn_to_int,  int_to_lower_vn,
-    upper_vn_to_int, int_to_upper_vn,
-    LOWER_LATIN, UPPER_LATIN,
-    LOWER_VN, UPPER_VN,
-    
+    LOWER_LATIN,
+    LOWER_VN,
+    UPPER_LATIN,
+    UPPER_VN,
+    arabic_to_int,
+    int_to_arabic,
+    int_to_letters,
+    int_to_lower_latin,
+    int_to_lower_roman,
+    int_to_lower_vn,
+    int_to_upper_latin,
+    int_to_upper_roman,
+    int_to_upper_vn,
+    letters_to_int,
+    lower_latin_to_int,
+    lower_roman_to_int,
+    lower_vn_to_int,
+    upper_latin_to_int,
+    upper_roman_to_int,
+    upper_vn_to_int,
 )
-from document_processor.core.text_utils import is_blank_char
 from document_processor.core.registry import Registry
+from document_processor.core.text_utils import is_blank_char
 from document_processor.logical.markers import NAME_PATTERN
 
 

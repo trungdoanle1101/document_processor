@@ -1,17 +1,27 @@
-from dataclasses import dataclass, field
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from types import MappingProxyType
 
-from document_processor.logical.glyph_styles import GlyphStyle, BUILTIN_GLYPH_STYLES
-from document_processor.logical.counter_styles import CounterStyle, BUILTIN_COUNTER_STYLES
-from document_processor.logical.template_marker import TemplateMarker, compile_template_marker
-from document_processor.logical.glyph_marker import GlyphMarker, compile_glyph_marker
-from document_processor.logical.levels import (
-    LevelSpec, TemplateMarkerSpec, Marker, GlyphMarkerSpec, MarkerSpec
-)
 from document_processor.core.registry import Registry
-from document_processor.logical.markers import NAME_PATTERN, WORD_BULLET
 from document_processor.core.text_utils import normalize_nfc
+from document_processor.logical.counter_styles import (
+    BUILTIN_COUNTER_STYLES,
+    CounterStyle,
+)
+from document_processor.logical.glyph_marker import GlyphMarker, compile_glyph_marker
+from document_processor.logical.glyph_styles import BUILTIN_GLYPH_STYLES, GlyphStyle
+from document_processor.logical.levels import (
+    GlyphMarkerSpec,
+    LevelSpec,
+    Marker,
+    MarkerSpec,
+    TemplateMarkerSpec,
+)
+from document_processor.logical.markers import NAME_PATTERN, WORD_BULLET
+from document_processor.logical.template_marker import (
+    TemplateMarker,
+    compile_template_marker,
+)
 
 
 @dataclass(frozen=True, kw_only=True)

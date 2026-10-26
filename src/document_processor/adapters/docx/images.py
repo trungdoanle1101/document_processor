@@ -1,10 +1,17 @@
-from lxml.etree import _Element
-from typing import Mapping
-from docx.opc.part import Part
-from ._xml import xpath_element_zero_or_more, xpath_element_or_none, xpath_str_or_none, xpath_int_or_none
+from collections.abc import Mapping
 
-from document_processor.core.models.physical import ImageInfo
+from docx.opc.part import Part
+from lxml.etree import _Element
+
 from document_processor.core.identity import compute_hash
+from document_processor.core.models.physical import ImageInfo
+
+from ._xml import (
+    xpath_element_or_none,
+    xpath_element_zero_or_more,
+    xpath_int_or_none,
+    xpath_str_or_none,
+)
 
 P_DRAWING_XPATH = ".//w:drawing"
 CONTAINER_XPATH = "./wp:inline | ./wp:anchor"

@@ -2,8 +2,8 @@ from dataclasses import dataclass
 from typing import Literal, get_args
 
 from document_processor.logical.glyph_marker import GlyphMarker, GlyphMatch
-from document_processor.logical.template_marker import TemplateMarker, TemplateMatch
 from document_processor.logical.markers import NAME_PATTERN
+from document_processor.logical.template_marker import TemplateMarker, TemplateMatch
 
 type Marker = TemplateMarker | GlyphMarker
 

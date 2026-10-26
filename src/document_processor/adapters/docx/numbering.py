@@ -3,7 +3,7 @@ from dataclasses import dataclass, replace
 
 from lxml.etree import _Element
 
-from document_processor.core.models.physical import ListInfo, DeclaredNumbering
+from document_processor.core.models.physical import DeclaredNumbering, ListInfo
 
 from ._xml import xpath_element_or_none, xpath_int_or_none, xpath_str_or_none
 from .number_formats import format_number

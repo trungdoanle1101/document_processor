@@ -3,7 +3,13 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from document_processor.core.models import BlockType, ListInfo, PhysicalBlock, Region, DocumentPart
+from document_processor.core.models import (
+    BlockType,
+    DocumentPart,
+    ListInfo,
+    PhysicalBlock,
+    Region,
+)
 from document_processor.logical.glyph_marker import GlyphMatch
 from document_processor.logical.levels import MarkerMatch
 from document_processor.logical.markers import WORD_BULLET
