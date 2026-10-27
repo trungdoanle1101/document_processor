@@ -38,7 +38,7 @@ def chunk_from_dict(d: dict[str, Any]) -> Chunk:
         part=chunk_dict["part"],
         text=chunk_dict["text"],
         token_count=chunk_dict["token_count"],
-        path=tuple(PathStep(**step) for step in chunk_dict["path"]),
+        path=tuple(_path_step_from_dict(step) for step in chunk_dict["path"]),
         start=chunk_dict["start"],
         end=chunk_dict["end"],
         table_rows=_pair_or_none(chunk_dict["table_rows"]),
@@ -84,3 +84,15 @@ def _pair_or_none(value: list[int] | None) -> tuple[int, int] | None:
         return None
     first, second = value
     return first, second
+
+
+def _path_step_from_dict(d: dict[str, Any]) -> PathStep:
+    return PathStep(
+        node_id=d["node_id"],
+        level=d["level"],
+        number=d["number"],
+        marker=d["marker"],
+        title=d["title"],
+        start=d["start"],
+        lead_in=d.get("lead_in"),
+    )

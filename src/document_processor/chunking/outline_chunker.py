@@ -62,10 +62,7 @@ class _ChunkingRun:
             for piece in pieces
             if _has_content(self.document, piece.start, piece.end)
         ]
-        return tuple(
-            self._make_chunk(piece, index)
-            for index, piece in enumerate(kept)
-        )
+        return tuple(self._make_chunk(piece, index) for index, piece in enumerate(kept))
 
     def _split_by_size(self, span: _Piece) -> list[_Piece]:
         """Split a span at segment boundaries, greedily, up to the budget"""
@@ -113,7 +110,6 @@ class _ChunkingRun:
             _ChildOrSegment(start=index, end=index + 1, child=None)
             for index in range(cursor, end)
         )
-
 
         pieces: list[_Piece] = []
         group: list[_ChildOrSegment] = []
@@ -224,7 +220,12 @@ class _ChunkingRun:
             part=piece.part,
             text=self._render_piece(piece),
             token_count=self._count_piece_tokens(piece),
-            path=_path_to(self.document, piece.owner_id),
+            path=_path_to(
+                self.document,
+                piece.owner_id,
+                start=piece.start,
+                lead_in_words=self.settings.breadcrumb_lead_in_words,
+            ),
             start=piece.start,
             end=piece.end,
             table_rows=piece.table_rows,
@@ -235,7 +236,12 @@ class _ChunkingRun:
     def _count_piece_tokens(self, piece: _Piece) -> int:
         text = self._render_piece(piece)
         if self.settings.include_breadcrumb_in_size:
-            path = _path_to(self.document, piece.owner_id)
+            path = _path_to(
+                self.document,
+                piece.owner_id,
+                start=piece.start,
+                lead_in_words=self.settings.breadcrumb_lead_in_words,
+            )
             headings = [step.label for step in path if step.start < piece.start]
             text = "\n".join((*headings, text))
         return self.settings.tokenizer.count_tokens(text)
@@ -273,6 +279,7 @@ class OutlineChunker:
     max_tokens: int
     include_breadcrumb_in_size: bool = False
     keep_sections_apart: bool = True
+    breadcrumb_lead_in_words: int = 40
     table_layout: TableLayout = "grid"
 
     def __post_init__(self) -> None:
@@ -282,13 +289,16 @@ class OutlineChunker:
                 f"{error_owner}: required max_tokens > 0, got max_tokens={self.max_tokens}"
             )
 
+        if self.breadcrumb_lead_in_words < 0:
+            raise ValueError(
+                f"{error_owner}: required breadcrumb_lead_in_words >= 0, got breadcrumb_lead_in_words={self.breadcrumb_lead_in_words}"
+            )
+
     def chunk(self, document: LogicalDocument) -> tuple[Chunk, ...]:
         return _ChunkingRun(settings=self, document=document).chunk()
 
 
-def _make_piece(
-    group: Sequence[_ChildOrSegment], owner_id: str | None
-) -> _Piece:
+def _make_piece(group: Sequence[_ChildOrSegment], owner_id: str | None) -> _Piece:
     if not group:
         raise ValueError("can only get piece from non-empty group")
     if len(group) == 1 and group[0].child is not None:
@@ -298,11 +308,14 @@ def _make_piece(
     )
 
 
-def _path_to(document: LogicalDocument, node_id: str | None) -> tuple[PathStep, ...]:
-
+def _path_to(
+    document: LogicalDocument, node_id: str | None, start: int, lead_in_words: int
+) -> tuple[PathStep, ...]:
+    """Ancestors of node_id, root first; lead-ins only for nodes whose opening words come before start"""
     steps: list[PathStep] = []
     while node_id is not None:
         node = document.get_node(node_id)
+        lead_in = _lead_in(document, node, start, lead_in_words)
         steps.append(
             PathStep(
                 node_id=node_id,
@@ -311,6 +324,7 @@ def _path_to(document: LogicalDocument, node_id: str | None) -> tuple[PathStep, 
                 marker=node.marker,
                 title=node.title,
                 start=node.start,
+                lead_in=lead_in,
             )
         )
         node_id = node.parent_id
@@ -323,3 +337,19 @@ def _has_content(document: LogicalDocument, start: int, end: int) -> bool:
         if isinstance(segment, (TextSegment, TableSegment)):
             return True
     return False
+
+
+def _cap_words(text: str, n: int) -> str:
+    words = text.split()
+    chosen_words = words[:n]
+    suffix = "…" if n < len(words) else ""
+    return " ".join(chosen_words) + suffix
+
+
+def _lead_in(document: LogicalDocument, node: LogicalNode, start: int, words: int) -> str | None:
+    """Opening words of a node without a title, when they come before the chunk at start"""
+    index = node.start + 1
+    if node.title is not None or words == 0 or not (index < node.end and index < start):
+        return None
+    segment = document.segments[index]
+    return _cap_words(segment.text, words) if isinstance(segment, TextSegment) else None

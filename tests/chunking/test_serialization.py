@@ -4,7 +4,8 @@ Each line is one self-describing record, {"kind": "chunk", "schema_version": 1,
 "chunk": {...}}, so files can be streamed, split or concatenated (a whole batch
 in one file). The record includes the derived `headings`; loading checks it
 against the path and drops it. Tuples come back as tuples, PathSteps as
-PathSteps, unset narrowing as None.
+PathSteps, unset narrowing as None. A path step's lead_in is optional on load:
+records written before it existed load with None.
 """
 
 import json
@@ -104,6 +105,40 @@ def test_every_chunk_of_a_real_run_round_trips() -> None:
         assert tuple(round_trip(c) for c in chunks) == chunks
 
 
+def test_lead_in_round_trips() -> None:
+    khoan = PathStep(node_id="n4", level="khoan", number="1", marker="1.", title=None, start=8,
+                     lead_in="Hệ thống là tập hợp…")
+    chunk = make_chunk(path=(CHUONG, DIEU, khoan), start=9, end=10)
+    loaded = round_trip(chunk)
+    assert loaded == chunk
+    assert loaded.path[-1].lead_in == "Hệ thống là tập hợp…"
+    assert loaded.headings[-1] == "1. Hệ thống là tập hợp…"
+
+
+def test_a_record_written_before_lead_ins_loads_with_none() -> None:
+    khoan = PathStep(node_id="n4", level="khoan", number="1", marker="1.", title=None, start=8)
+    d = through_json(chunk_to_dict(make_chunk(path=(CHUONG, DIEU, khoan), start=9, end=10)))
+    for step in d["chunk"]["path"]:
+        del step["lead_in"]
+    loaded = chunk_from_dict(d)
+    assert [step.lead_in for step in loaded.path] == [None, None, None]
+    assert loaded.headings[-1] == "1."
+
+
+def test_headings_written_with_the_lead_in() -> None:
+    khoan = PathStep(node_id="n4", level="khoan", number="1", marker="1.", title=None, start=8, lead_in="Hệ thống")
+    d = through_json(chunk_to_dict(make_chunk(path=(CHUONG, DIEU, khoan), start=9, end=10)))
+    assert d["chunk"]["headings"][-1] == "1. Hệ thống"
+
+
+def test_headings_that_disagree_with_the_lead_in_are_refused() -> None:
+    khoan = PathStep(node_id="n4", level="khoan", number="1", marker="1.", title=None, start=8, lead_in="Hệ thống")
+    d = through_json(chunk_to_dict(make_chunk(path=(CHUONG, DIEU, khoan), start=9, end=10)))
+    d["chunk"]["path"][-1]["lead_in"] = "Khác"
+    with pytest.raises(ValueError, match="mismatched headings"):
+        chunk_from_dict(d)
+
+
 # ============================================================ record shape
 
 
@@ -126,7 +161,7 @@ def test_path_step_shape() -> None:
     d = through_json(chunk_to_dict(make_chunk()))
     assert d["chunk"]["path"][1] == {
         "node_id": "n3", "level": "dieu", "number": "2", "marker": "Điều 2.",
-        "title": "Giải thích từ ngữ", "start": 7,
+        "title": "Giải thích từ ngữ", "start": 7, "lead_in": None,
     }
 
 

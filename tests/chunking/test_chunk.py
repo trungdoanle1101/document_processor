@@ -4,6 +4,8 @@ A chunk covers segments [start, end) of a logical document, optionally narrowed
 inside one segment (rows of a table, characters of a text). Its path is the
 outline from the root down to the node that owns it, and headings are the
 labels of that whole path: the breadcrumb for display, citations and payloads.
+A step's label is its marker and title; a node without a title (an item) uses
+its lead-in instead, the capped opening words the chunker found for it.
 Each node starts with its heading segment, so a chunk starting at its owner's
 start already has the owner's heading as its first line; contextualize() puts in
 front of the text only the headings not already in it (step.start < chunk.start),
@@ -59,6 +61,40 @@ def test_label_is_heading_label() -> None:
     # The breadcrumb and the rendered heading segment spell a heading the same way.
     assert heading_label("Điều 2.", "Giải thích từ ngữ") == DIEU.label
     assert heading_label(None, None) == ""
+
+
+def test_label_without_a_title_uses_the_lead_in() -> None:
+    step = dataclasses.replace(KHOAN, lead_in="Các hệ thống phải đáp ứng các yêu cầu sau:")
+    assert step.label == "10. Các hệ thống phải đáp ứng các yêu cầu sau:"
+
+
+def test_lead_in_defaults_to_none() -> None:
+    assert KHOAN.lead_in is None and KHOAN.label == "10."
+
+
+def test_lead_in_without_a_marker() -> None:
+    step = PathStep(node_id="n1", level="x", number=None, marker=None, title=None, start=0, lead_in="Mở đầu")
+    assert step.label == "Mở đầu"
+
+
+def test_title_and_lead_in_together_rejected() -> None:
+    with pytest.raises(ValueError, match="'n4' at level 'dieu': title and lead-in cannot both be set"):
+        dataclasses.replace(DIEU, lead_in="Trong Quy định này")
+
+
+@pytest.mark.parametrize("lead_in", ["", "   ", "\n\t", "\u200b"], ids=["empty", "spaces", "whitespace", "zero-width"])
+def test_invisible_lead_in_rejected(lead_in: str) -> None:
+    with pytest.raises(ValueError, match="'n14' at level 'khoan': lead-in is empty or contains invisible text"):
+        dataclasses.replace(KHOAN, lead_in=lead_in)
+
+
+def test_headings_and_contextualize_use_the_lead_in() -> None:
+    khoan = dataclasses.replace(KHOAN, lead_in="Hệ thống gồm:")
+    chunk = make_chunk(path=(CHUONG, DIEU, khoan))
+    assert chunk.headings[-1] == "10. Hệ thống gồm:"
+    assert chunk.contextualize().split("\n")[:3] == [
+        "Chương I QUY ĐỊNH CHUNG", "Điều 2. Giải thích từ ngữ", "10. Hệ thống gồm:"
+    ]
 
 
 def test_path_step_rejects_a_negative_start() -> None:

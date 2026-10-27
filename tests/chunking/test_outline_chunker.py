@@ -169,18 +169,23 @@ def test_breadcrumb_is_not_counted_by_default() -> None:
 # ============================================================ _path_to
 
 
+def path_without_lead_ins(document: LogicalDocument, node_id: str | None) -> tuple[PathStep, ...]:
+    """The path structure alone: lead-ins off, start past the end."""
+    return _path_to(document, node_id, start=len(document.segments), lead_in_words=0)
+
+
 def test_no_owner_no_path() -> None:
-    assert _path_to(regulation(), None) == ()
+    assert path_without_lead_ins(regulation(), None) == ()
 
 
 def test_path_of_a_root() -> None:
-    assert _path_to(regulation(), "n0") == (
+    assert path_without_lead_ins(regulation(), "n0") == (
         PathStep(node_id="n0", level="chuong", number="I", marker="Chương I", title="QUY ĐỊNH CHUNG", start=1),
     )
 
 
 def test_path_is_root_first_owner_last() -> None:
-    path = _path_to(regulation(), "n6")
+    path = path_without_lead_ins(regulation(), "n6")
     assert [(s.node_id, s.level, s.number, s.marker, s.start) for s in path] == [
         ("n0", "chuong", "I", "Chương I", 1),
         ("n3", "dieu", "2", "Điều 2.", 7),
@@ -192,7 +197,7 @@ def test_path_is_root_first_owner_last() -> None:
 
 def test_unknown_owner_raises() -> None:
     with pytest.raises(KeyError, match="n99"):
-        _path_to(regulation(), "n99")
+        path_without_lead_ins(regulation(), "n99")
 
 
 # ============================================================ _fits
@@ -481,8 +486,8 @@ def test_a_heading_merged_with_its_first_child_stays_in_the_text() -> None:
 def test_a_leaf_that_does_not_fit_is_split_inside_its_own_range() -> None:
     # Điểm a (15) has no children: split by size, both pieces owned by it.
     assert body_chunks(12)[-2:] == [
-        ((12, 14), "n6", (CHUONG, DIEU_2, "2.")),  # starts with its own heading "a)"
-        ((14, 15), "n6", (CHUONG, DIEU_2, "2.", "a)")),  # the table; the heading moved to the breadcrumb
+        ((12, 14), "n6", (CHUONG, DIEU_2, "2. Kiến trúc gồm:")),  # starts with its own heading "a)"
+        ((14, 15), "n6", (CHUONG, DIEU_2, "2. Kiến trúc gồm:", "a) Kiến trúc ứng dụng")),  # the table
     ]
 
 
@@ -516,8 +521,8 @@ def test_text_after_the_last_child_is_owned_by_the_parent() -> None:
     chunks = chunker(4).chunk(document)
     assert [((c.start, c.end), c.node_id, context(c)) for c in chunks] == [
         ((0, 2), "a", ()),
-        ((2, 4), "a/1", ("[a]",)),
-        ((4, 5), "a", ("[a]",)),  # after a/1, so a's heading is in the breadcrumb
+        ((2, 4), "a/1", ("[a] w1 w1",)),  # a's lead-in (segment 1) comes before the chunk
+        ((4, 5), "a", ("[a] w1 w1",)),  # after a/1, so a's heading is in the breadcrumb
     ]
 
 
@@ -874,3 +879,159 @@ def test_a_table_without_header_rows_is_split_without_a_header() -> None:
     assert pieces[0].table_rows is not None and pieces[0].table_rows[0] == 0
     assert pieces[0].text.splitlines()[0] == "STT | Nội dung"
     assert all("STT | Nội dung" not in c.text for c in pieces[1:])
+
+
+# ============================================================ breadcrumb lead-ins
+#
+# A node without a title gets its first segment after the heading, when that is
+# a TextSegment inside the node and before the chunk, cut to
+# breadcrumb_lead_in_words words ("…" when cut). Nodes with a title keep it.
+
+
+def lead_in_document() -> LogicalDocument:
+    """
+        0  # Điều 1. Phạm vi                 n0 dieu   [0, 7)
+        1  # 1.                              n1 khoan  [1, 7)
+        2  Các hệ thống phải đáp ứng các yêu cầu sau đây về an toàn thông tin:   (16 words)
+        3  # a)                              n2 diem   [3, 7)
+        4  Về lưu trữ:
+        5  # -                               n3 gach   [5, 7)
+        6  Dữ liệu được mã hóa
+    """
+    return (
+        Blocks()
+        .text("Điều 1. Phạm vi")
+        .text("1. Các hệ thống phải đáp ứng các yêu cầu sau đây về an toàn thông tin:")
+        .text("a) Về lưu trữ:")
+        .text("- Dữ liệu được mã hóa")
+        .build()
+    )
+
+
+def test_default_cap_is_40_words() -> None:
+    assert chunker(10).breadcrumb_lead_in_words == 40
+
+
+def test_negative_cap_rejected() -> None:
+    with pytest.raises(ValueError, match="breadcrumb_lead_in_words >= 0, got breadcrumb_lead_in_words=-1"):
+        chunker(10, breadcrumb_lead_in_words=-1)
+
+
+def test_deep_chunk_reads_its_ancestors_lead_ins() -> None:
+    document = lead_in_document()
+    path = _path_to(document, "n3", start=6, lead_in_words=25)
+    assert [step.label for step in path] == [
+        "Điều 1. Phạm vi",
+        "1. Các hệ thống phải đáp ứng các yêu cầu sau đây về an toàn thông tin:",
+        "a) Về lưu trữ:",
+        "-",  # the owner: its words are the chunk's own text (segment 6), so no lead-in
+    ]
+
+
+def test_titled_nodes_keep_their_title() -> None:
+    path = _path_to(lead_in_document(), "n3", start=6, lead_in_words=25)
+    assert (path[0].title, path[0].lead_in) == ("Phạm vi", None)
+
+
+def test_lead_in_is_capped_with_an_ellipsis() -> None:
+    path = _path_to(lead_in_document(), "n3", start=6, lead_in_words=5)
+    assert path[1].lead_in == "Các hệ thống phải đáp…"
+    assert path[1].label == "1. Các hệ thống phải đáp…"
+
+
+def test_lead_in_of_exactly_the_cap_has_no_ellipsis() -> None:
+    path = _path_to(lead_in_document(), "n3", start=6, lead_in_words=16)
+    assert path[1].lead_in == "Các hệ thống phải đáp ứng các yêu cầu sau đây về an toàn thông tin:"
+
+
+def test_lead_in_whitespace_is_collapsed() -> None:
+    document = Blocks().text("Điều 1. Phạm vi").text("1. Hệ thống   gồm\tcác  phần").text("a) Một").build()
+    path = _path_to(document, "n2", start=len(document.segments), lead_in_words=25)
+    assert path[1].lead_in == "Hệ thống gồm các phần"
+
+
+def test_zero_turns_lead_ins_off() -> None:
+    path = _path_to(lead_in_document(), "n3", start=6, lead_in_words=0)
+    assert [step.lead_in for step in path] == [None, None, None, None]
+    assert [step.label for step in path][1:] == ["1.", "a)", "-"]
+
+
+def test_no_lead_in_when_the_chunk_starts_at_it() -> None:
+    # The chunk's text begins with khoản 1's words: the breadcrumb must not repeat them.
+    path = _path_to(lead_in_document(), "n1", start=2, lead_in_words=25)
+    assert path[-1].lead_in is None
+
+
+def test_no_lead_in_when_the_chunk_starts_before_it() -> None:
+    path = _path_to(lead_in_document(), "n1", start=1, lead_in_words=25)
+    assert path[-1].lead_in is None
+
+
+def test_regulation_chunk_starting_at_its_lead_in_keeps_the_bare_marker() -> None:
+    # At 8 words khoản 1 of Điều 2's heading (8) is split from its text (9).
+    (chunk,) = [c for c in chunker(8).chunk(regulation()) if (c.start, c.end) == (9, 10)]
+    assert chunk.path[-1].lead_in is None
+    assert chunk.headings[-1] == "1."
+    assert chunk.contextualize().count("Hệ thống là tập hợp các thành phần") == 1
+
+
+def test_no_lead_in_when_the_first_segment_is_an_image() -> None:
+    document = Blocks().text("Điều 1. Phạm vi").text("1.").image().text("Nội dung").build()
+    khoan = next(node for node in document.nodes if node.level == "khoan")
+    path = _path_to(document, khoan.id, start=len(document.segments), lead_in_words=25)
+    assert path[-1].lead_in is None
+
+
+def test_no_lead_in_when_the_first_segment_is_a_table() -> None:
+    document = Blocks().text("Điều 1. Phạm vi").text("1.").table().text("Nội dung").build()
+    khoan = next(node for node in document.nodes if node.level == "khoan")
+    path = _path_to(document, khoan.id, start=len(document.segments), lead_in_words=25)
+    assert path[-1].lead_in is None
+
+
+def test_no_lead_in_for_a_node_that_is_only_its_heading() -> None:
+    document = Blocks().text("Điều 1. Phạm vi").text("1.").text("2. Nội dung").build()
+    first_khoan = next(node for node in document.nodes if node.level == "khoan")
+    assert first_khoan.end == first_khoan.start + 1
+    path = _path_to(document, first_khoan.id, start=len(document.segments), lead_in_words=25)
+    assert path[-1].lead_in is None
+
+
+def test_lead_in_from_the_next_paragraph_when_the_marker_stands_alone() -> None:
+    # "1." alone on its line, its words in the next paragraph: still the node's opening words.
+    document = Blocks().text("Điều 1. Phạm vi").text("1.").text("Nội dung khoản một").text("2. Khác").build()
+    first_khoan = next(node for node in document.nodes if node.level == "khoan")
+    path = _path_to(document, first_khoan.id, start=len(document.segments), lead_in_words=25)
+    assert path[-1].label == "1. Nội dung khoản một"
+
+
+@pytest.mark.parametrize("max_tokens", [3, 8, 12, 60])
+def test_no_chunk_has_a_title_and_a_lead_in(max_tokens: int) -> None:
+    for chunk in chunker(max_tokens).chunk(regulation()):
+        assert all(step.title is None or step.lead_in is None for step in chunk.path)
+
+
+@pytest.mark.parametrize("max_tokens", [3, 8, 12, 60])
+def test_no_lead_in_repeats_text_inside_its_chunk(max_tokens: int) -> None:
+    document = regulation()
+    for chunk in chunker(max_tokens).chunk(document):
+        for step in chunk.path:
+            if step.lead_in is not None:
+                assert step.start + 1 < chunk.start
+
+
+def test_counted_breadcrumb_includes_the_lead_ins() -> None:
+    document = lead_in_document()
+    piece = _Piece(part="body", owner_id="n3", start=6, end=7)
+    with_lead_ins = _ChunkingRun(chunker(200, include_breadcrumb_in_size=True), document)._count_piece_tokens(piece)
+    without = _ChunkingRun(
+        chunker(200, include_breadcrumb_in_size=True, breadcrumb_lead_in_words=0), document
+    )._count_piece_tokens(piece)
+    # 16 words of khoản 1 and 3 of điểm a; "Dữ liệu được mã hóa" is the chunk's own text, not a lead-in.
+    assert with_lead_ins - without == 16 + 3
+
+
+def test_lead_ins_are_not_counted_by_default() -> None:
+    document = lead_in_document()
+    piece = _Piece(part="body", owner_id="n3", start=6, end=7)
+    assert _ChunkingRun(chunker(200), document)._count_piece_tokens(piece) == 5

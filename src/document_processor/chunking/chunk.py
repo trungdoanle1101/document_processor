@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 
 from document_processor.core.models import DocumentPart, heading_label
+from document_processor.core.text_utils import is_invisible
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -14,16 +15,27 @@ class PathStep:
     marker: str | None
     title: str | None
     start: int
+    # opening words of a node without a title, capped; None when it has a title.
+    lead_in: str | None = None
 
     @property
     def label(self) -> str:
-        return heading_label(self.marker, self.title)
+        return heading_label(self.marker, self.title or self.lead_in)
 
     def __post_init__(self) -> None:
         if self.start < 0:
             raise ValueError(
                 f"PathStep for {self.node_id!r} at level {self.level!r}: required start >= 0, got start={self.start}"
             )
+        if self.lead_in is not None:
+            if self.title is not None:
+                raise ValueError(
+                    f"PathStep for {self.node_id!r} at level {self.level!r}: title and lead-in cannot both be set"
+                )
+            if is_invisible(self.lead_in):
+                raise ValueError(
+                    f"PathStep for {self.node_id!r} at level {self.level!r}: lead-in is empty or contains invisible text"
+                )
 
 
 @dataclass(frozen=True, kw_only=True)
