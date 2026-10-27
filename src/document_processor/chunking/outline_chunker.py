@@ -293,6 +293,12 @@ class OutlineChunker:
             raise ValueError(
                 f"{error_owner}: required breadcrumb_lead_in_words >= 0, got breadcrumb_lead_in_words={self.breadcrumb_lead_in_words}"
             )
+        
+        limit = self.tokenizer.model_max_tokens
+        if limit is not None and self.max_tokens > limit:
+            raise ValueError(
+                f"{error_owner}: max_tokens={self.max_tokens} is above the tokenizer's model limit of {limit}"
+            )
 
     def chunk(self, document: LogicalDocument) -> tuple[Chunk, ...]:
         return _ChunkingRun(settings=self, document=document).chunk()
