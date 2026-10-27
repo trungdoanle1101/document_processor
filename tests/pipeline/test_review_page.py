@@ -11,6 +11,10 @@ exact embedded text; a table piece is a <table> with its header rows in
 All document text is escaped. PipelineResult.write_review_page(path) writes
 the page as UTF-8 and returns the path.
 
+render_review_frame(data, height_px=640) is the page for notebooks: one
+<iframe> whose srcdoc is the whole page, so its CSS and ids stay out of the
+notebook. PipelineResult._repr_html_ returns it.
+
 The page is parsed with html.parser into a small tree, so the tests check
 structure, never the exact markup.
 """
@@ -24,7 +28,7 @@ import pytest
 from document_processor.chunking import Chunk
 from document_processor.core.models import LogicalDocument
 from document_processor.pipeline.review import Gap, ReviewData, ReviewWarning, build_review_data
-from document_processor.pipeline.review_page import render_review_html
+from document_processor.pipeline.review_page import render_review_frame, render_review_html
 from tests.chunking.test_outline_chunker import Blocks, regulation
 from tests.factories import make_table_block
 from tests.pipeline.test_review import MERGED, review
@@ -484,3 +488,44 @@ def test_write_review_page_accepts_a_string_and_overwrites(tmp_path: Path) -> No
     target.write_text("old", encoding="utf-8")
     assert result.write_review_page(str(target)) == target
     assert target.read_text(encoding="utf-8").startswith("<!doctype html>")
+
+
+
+# ======================================================================
+# render_review_frame and _repr_html_
+# ======================================================================
+
+
+def test_frame_is_one_iframe_and_nothing_else() -> None:
+    root = parse(render_review_frame(review(regulation())[0])).root
+    assert [child.tag for child in root.children] == ["iframe"]
+    assert root.children[0].children == []  # no markup leaks out of the attribute
+    assert root.text() == ""
+
+
+def test_frame_holds_the_whole_page() -> None:
+    data, _ = review(regulation())
+    (iframe,) = parse(render_review_frame(data)).root.children
+    assert iframe.attrs["srcdoc"] == render_review_html(data)  # html.parser unescapes the attribute once
+
+
+def test_frame_survives_quotes_ampersands_and_tags_in_the_page() -> None:
+    document = Blocks().text('Điều 1. "Phạm vi" & <tạm thời>').text('Nội dung "trích dẫn" & ghi chú').build()
+    data, _ = review(document)
+    frame = render_review_frame(data)
+    (iframe,) = parse(frame).root.children
+    assert iframe.attrs["srcdoc"] == render_review_html(data)
+    assert '"' not in frame.split('srcdoc="', 1)[1].split('" style=', 1)[0]
+
+
+def test_frame_height() -> None:
+    data, _ = review(regulation())
+    assert "height:640px" in parse(render_review_frame(data)).root.children[0].attrs["style"]
+    assert "height:900px" in parse(render_review_frame(data, height_px=900)).root.children[0].attrs["style"]
+
+
+def test_repr_html_is_the_frame_of_the_result(tmp_path: Path) -> None:
+    from tests.pipeline.test_pipeline import pipeline, write_txt
+
+    result = pipeline().run(write_txt(tmp_path, "quy_dinh.txt"))
+    assert result._repr_html_() == render_review_frame(build_review_data(result))

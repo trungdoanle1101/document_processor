@@ -18,9 +18,15 @@ from document_processor.core.serialization import (
 )
 from document_processor.logical import PROFILES, Profile, build_logical_document
 from document_processor.pipeline.extraction import extract_physical_document
-from document_processor.pipeline.review import ResultSummary, ReviewWarning
-from document_processor.pipeline.review import ResultSummary, ReviewWarning, build_review_data
-from document_processor.pipeline.review_page import render_review_html
+from document_processor.pipeline.review import (
+    ResultSummary,
+    ReviewWarning,
+    build_review_data,
+)
+from document_processor.pipeline.review_page import (
+    render_review_frame,
+    render_review_html,
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -121,6 +127,10 @@ class PipelineResult:
             warnings=tuple(warnings),
             max_tokens=self.max_tokens,
         )
+    
+
+    def _repr_html_(self) -> str:
+        return render_review_frame(build_review_data(self))
 
 
 @dataclass(frozen=True, kw_only=True)

@@ -37,6 +37,16 @@ def render_review_html(data: ReviewData) -> str:
     )
 
 
+def render_review_frame(data: ReviewData, height_px: int = 640) -> str:
+    """The review page inside an iframe, for notebooks: its CSS and ids stay out of the notebook's page"""
+    page = render_review_html(data)
+    return (
+        f'<iframe srcdoc="{escape(page, quote=True)}" '
+        f'style="width:100%; height:{height_px}px; border:1px solid #d0d7de; border-radius:6px">'
+        "</iframe>"
+    )
+
+
 def _render_entry(entry: ChunkOrGap, data: ReviewData) -> str:
     return _render_chunk(entry, data) if isinstance(entry, Chunk) else _render_gap(entry, data)
 
