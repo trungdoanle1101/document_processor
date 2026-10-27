@@ -37,6 +37,9 @@ class Embedder(Protocol):
     Queries and documents may be encoded differently, so callers must use matching method.
     """
     @property
+    def model_identity(self) -> str: ...
+
+    @property
     def dense_dimension(self) -> int: ...
 
     @property

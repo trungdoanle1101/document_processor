@@ -9,6 +9,8 @@ Values may be anything, and an empty vector is valid.
 Embedding needs a non-empty dense vector; its length against the model's
 dimension is checked where both are known, in the index.
 
+Two embedders with the same model_identity produce the same vectors for the
+same text; the index uses it to refuse mixing models in one vector space.
 The protocol is checked through StubEmbedder (tests/retrieval/stub_embedder.py),
 which later tests (index, search) use in place of a model.
 """
@@ -164,8 +166,22 @@ def test_embeddings_compare_by_value() -> None:
 
 def test_stub_is_an_embedder() -> None:
     embedder: Embedder = StubEmbedder()  # mypy checks the protocol here
+    assert embedder.model_identity == "stub/dim8/sparse"
     assert embedder.dense_dimension == 8
     assert embedder.has_sparse
+
+
+def test_stubs_built_alike_share_an_identity_and_their_vectors() -> None:
+    first, second = StubEmbedder(dimension=4), StubEmbedder(dimension=4)
+    assert first.model_identity == second.model_identity == "stub/dim4/sparse"
+    assert first.encode_query("Điều 14") == second.encode_query("Điều 14")
+
+
+@pytest.mark.parametrize(
+    "other", [StubEmbedder(dimension=16), StubEmbedder(sparse=False), StubEmbedder(dimension=16, sparse=False)]
+)
+def test_stubs_built_differently_have_different_identities(other: StubEmbedder) -> None:
+    assert StubEmbedder().model_identity != other.model_identity
 
 
 def test_one_embedding_per_text_in_order() -> None:

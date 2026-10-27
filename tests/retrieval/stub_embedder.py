@@ -6,6 +6,9 @@ word. Texts sharing words therefore share vector weight, so a query made of a
 chunk's words ranks that chunk first, which is all the search tests need.
 Queries and documents are encoded the same way; the stub records every call
 so a test can check which method a caller used.
+
+The model identity follows from the settings, so two stubs built alike give
+the same vectors and the same identity, and stubs built differently do not.
 """
 
 import re
@@ -30,6 +33,10 @@ class StubEmbedder:
         self._sparse = sparse
         self.document_batches: list[tuple[str, ...]] = []
         self.queries: list[str] = []
+
+    @property
+    def model_identity(self) -> str:
+        return f"stub/dim{self._dimension}/{'sparse' if self._sparse else 'dense'}"
 
     @property
     def dense_dimension(self) -> int:
