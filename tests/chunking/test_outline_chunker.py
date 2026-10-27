@@ -162,6 +162,30 @@ def test_max_tokens_must_be_positive(max_tokens: int) -> None:
         chunker(max_tokens)
 
 
+class LimitedTokenizer(WordTokenizer):
+    """Counts words, for a model that reads at most `limit` of them."""
+
+    def __init__(self, limit: int | None) -> None:
+        self._limit = limit
+
+    @property
+    def model_max_tokens(self) -> int | None:
+        return self._limit
+
+
+def test_budget_at_the_models_limit_is_accepted() -> None:
+    assert OutlineChunker(tokenizer=LimitedTokenizer(100), max_tokens=100).max_tokens == 100
+
+
+def test_budget_above_the_models_limit_is_rejected() -> None:
+    with pytest.raises(ValueError, match="max_tokens=101 is above the tokenizer's model limit of 100"):
+        OutlineChunker(tokenizer=LimitedTokenizer(100), max_tokens=101)
+
+
+def test_a_tokenizer_without_a_limit_allows_any_budget() -> None:
+    assert OutlineChunker(tokenizer=LimitedTokenizer(None), max_tokens=10**6).max_tokens == 10**6
+
+
 def test_breadcrumb_is_not_counted_by_default() -> None:
     assert chunker(10).include_breadcrumb_in_size is False
 
@@ -885,7 +909,7 @@ def test_a_table_without_header_rows_is_split_without_a_header() -> None:
 #
 # A node without a title gets its first segment after the heading, when that is
 # a TextSegment inside the node and before the chunk, cut to
-# breadcrumb_lead_in_words words ("…" when cut). Nodes with a title keep it.
+# breadcrumb_lead_in_words words (default 40; "…" when cut). Nodes with a title keep it.
 
 
 def lead_in_document() -> LogicalDocument:
@@ -909,6 +933,7 @@ def lead_in_document() -> LogicalDocument:
 
 
 def test_default_cap_is_40_words() -> None:
+    # The real regulation: 93 lead-ins of nodes with children, median 12 words, p90 43; 40 cuts 10.
     assert chunker(10).breadcrumb_lead_in_words == 40
 
 
