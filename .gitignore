@@ -16,6 +16,6 @@ wheels/
 .ruff_cache
 
 # Data
-data/
-out/
-huggingface/
+/data/
+/out/
+/huggingface/

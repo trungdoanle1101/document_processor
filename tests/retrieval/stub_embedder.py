@@ -16,7 +16,7 @@ import zlib
 from collections import Counter
 from collections.abc import Sequence
 
-from document_processor.retrieval.embedder import Embedding, SparseVector
+from document_processor.retrieval.embedding import Embedding, SparseVector
 
 
 _WORD = re.compile(r"\w+")

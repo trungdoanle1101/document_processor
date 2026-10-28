@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Protocol
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -10,7 +10,9 @@ class SparseVector:
 
     def __post_init__(self) -> None:
         if len(self.indices) != len(self.values):
-            raise ValueError(f"{len(self.indices)} indices but {len(self.values)} values")
+            raise ValueError(
+                f"{len(self.indices)} indices but {len(self.values)} values"
+            )
 
         if any(idx < 0 for idx in self.indices):
             raise ValueError(f"negative index {min(self.indices)}")
@@ -36,6 +38,7 @@ class Embedder(Protocol):
     """When has_sparse is true, every returned Embedding has 'sparse' attribute set, and when it's false, none do.
     Queries and documents may be encoded differently, so callers must use matching method.
     """
+
     @property
     def model_identity(self) -> str: ...
 
@@ -47,17 +50,3 @@ class Embedder(Protocol):
 
     def encode_documents(self, texts: Sequence[str]) -> list[Embedding]: ...
     def encode_query(self, text: str) -> Embedding: ...
-
-
-type Pooling = Literal["cls", "mean"]
-
-@dataclass(frozen=True, kw_only=True)
-class EmbeddingModel:
-    hub_model_id: str | None
-    revision: str | None
-    pooling: Pooling
-    normalize: bool
-    query_prefix: str = ""
-    document_prefix: str = ""
-    sparse_head_file: str | None = None
-    max_length: int | None = None

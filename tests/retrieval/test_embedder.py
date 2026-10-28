@@ -19,7 +19,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from document_processor.retrieval.embedder import Embedder, Embedding, SparseVector
+from document_processor.retrieval.embedding import Embedder, Embedding, SparseVector
 from tests.retrieval.stub_embedder import StubEmbedder
 
 
