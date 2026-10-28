@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -47,3 +47,17 @@ class Embedder(Protocol):
 
     def encode_documents(self, texts: Sequence[str]) -> list[Embedding]: ...
     def encode_query(self, text: str) -> Embedding: ...
+
+
+type Pooling = Literal["cls", "mean"]
+
+@dataclass(frozen=True, kw_only=True)
+class EmbeddingModel:
+    hub_model_id: str | None
+    revision: str | None
+    pooling: Pooling
+    normalize: bool
+    query_prefix: str = ""
+    document_prefix: str = ""
+    sparse_head_file: str | None = None
+    max_length: int | None = None
