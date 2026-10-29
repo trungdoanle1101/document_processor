@@ -125,7 +125,10 @@ def build_tiny_sentence_transformer(
         plain = build_tiny_model(Path(scratch) / "plain", sparse_head=False, reference=None, seed=seed)
         transformer = Transformer(str(plain), max_seq_length=max_seq_length)
         pooling = Pooling(transformer.get_embedding_dimension(), pooling_mode="cls")
-        model = SentenceTransformer(modules=[transformer, pooling, Normalize()], prompts=dict(prompts or {}))
+        # device="cpu": left out, sentence-transformers would pick a GPU (CUDA or Apple's MPS) if present.
+        model = SentenceTransformer(
+            modules=[transformer, pooling, Normalize()], prompts=dict(prompts or {}), device="cpu"
+        )
         if nan_weights:
             with torch.no_grad():
                 for parameter in model.parameters():
@@ -133,7 +136,9 @@ def build_tiny_sentence_transformer(
         if save_as_bfloat16:
             model.to(torch.bfloat16)
         shutil.rmtree(folder, ignore_errors=True)
-        model.save(str(folder))
+        # No model card: generating one imports sentence-transformers' training and
+        # hub machinery (model lookups, CodeCarbon), which tests never need.
+        model.save(str(folder), create_model_card=False)
     if reference is not None:
         write_model_reference(folder, reference)
     return folder

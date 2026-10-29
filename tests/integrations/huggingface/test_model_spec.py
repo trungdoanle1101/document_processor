@@ -1,15 +1,16 @@
 """Tests for integrations/huggingface/model_specs.py: HuggingFaceModelSpec, BGE_M3 and the registry.
 
 A spec holds choices, never facts about the model. It names the exact model
-(a ModelReference), whether to use its sparse head, and which of the prompts
-the model declares to use for queries and for documents. Prompts are chosen
-by name ("query"), never by text ("query: "): the text is a fact of the
-model, read from its folder, so it cannot be mistyped, and a name can be
-checked against what the model declares. That check needs the folder, so it
-happens at load, not here. Pooling, normalization and the maximum length are
-not in the spec at all: sentence-transformers reads them from the model.
+(a ModelReference) and, only for models whose prompt names aren't
+conventional, which of the model's declared prompts to use for queries and
+for passages. Prompts are chosen by name ("query"), never by text ("query: "):
+the text is a fact of the model, read from its folder, so it cannot be
+mistyped, and a name can be checked against what the model declares. That
+check needs the folder, so it happens at load, not here. Pooling,
+normalization and the maximum length are not in the spec at all:
+sentence-transformers reads them from the model.
 
-So a preset like BGE_M3 is just a reference and use_sparse.
+So a preset like BGE_M3 is just a reference.
 
 The package's __init__ exports only reference.py and model_specs.py, so
 listing the presets never imports torch, transformers or huggingface_hub.
@@ -47,22 +48,18 @@ def make_spec(**overrides: object) -> HuggingFaceModelSpec:
 def test_a_reference_alone_is_a_spec() -> None:
     spec = HuggingFaceModelSpec(reference=E5)
     assert spec.reference == E5
-    assert spec.use_sparse is False
-    assert (spec.query_prompt_name, spec.document_prompt_name) == (None, None)
+    assert (spec.query_prompt_name, spec.passage_prompt_name) == (None, None)
 
 
 def test_every_choice_can_be_made() -> None:
-    spec = HuggingFaceModelSpec(
-        reference=E5, use_sparse=True, query_prompt_name="query", document_prompt_name="document"
-    )
-    assert spec.use_sparse
-    assert (spec.query_prompt_name, spec.document_prompt_name) == ("query", "document")
+    spec = HuggingFaceModelSpec(reference=E5, query_prompt_name="query", passage_prompt_name="document")
+    assert (spec.query_prompt_name, spec.passage_prompt_name) == ("query", "document")
 
 
 def test_one_prompt_without_the_other() -> None:
     # Some models prompt only their queries.
     spec = make_spec(query_prompt_name="query")
-    assert (spec.query_prompt_name, spec.document_prompt_name) == ("query", None)
+    assert (spec.query_prompt_name, spec.passage_prompt_name) == ("query", None)
 
 
 def test_the_spec_holds_choices_only() -> None:
@@ -70,9 +67,8 @@ def test_the_spec_holds_choices_only() -> None:
     # model; a field for one here could contradict the model.
     assert [field.name for field in fields(HuggingFaceModelSpec)] == [
         "reference",
-        "use_sparse",
         "query_prompt_name",
-        "document_prompt_name",
+        "passage_prompt_name",
     ]
 
 
@@ -83,18 +79,18 @@ def test_the_reference_is_required() -> None:
 
 def test_spec_takes_keywords_only() -> None:
     with pytest.raises(TypeError):
-        HuggingFaceModelSpec(E5, True)  # type: ignore[call-arg]
+        HuggingFaceModelSpec(E5, "query")  # type: ignore[call-arg]
 
 
 def test_spec_is_frozen() -> None:
     with pytest.raises(FrozenInstanceError):
-        BGE_M3.use_sparse = False  # type: ignore[misc]
+        BGE_M3.query_prompt_name = "query"  # type: ignore[misc]
 
 
 def test_specs_compare_by_value() -> None:
     assert make_spec() == make_spec()
-    assert make_spec() != make_spec(use_sparse=True)
     assert make_spec() != make_spec(query_prompt_name="query")
+    assert make_spec() != make_spec(passage_prompt_name="passage")
     assert make_spec() != make_spec(reference=ModelReference(hub_model_id=E5.hub_model_id, commit_hash="1" * 40))
 
 
@@ -107,7 +103,7 @@ def test_specs_can_be_dictionary_keys() -> None:
 # ============================================================ refusals
 
 
-@pytest.mark.parametrize("field_name", ["query_prompt_name", "document_prompt_name"])
+@pytest.mark.parametrize("field_name", ["query_prompt_name", "passage_prompt_name"])
 def test_an_empty_prompt_name_is_refused(field_name: str) -> None:
     with pytest.raises(ValueError, match=f"^{field_name} must not be empty; use None to use no prompt$"):
         make_spec(**{field_name: ""})
@@ -132,12 +128,9 @@ def test_bge_m3_is_pinned_to_one_commit() -> None:
     assert BGE_M3.reference == ModelReference(hub_model_id="BAAI/bge-m3", commit_hash=COMMIT)
 
 
-def test_bge_m3_uses_its_sparse_head() -> None:
-    assert BGE_M3.use_sparse
-
-
-def test_bge_m3_uses_no_prompts() -> None:
-    assert (BGE_M3.query_prompt_name, BGE_M3.document_prompt_name) == (None, None)
+def test_bge_m3_names_no_prompts() -> None:
+    # It declares none; with conventional names it would not need to either.
+    assert (BGE_M3.query_prompt_name, BGE_M3.passage_prompt_name) == (None, None)
 
 
 # ============================================================ the registry
@@ -154,7 +147,7 @@ def test_unknown_spec_names_the_known_ones() -> None:
 
 
 def test_registry_can_be_extended_with_another_spec() -> None:
-    e5 = make_spec(query_prompt_name="query", document_prompt_name="document")
+    e5 = make_spec(query_prompt_name="query", passage_prompt_name="passage")
     specs: Registry[HuggingFaceModelSpec] = HUGGINGFACE_MODEL_SPECS.extend({"e5": e5})
     assert specs.names() == ("bge-m3", "e5")
     assert specs.get("e5") is e5
@@ -162,11 +155,11 @@ def test_registry_can_be_extended_with_another_spec() -> None:
 
 
 def test_two_names_may_share_a_model_with_different_choices() -> None:
-    # One set of weights, two uses: dense only, or dense and sparse.
-    dense_only = HuggingFaceModelSpec(reference=BGE_M3.reference)
-    specs = HUGGINGFACE_MODEL_SPECS.extend({"bge-m3-dense": dense_only})
-    assert specs.get("bge-m3-dense").reference == specs.get("bge-m3").reference
-    assert specs.get("bge-m3-dense") != specs.get("bge-m3")
+    # One set of weights, two uses: here, documents encoded with the query prompt.
+    symmetric = HuggingFaceModelSpec(reference=BGE_M3.reference, query_prompt_name="query", passage_prompt_name="query")
+    specs = HUGGINGFACE_MODEL_SPECS.extend({"bge-m3-symmetric": symmetric})
+    assert specs.get("bge-m3-symmetric").reference == specs.get("bge-m3").reference
+    assert specs.get("bge-m3-symmetric") != specs.get("bge-m3")
 
 
 # ============================================================ the package

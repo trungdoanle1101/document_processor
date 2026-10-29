@@ -1,12 +1,13 @@
 from collections.abc import Mapping
 from typing import Literal
 
-type PromptRole = Literal["query", "document"]
+type PromptRole = Literal["query", "passage"]
 
-# Looked for in this order, as sentence-transformers' encode_query and encode_document do.
+# The model's own names, looked for in this order, as sentence-transformers'
+# encode_query and encode_document do. Our "passage" role is their "document".
 CONVENTIONAL_PROMPT_NAMES: Mapping[PromptRole, tuple[str, ...]] = {
     "query": ("query",),
-    "document": ("document", "passage", "corpus"),
+    "passage": ("document", "passage", "corpus"),
 }
 _ALL_CONVENTIONAL_NAMES = frozenset(
     name for names in CONVENTIONAL_PROMPT_NAMES.values() for name in names
@@ -19,9 +20,9 @@ def declared_prompts(prompts: Mapping[str, str | None]) -> dict[str, str]:
 
 
 def resolve_prompt_names(
-    prompts: Mapping[str, str | None], *, query: str | None, document: str | None
+    prompts: Mapping[str, str | None], *, query: str | None, passage: str | None
 ) -> tuple[str | None, str | None]:
-    """The prompt names to use for queries and for documents; None means no prompt.
+    """The prompt names to use for queries and for passages; None means no prompt.
 
     prompts is the model's own prompts dictionary, empty ones included.
     """
@@ -32,7 +33,7 @@ def resolve_prompt_names(
             field
             for field, chosen in (
                 ("query_prompt_name", query),
-                ("document_prompt_name", document),
+                ("passage_prompt_name", passage),
             )
             if chosen is None
         ]
@@ -42,7 +43,7 @@ def resolve_prompt_names(
                 f"all: {', '.join(sorted(declared))}); name the ones to use in the spec: {' and '.join(unnamed)}"
             )
     return resolve_prompt_name(prompts, "query", query), resolve_prompt_name(
-        prompts, "document", document
+        prompts, "passage", passage
     )
 
 

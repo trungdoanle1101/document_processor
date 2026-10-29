@@ -1,4 +1,4 @@
-"""Tests for integrations/huggingface/_prompts.py: which prompt queries and documents get.
+"""Tests for integrations/huggingface/_prompts.py: which prompt queries and passages get.
 
 Only prompts the model declares are used, by name, with the model's own
 text. An empty prompt counts as no prompt: sentence-transformers 6.2 adds
@@ -43,8 +43,8 @@ F2LLM = {
 }
 
 
-def resolve(prompts: dict[str, str], *, query: str | None = None, document: str | None = None) -> tuple[str | None, str | None]:
-    return resolve_prompt_names(prompts, query=query, document=document)
+def resolve(prompts: dict[str, str], *, query: str | None = None, passage: str | None = None) -> tuple[str | None, str | None]:
+    return resolve_prompt_names(prompts, query=query, passage=passage)
 
 
 # ============================================================ declared_prompts
@@ -72,7 +72,7 @@ def test_a_space_alone_is_a_prompt() -> None:
 
 
 def test_the_convention_is_sentence_transformers_own() -> None:
-    assert CONVENTIONAL_PROMPT_NAMES == {"query": ("query",), "document": ("document", "passage", "corpus")}
+    assert CONVENTIONAL_PROMPT_NAMES == {"query": ("query",), "passage": ("document", "passage", "corpus")}
 
 
 def test_bge_m3_gets_no_prompts() -> None:
@@ -104,7 +104,7 @@ def test_document_is_preferred_to_passage_and_corpus() -> None:
 
 
 def test_an_explicit_name_wins_over_the_convention() -> None:
-    assert resolve(QUERY_AND_DOCUMENT, document="query") == ("query", "query")
+    assert resolve(QUERY_AND_DOCUMENT, passage="query") == ("query", "query")
 
 
 def test_an_explicit_name_must_be_one_the_model_has() -> None:
@@ -114,7 +114,7 @@ def test_an_explicit_name_must_be_one_the_model_has() -> None:
 
 def test_naming_an_empty_prompt_means_no_prompt() -> None:
     # bge-m3's "query" is only the empty one 6.2 adds: naming it is allowed and changes nothing.
-    assert resolve(BGE_M3, query="query", document="document") == (None, None)
+    assert resolve(BGE_M3, query="query", passage="document") == (None, None)
 
 
 def test_a_model_without_any_prompts_names_none() -> None:
@@ -130,12 +130,12 @@ def test_f2llm_prompts_its_queries_only() -> None:
 
 
 def test_f2llm_named_explicitly_gives_the_same() -> None:
-    assert resolve(F2LLM, query="query", document="document") == ("query", None)
+    assert resolve(F2LLM, query="query", passage="document") == ("query", None)
 
 
 def test_f2llm_documents_with_the_query_instruction_if_asked() -> None:
     # An explicit choice is followed even when it is unusual.
-    assert resolve(F2LLM, document="query") == ("query", "query")
+    assert resolve(F2LLM, passage="query") == ("query", "query")
 
 
 # ============================================================ unconventional names
@@ -148,19 +148,19 @@ def test_nomic_style_names_must_both_be_named() -> None:
         "the model declares prompts with names the convention does not know "
         "(classification, clustering, search_document, search_query; "
         "all: classification, clustering, search_document, search_query); "
-        "name the ones to use in the spec: query_prompt_name and document_prompt_name"
+        "name the ones to use in the spec: query_prompt_name and passage_prompt_name"
     )
 
 
 def test_naming_one_role_is_not_enough() -> None:
-    with pytest.raises(ValueError, match="name the ones to use in the spec: document_prompt_name$"):
+    with pytest.raises(ValueError, match="name the ones to use in the spec: passage_prompt_name$"):
         resolve(NOMIC, query="search_query")
     with pytest.raises(ValueError, match="name the ones to use in the spec: query_prompt_name$"):
-        resolve(NOMIC, document="search_document")
+        resolve(NOMIC, passage="search_document")
 
 
 def test_naming_both_roles_resolves() -> None:
-    assert resolve(NOMIC, query="search_query", document="search_document") == ("search_query", "search_document")
+    assert resolve(NOMIC, query="search_query", passage="search_document") == ("search_query", "search_document")
 
 
 def test_a_task_prompt_next_to_conventional_ones_also_requires_names() -> None:
@@ -168,12 +168,12 @@ def test_a_task_prompt_next_to_conventional_ones_also_requires_names() -> None:
     # more than one use; the spec must say which prompts retrieval uses.
     with pytest.raises(ValueError, match=r"\(classification; all: classification, document, query\)"):
         resolve(WITH_TASK_PROMPTS)
-    assert resolve(WITH_TASK_PROMPTS, query="query", document="document") == ("query", "document")
+    assert resolve(WITH_TASK_PROMPTS, query="query", passage="document") == ("query", "document")
 
 
 def test_names_in_an_unconventional_model_are_still_checked() -> None:
-    with pytest.raises(ValueError, match="^document prompt 'search_passage' is not one the model has"):
-        resolve(NOMIC, query="search_query", document="search_passage")
+    with pytest.raises(ValueError, match="^passage prompt 'search_passage' is not one the model has"):
+        resolve(NOMIC, query="search_query", passage="search_passage")
 
 
 # ============================================================ one role at a time
@@ -181,12 +181,12 @@ def test_names_in_an_unconventional_model_are_still_checked() -> None:
 
 def test_resolving_one_role_on_its_own() -> None:
     assert resolve_prompt_name(E5, "query", None) == "query"
-    assert resolve_prompt_name(E5, "document", None) == "passage"
-    assert resolve_prompt_name({}, "document", None) is None
+    assert resolve_prompt_name(E5, "passage", None) == "passage"
+    assert resolve_prompt_name({}, "passage", None) is None
 
 
 def test_none_values_count_as_empty() -> None:
     # sentence-transformers' type for prompts allows None (its placeholder before loading).
     with_none: dict[str, str | None] = {"query": "query: ", "document": None}
     assert declared_prompts(with_none) == {"query": "query: "}
-    assert resolve_prompt_names(with_none, query=None, document="document") == ("query", None)
+    assert resolve_prompt_names(with_none, query=None, passage="document") == ("query", None)

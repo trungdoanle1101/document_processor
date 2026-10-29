@@ -5,7 +5,7 @@ from huggingface_hub import snapshot_download
 
 from document_processor.integrations.huggingface.reference import (
     ModelReference,
-    write_model_reference
+    write_model_reference,
 )
 
 IGNORED_FILES = (
