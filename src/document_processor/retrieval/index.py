@@ -57,17 +57,26 @@ class Range[T: (float, date)]:
 type Condition = AnyOf | Range[float] | Range[date]
 
 
+@dataclass(frozen=True, kw_only=True, slots=True)
+class ChunkKey:
+    document_id: str
+    chunk_id: str
+
+
 @dataclass(frozen=True, kw_only=True)
 class ChunkFilter:
     """The chunks meeting every part given. ChunkFilter() selects every chunk; use None, not (), for any."""
 
     document_ids: tuple[str, ...] | None = None
+    chunk_keys: tuple[ChunkKey, ...] | None = None # one of these chunks
     reference_keys: tuple[str, ...] | None = None  # has any of them
     attributes: Mapping[str, Condition] = MappingProxyType({})  # meets all of them
 
     def __post_init__(self) -> None:
         if self.document_ids == ():
             raise ValueError("document_ids must not be empty; use None for any")
+        if self.chunk_keys == ():
+            raise ValueError("chunk_keys must not be empty; use None for any")
         if self.reference_keys == ():
             raise ValueError("reference_keys must not be empty; use None for any")
         for name in self.attributes:
@@ -78,9 +87,17 @@ class ChunkFilter:
     def selects_everything(self) -> bool:
         return (
             self.document_ids is None
+            and self.chunk_keys is None
             and self.reference_keys is None
             and not self.attributes
         )
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class GeneratedEntryKey:
+    document_id: str
+    generator: str
+    entry_id: str
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -100,6 +117,10 @@ class IndexedChunk:
             _check_attribute_value(value)
         object.__setattr__(self, "attributes", MappingProxyType(dict(self.attributes)))
 
+    @property
+    def key(self) -> ChunkKey:
+        return ChunkKey(document_id=self.document_id, chunk_id=self.chunk_id)
+
 
 @dataclass(frozen=True, kw_only=True)
 class GeneratedEntry:
@@ -117,10 +138,17 @@ class GeneratedEntry:
         if not self.text.strip():
             raise ValueError(f"entry {self.entry_id!r} has no text")
 
+    @property
+    def key(self) -> GeneratedEntryKey:
+        return GeneratedEntryKey(
+            document_id=self.document_id,
+            generator=self.generator,
+            entry_id=self.entry_id,
+        )
 
-type GeneratedEntryChoice = (
-    Literal["all", "none"] | tuple[str, ...]
-)  # a tuple names generators
+
+# choice for generators; a tuple names generators to use
+type GeneratedEntryChoice = Literal["all", "none"] | tuple[str, ...]
 
 
 @dataclass(frozen=True, kw_only=True)
