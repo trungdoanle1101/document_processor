@@ -215,7 +215,8 @@ class HuggingFaceEmbedder:
                 f"the model produced NaN or infinite values for {text[:60]!r}"
             )
         return Embedding(
-            vectors={DENSE_VECTOR_NAME: DenseVector(values=tuple(dense.tolist()))}
+            embedder_identity=self._identity,
+            vectors={DENSE_VECTOR_NAME: DenseVector(values=tuple(dense.tolist()))},
         )
 
 

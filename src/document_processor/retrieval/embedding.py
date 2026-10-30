@@ -61,10 +61,13 @@ type VectorSpec = DenseVectorSpec | SparseVectorSpec
 @dataclass(frozen=True, kw_only=True)
 class Embedding:
     """One text's vectors, by name"""
-
+    embedder_identity: str
     vectors: Mapping[str, Vector]
 
     def __post_init__(self) -> None:
+        if not self.embedder_identity:
+            raise ValueError("an embedding must name the embedder that made it")
+
         if not self.vectors:
             raise ValueError("an embedding must hold at least one vector")
 
@@ -96,7 +99,7 @@ class Embedding:
 
 class Embedder(Protocol):
     """Turns text into named vectors.
-    Every Embedding returned holds exactly the vectors in vector_specs.
+    Every Embedding returned carries this embedder's identity and holds exactly the vectors in vector_specs.
     Queries and passages may be encoded differently (prompts), so the callers must use the matching method.
     Equal identities mean equal vectors for the same text;
     the index refuses to mix embedders with different identities in one vector space.
@@ -120,17 +123,20 @@ class Embedder(Protocol):
 
 
 def check_embedding(
-    embedding: Embedding, vector_spec: Mapping[str, VectorSpec]
+    embedding: Embedding, embedder_identity: str, vector_specs: Mapping[str, VectorSpec]
 ) -> None:
-    """The embedding holds exactly the specified vectors, each of its kind,
+    """The embedding was made for this embedder and holds exactly the specified vectors, each of its kind,
     and if dense, its dimensions.
     """
-    if set(embedding.vectors) != set(vector_spec):
+    if embedding.embedder_identity != embedder_identity:
+        raise ValueError(f"the embedding was made by {embedding.embedder_identity!r}, not {embedder_identity!r}")
+
+    if set(embedding.vectors) != set(vector_specs):
         raise ValueError(
             f"the embedding holds {', '.join(sorted(embedding.vectors))}, "
-            f"but the specs are for {', '.join(sorted(vector_spec))}"
+            f"but the specs are for {', '.join(sorted(vector_specs))}"
         )
-    for name, spec in vector_spec.items():
+    for name, spec in vector_specs.items():
         vector = embedding.vectors[name]
         match spec:
             case DenseVectorSpec(dimension=dimension):

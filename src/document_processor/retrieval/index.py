@@ -2,7 +2,7 @@ import math
 import re
 import threading
 from abc import ABC, abstractmethod
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from types import MappingProxyType
@@ -17,9 +17,9 @@ from document_processor.retrieval.embedding import (
 type Scalar = str | int | float | bool | date
 type AttributeValue = Scalar | tuple[str, ...] | tuple[int, ...]
 type Attributes = Mapping[str, AttributeValue]
-type AttributeChanges = Mapping[
-    str, AttributeValue | None
-]  # None removes the attribute
+
+# None removes the attribute
+type AttributeChanges = Mapping[str, AttributeValue | None]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -148,7 +148,10 @@ class SearchQuery:
 @dataclass(frozen=True, kw_only=True)
 class ChunkHit:
     chunk: IndexedChunk
-    score: float  # higher is better; compare only within one result list
+    # higher is better; compare only within one result list
+    score: float
+
+    # entries that gave its best match on some vector, best first
     found_through: tuple[GeneratedEntry, ...] = ()
 
 
@@ -178,7 +181,9 @@ class ChunkIndex(ABC):
         embeddings: Sequence[Embedding],
     ) -> None:
         """Make these the document's only chunks, and remove its generated entries. No chunks removes it."""
-        _check_replacement(document_id, chunks, embeddings, self.vector_specs)
+        _check_replacement(
+            document_id, chunks, embeddings, self.embedder_identity, self.vector_specs
+        )
         with self._write_lock:
             self._replace_document(document_id, chunks, embeddings)
 
@@ -192,7 +197,7 @@ class ChunkIndex(ABC):
     ) -> None:
         """Make these the document's only entries from this generator.
 
-        Each entry must lead to chunks the document has now, all with the same attributes.
+        Each entry must lead to chunks the document has now.
         """
         with self._write_lock:
             current = self._list_chunks(ChunkFilter(document_ids=(document_id,)), None)
@@ -202,6 +207,7 @@ class ChunkIndex(ABC):
                 generator,
                 entries,
                 embeddings,
+                self.embedder_identity,
                 self.vector_specs,
                 document_chunks,
             )
@@ -211,7 +217,7 @@ class ChunkIndex(ABC):
 
     @final
     def delete_chunks(self, chunk_filter: ChunkFilter) -> None:
-        """Remove the selected chunks, and every entry leading to one of them."""
+        """Remove the selected chunks; entries stop leading to them, and an entry left with none is removed."""
         _check_not_everything(chunk_filter, "delete")
         with self._write_lock:
             self._delete_chunks(chunk_filter)
@@ -220,15 +226,9 @@ class ChunkIndex(ABC):
     def update_attributes(
         self, chunk_filter: ChunkFilter, changes: AttributeChanges
     ) -> None:
-        """Set or remove attributes on the selected chunks; their entries follow.
-
-        Refused if it would select only some of one entry's chunks.
-        """
+        """Set or remove attributes on the selected chunks; their entries follow."""
         _check_update(chunk_filter, changes)
         with self._write_lock:
-            selected = self._list_chunks(chunk_filter, None)
-            entries = self._entries_of({chunk.document_id for chunk in selected})
-            _check_no_entry_split(selected, entries)
             self._update_attributes(chunk_filter, changes)
 
     @final
@@ -241,13 +241,15 @@ class ChunkIndex(ABC):
 
     @final
     def search(self, query: SearchQuery) -> list[ChunkHit]:
-        """The selected chunks, best first, each once, found by their own text or their entries.
+        """The selected chunks, best first, each once.
 
-        One vector scores by similarity: cosine if dense; dot product if sparse,
-        weighted by IDF if its spec says so. Several are fused by reciprocal
-        rank. A sparse vector only finds what shares a term with the query.
+        A chunk is ranked by its best match: its own text or one of its entries. An entry
+        only finds those of its chunks the filter selects. One vector scores by similarity:
+        cosine if dense; dot product if sparse, weighted by IDF if its spec says so.
+        Several are fused by reciprocal rank over each vector's best candidates (at least
+        limit chunks), so a chunk outside every vector's candidates isn't found.
         """
-        _check_search(query, self.vector_specs)
+        _check_search(query, self.embedder_identity, self.vector_specs)
         return self._search(query)
 
     # Hooks: implementations provide these, and receive only checked arguments.
@@ -283,10 +285,6 @@ class ChunkIndex(ABC):
         self, chunk_filter: ChunkFilter, limit: int | None
     ) -> list[IndexedChunk]:
         """In document order; None: all of them."""
-
-    @abstractmethod
-    def _entries_of(self, document_ids: Collection[str]) -> list[GeneratedEntry]:
-        """Every generator's entries for these documents."""
 
     @abstractmethod
     def _search(self, query: SearchQuery) -> list[ChunkHit]: ...
@@ -325,6 +323,7 @@ def _check_replacement(
     document_id: str,
     chunks: Sequence[IndexedChunk],
     embeddings: Sequence[Embedding],
+    embedder_identity: str,
     vector_specs: Mapping[str, VectorSpec],
 ) -> None:
     _check_one_embedding_each("chunks", len(chunks), len(embeddings))
@@ -337,7 +336,9 @@ def _check_replacement(
         if chunk.chunk_id in seen:
             raise ValueError(f"chunk id {chunk.chunk_id!r} appears twice")
         seen.add(chunk.chunk_id)
-        _check_embedding_of(f"chunk {chunk.chunk_id!r}", embedding, vector_specs)
+        _check_embedding_of(
+            f"chunk {chunk.chunk_id!r}", embedding, embedder_identity, vector_specs
+        )
 
 
 def _check_generated_replacement(
@@ -345,6 +346,7 @@ def _check_generated_replacement(
     generator: str,
     entries: Sequence[GeneratedEntry],
     embeddings: Sequence[Embedding],
+    embedder_identity: str,
     vector_specs: Mapping[str, VectorSpec],
     document_chunks: Mapping[str, IndexedChunk],
 ) -> None:
@@ -366,14 +368,9 @@ def _check_generated_replacement(
             raise ValueError(
                 f"entry {entry.entry_id!r} leads to chunks {document_id!r} doesn't have: {', '.join(missing)}"
             )
-        first, *others = (
-            document_chunks[chunk_id].attributes for chunk_id in entry.chunk_ids
+        _check_embedding_of(
+            f"entry {entry.entry_id!r}", embedding, embedder_identity, vector_specs
         )
-        if any(attributes != first for attributes in others):
-            raise ValueError(
-                f"entry {entry.entry_id!r} leads to chunks with different attributes"
-            )
-        _check_embedding_of(f"entry {entry.entry_id!r}", embedding, vector_specs)
 
 
 def _check_not_everything(chunk_filter: ChunkFilter, action: str) -> None:
@@ -391,20 +388,10 @@ def _check_update(chunk_filter: ChunkFilter, changes: AttributeChanges) -> None:
             _check_attribute_value(value)
 
 
-def _check_no_entry_split(
-    selected: Sequence[IndexedChunk], entries: Sequence[GeneratedEntry]
+def _check_search(
+    query: SearchQuery, embedder_identity: str, vector_specs: Mapping[str, VectorSpec]
 ) -> None:
-    selected_keys = {(chunk.document_id, chunk.chunk_id) for chunk in selected}
-    for entry in entries:
-        entry_keys = {(entry.document_id, chunk_id) for chunk_id in entry.chunk_ids}
-        if entry_keys & selected_keys and not entry_keys <= selected_keys:
-            raise ValueError(
-                f"entry {entry.entry_id!r} leads to chunks both selected and not; select all or none"
-            )
-
-
-def _check_search(query: SearchQuery, vector_specs: Mapping[str, VectorSpec]) -> None:
-    _check_embedding_of("query", query.embedding, vector_specs)
+    _check_embedding_of("query", query.embedding, embedder_identity, vector_specs)
     unknown = [name for name in query.vector_names or () if name not in vector_specs]
     if unknown:
         raise ValueError(
@@ -418,9 +405,12 @@ def _check_one_embedding_each(what: str, count: int, embedding_count: int) -> No
 
 
 def _check_embedding_of(
-    owner: str, embedding: Embedding, vector_specs: Mapping[str, VectorSpec]
+    owner: str,
+    embedding: Embedding,
+    embedder_identity: str,
+    vector_specs: Mapping[str, VectorSpec],
 ) -> None:
     try:
-        check_embedding(embedding, vector_specs)
+        check_embedding(embedding, embedder_identity, vector_specs)
     except (TypeError, ValueError) as error:
         raise type(error)(f"{owner}: {error}") from error
