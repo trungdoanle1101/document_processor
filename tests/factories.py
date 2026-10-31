@@ -115,8 +115,8 @@ def make_table_cell(**overrides: Any) -> TableCell:
 def make_table_info(**overrides: Any) -> TableInfo:
     """A valid 2x2 table with one header row; override any field.
 
-        TT | Nội dung
-        1  | Phạm vi điều chỉnh
+    TT | Nội dung
+    1  | Phạm vi điều chỉnh
     """
     fields: dict[str, Any] = {
         "n_rows": 2,
@@ -177,7 +177,12 @@ def make_heading_segment(**overrides: Any) -> HeadingSegment:
 
 def heading_for(node: LogicalNode) -> HeadingSegment:
     """The heading segment that must sit at ``node.start``."""
-    return HeadingSegment(block_id=node.head_block_ids[0], node_id=node.id, marker=node.marker, title=node.title)
+    return HeadingSegment(
+        block_id=node.head_block_ids[0],
+        node_id=node.id,
+        marker=node.marker,
+        title=node.title,
+    )
 
 
 def make_logical_node(**overrides: Any) -> LogicalNode:

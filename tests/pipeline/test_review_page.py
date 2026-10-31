@@ -27,8 +27,16 @@ import pytest
 
 from document_processor.chunking import Chunk
 from document_processor.core.models import LogicalDocument
-from document_processor.pipeline.review import Gap, ReviewData, ReviewWarning, build_review_data
-from document_processor.pipeline.review_page import render_review_frame, render_review_html
+from document_processor.pipeline.review import (
+    Gap,
+    ReviewData,
+    ReviewWarning,
+    build_review_data,
+)
+from document_processor.pipeline.review_page import (
+    render_review_frame,
+    render_review_html,
+)
 from tests.chunking.test_outline_chunker import Blocks, regulation
 from tests.factories import make_table_block
 from tests.pipeline.test_review import MERGED, review
@@ -51,10 +59,14 @@ class Element:
         """All text inside, children included, in document order"""
         return "".join(self.parts)
 
-    def find_all(self, tag: str | None = None, cls: str | None = None) -> list["Element"]:
+    def find_all(
+        self, tag: str | None = None, cls: str | None = None
+    ) -> list["Element"]:
         found: list[Element] = []
         for child in self.children:
-            if (tag is None or child.tag == tag) and (cls is None or cls in child.classes):
+            if (tag is None or child.tag == tag) and (
+                cls is None or cls in child.classes
+            ):
                 found.append(child)
             found.extend(child.find_all(tag, cls))
         return found
@@ -93,7 +105,9 @@ def parse(html: str) -> TreeBuilder:
     builder = TreeBuilder()
     builder.feed(html)
     builder.close()
-    assert builder.stack == [builder.root], f"unclosed: {[e.tag for e in builder.stack[1:]]}"
+    assert builder.stack == [builder.root], (
+        f"unclosed: {[e.tag for e in builder.stack[1:]]}"
+    )
     return builder
 
 
@@ -139,7 +153,10 @@ def test_layout_holds_summary_outline_and_main() -> None:
     root = page(review(regulation())[0])
     body = root.find("body")
     assert [child.tag for child in body.children] == ["header", "div"]
-    assert [child.tag for child in body.find("div", "layout").children] == ["nav", "main"]
+    assert [child.tag for child in body.find("div", "layout").children] == [
+        "nav",
+        "main",
+    ]
 
 
 # ======================================================================
@@ -150,19 +167,28 @@ def test_layout_holds_summary_outline_and_main() -> None:
 @pytest.mark.parametrize("max_tokens", [3, 8, 200])
 def test_one_section_per_chunk_or_gap_in_order(max_tokens: int) -> None:
     data, _ = review(regulation(), max_tokens)
-    assert [section.attrs["id"] for section in entries(page(data))] == [e.id for e in data.chunks_or_gaps]
+    assert [section.attrs["id"] for section in entries(page(data))] == [
+        e.id for e in data.chunks_or_gaps
+    ]
 
 
 @pytest.mark.parametrize("max_tokens", [3, 8, 200])
 def test_ids_are_unique(max_tokens: int) -> None:
-    ids = [element.attrs["id"] for element in _all(page(review(regulation(), max_tokens)[0])) if "id" in element.attrs]
+    ids = [
+        element.attrs["id"]
+        for element in _all(page(review(regulation(), max_tokens)[0]))
+        if "id" in element.attrs
+    ]
     assert len(ids) == len(set(ids))
 
 
 @pytest.mark.parametrize("max_tokens", [3, 8, 200])
 def test_every_link_points_at_an_element_on_the_page(max_tokens: int) -> None:
     data, chunks = review(regulation(), max_tokens)
-    data = with_warnings(data, ReviewWarning(code="chunk_over_budget", message="m", chunk_id=chunks[-1].id))
+    data = with_warnings(
+        data,
+        ReviewWarning(code="chunk_over_budget", message="m", chunk_id=chunks[-1].id),
+    )
     root = page(data)
     ids = {element.attrs["id"] for element in _all(root) if "id" in element.attrs}
     hrefs = [a.attrs["href"] for a in root.find_all("a")]
@@ -194,7 +220,9 @@ def test_chunk_header_strip() -> None:
     section = next(s for s in entries(page(data)) if s.attrs["id"] == chunk.id)
     header = section.find("div", "chunk-header")
     assert header.find("span", "chunk-id").text() == chunk.id
-    assert header.find("span", "breadcrumb").text() == " › ".join(step.label for step in chunk.path)
+    assert header.find("span", "breadcrumb").text() == " › ".join(
+        step.label for step in chunk.path
+    )
     assert header.find("span", "token-count").text() == f"{chunk.token_count}/200"
     assert header.find_all("span", "rows") == []
 
@@ -222,7 +250,9 @@ def test_segments_carry_their_index_and_block_on_hover() -> None:
     assert texts
     for p in texts:
         index = int(p.attrs["title"].split(" · ")[0].removeprefix("segment "))
-        assert p.attrs["title"] == f"segment {index} · {document.segments[index].block_id}"
+        assert (
+            p.attrs["title"] == f"segment {index} · {document.segments[index].block_id}"
+        )
         assert p.text() == document.segments[index].text  # type: ignore[union-attr]
 
 
@@ -253,7 +283,9 @@ def test_gap_in_the_breadcrumb_is_heading_lines() -> None:
     section = next(s for s in entries(page(data)) if s.attrs["id"] == gap.id)
     assert {"gap", "in-breadcrumb", "body"} <= section.classes
     assert section.find_all("div", "gap-label") == []
-    assert [h.text() for h in section.find_all("div", "heading")] == ["Chương I QUY ĐỊNH CHUNG"]
+    assert [h.text() for h in section.find_all("div", "heading")] == [
+        "Chương I QUY ĐỊNH CHUNG"
+    ]
 
 
 def test_dropped_gap_says_so_and_shows_what_was_dropped() -> None:
@@ -261,20 +293,35 @@ def test_dropped_gap_says_so_and_shows_what_was_dropped() -> None:
     data, _ = review(document)
     section = entries(page(data))[0]
     assert {"gap", "dropped", "front_matter"} <= section.classes
-    assert section.find("div", "gap-label").text() == "dropped: 2 segments in no chunk and no breadcrumb"
-    assert [image.text() for image in section.find_all("div", "image")] == ["[image]", "[image]"]
+    assert (
+        section.find("div", "gap-label").text()
+        == "dropped: 2 segments in no chunk and no breadcrumb"
+    )
+    assert [image.text() for image in section.find_all("div", "image")] == [
+        "[image]",
+        "[image]",
+    ]
 
 
 def test_dropped_gap_of_one_segment() -> None:
     data, _ = review(Blocks().image().text("Điều 1. Phạm vi").text("Nội dung").build())
-    assert entries(page(data))[0].find("div", "gap-label").text().startswith("dropped: 1 segment in")
+    assert (
+        entries(page(data))[0]
+        .find("div", "gap-label")
+        .text()
+        .startswith("dropped: 1 segment in")
+    )
 
 
 # ---------- tables
 
 
 def table_pieces(data: ReviewData) -> list[Element]:
-    piece_ids = {e.id for e in data.chunks_or_gaps if isinstance(e, Chunk) and e.table_rows is not None}
+    piece_ids = {
+        e.id
+        for e in data.chunks_or_gaps
+        if isinstance(e, Chunk) and e.table_rows is not None
+    }
     return [s for s in entries(page(data)) if s.attrs["id"] in piece_ids]
 
 
@@ -284,15 +331,25 @@ def test_every_piece_of_a_split_table_repeats_the_header() -> None:
     assert len(pieces) > 1
     for piece in pieces:
         table = piece.find("table")
-        assert [th.text() for th in table.find("thead").find_all("th")] == ["TT", "Nội dung"]
+        assert [th.text() for th in table.find("thead").find_all("th")] == [
+            "TT",
+            "Nội dung",
+        ]
 
 
 def test_piece_header_strip_shows_its_rows() -> None:
     data, _ = review(table_document(), 6)
-    chunks = [e for e in data.chunks_or_gaps if isinstance(e, Chunk) and e.table_rows is not None]
+    chunks = [
+        e
+        for e in data.chunks_or_gaps
+        if isinstance(e, Chunk) and e.table_rows is not None
+    ]
     for chunk, piece in zip(chunks, table_pieces(data)):
         assert chunk.table_rows is not None
-        assert piece.find("span", "rows").text() == f"rows [{chunk.table_rows[0]}, {chunk.table_rows[1]})"
+        assert (
+            piece.find("span", "rows").text()
+            == f"rows [{chunk.table_rows[0]}, {chunk.table_rows[1]})"
+        )
 
 
 def test_merged_cell_gets_rowspan_cut_to_the_piece() -> None:
@@ -302,12 +359,17 @@ def test_merged_cell_gets_rowspan_cut_to_the_piece() -> None:
     first_cell = body_rows[0].find_all("td")[0]
     assert (first_cell.text(), first_cell.attrs.get("rowspan")) == ("A", "3")
     # a span of 1 is not written
-    assert all(td.attrs.get("rowspan") != "1" and td.attrs.get("colspan") != "1" for td in table.find_all("td"))
+    assert all(
+        td.attrs.get("rowspan") != "1" and td.attrs.get("colspan") != "1"
+        for td in table.find_all("td")
+    )
 
 
 def test_table_without_header_rows_has_no_thead() -> None:
     blocks = Blocks().text("Điều 1. Phạm vi").text("Bảng:")
-    blocks.blocks.append(make_table_block(id="pb3", table_info=replace(MERGED, n_header_rows=0)))
+    blocks.blocks.append(
+        make_table_block(id="pb3", table_info=replace(MERGED, n_header_rows=0))
+    )
     data, _ = review(blocks.build(), 200)
     (table,) = page(data).find_all("table")
     assert table.find_all("thead") == []
@@ -317,7 +379,9 @@ def test_cell_paragraphs_are_separate() -> None:
     data, _ = review(regulation())
     (table,) = page(data).find_all("table")
     cells = table.find_all("td") + table.find_all("th")
-    assert cells and all(all(child.tag == "p" for child in cell.children) for cell in cells)
+    assert cells and all(
+        all(child.tag == "p" for child in cell.children) for cell in cells
+    )
 
 
 # ======================================================================
@@ -333,7 +397,11 @@ def test_summary_shows_the_statistics() -> None:
 
 def test_warning_links_to_its_chunk() -> None:
     data, chunks = review(regulation())
-    warning = ReviewWarning(code="chunk_over_budget", message="chunk c2 has 300 tokens", chunk_id=chunks[2].id)
+    warning = ReviewWarning(
+        code="chunk_over_budget",
+        message="chunk c2 has 300 tokens",
+        chunk_id=chunks[2].id,
+    )
     (item,) = page(with_warnings(data, warning)).find("ul", "warnings").find_all("li")
     link = item.find("a")
     assert link.attrs["href"] == f"#{chunks[2].id}"
@@ -362,12 +430,18 @@ def test_no_warnings() -> None:
 def outline_lines(root: Element) -> list[Element]:
     """The <a> or <span> of every node line, in tree order"""
     nav = root.find("nav", "outline")
-    return [e for e in nav.find_all() if e.tag in ("a", "span") and ({"section", "item"} & e.classes)]
+    return [
+        e
+        for e in nav.find_all()
+        if e.tag in ("a", "span") and ({"section", "item"} & e.classes)
+    ]
 
 
 def test_one_line_per_node_in_order() -> None:
     data, _ = review(regulation())
-    assert [line.text() for line in outline_lines(page(data))] == [n.label for n in data.outline]
+    assert [line.text() for line in outline_lines(page(data))] == [
+        n.label for n in data.outline
+    ]
 
 
 def test_sections_open_items_folded() -> None:
@@ -375,7 +449,10 @@ def test_sections_open_items_folded() -> None:
     data, _ = review(regulation())
     nav = page(data).find("nav", "outline")
     details = nav.find_all("details")
-    states = {d.find_all("summary")[0].text().split(" ")[0]: "open" in d.attrs for d in details}
+    states = {
+        d.find_all("summary")[0].text().split(" ")[0]: "open" in d.attrs
+        for d in details
+    }
     assert states == {"Chương": True, "Điều": True, "2.": False}
     assert len(details) == 4  # Chương I, Điều 1, Điều 2, khoản 2
 
@@ -393,7 +470,9 @@ def test_nesting_follows_depth() -> None:
         return depths
 
     data, _ = review(regulation())
-    assert line_depths(page(data).find("nav", "outline"), 0) == [n.depth for n in data.outline]
+    assert line_depths(page(data).find("nav", "outline"), 0) == [
+        n.depth for n in data.outline
+    ]
 
 
 def test_line_links_to_the_first_overlapping_chunk() -> None:
@@ -407,12 +486,22 @@ def test_chunk_count_only_when_a_node_spans_several() -> None:
     data, _ = review(regulation(), 3)
     nav = page(data).find("nav", "outline")
     counts = [span.text() for span in nav.find_all("span", "count")]
-    assert counts == [f"{len(n.overlap_chunk_ids)} chunks" for n in data.outline if len(n.overlap_chunk_ids) > 1]
+    assert counts == [
+        f"{len(n.overlap_chunk_ids)} chunks"
+        for n in data.outline
+        if len(n.overlap_chunk_ids) > 1
+    ]
     assert counts
 
 
 def test_node_without_chunks_is_not_a_link() -> None:
-    data, _ = review(Blocks().text("Điều 1. Phạm vi").text("Điều 2. Đối tượng").text("Nội dung").build())
+    data, _ = review(
+        Blocks()
+        .text("Điều 1. Phạm vi")
+        .text("Điều 2. Đối tượng")
+        .text("Nội dung")
+        .build()
+    )
     first = outline_lines(page(data))[0]
     assert (first.tag, first.text()) == ("span", "Điều 1. Phạm vi")
 
@@ -441,20 +530,19 @@ HOSTILE = '<script>alert("x")</script> & "quoted"'
 
 
 def test_document_text_is_escaped_everywhere() -> None:
-    document = (
-        Blocks()
-        .text(f"Điều 1. {HOSTILE}")
-        .text(HOSTILE)
-        .build()
-    )
+    document = Blocks().text(f"Điều 1. {HOSTILE}").text(HOSTILE).build()
     data, _ = review(document)
-    data = with_warnings(data, ReviewWarning(code="chunk_over_budget", message=HOSTILE, chunk_id="c0"))
+    data = with_warnings(
+        data, ReviewWarning(code="chunk_over_budget", message=HOSTILE, chunk_id="c0")
+    )
     html = render_review_html(data)
     root = parse(html).root
     assert root.find_all("script") == []
     assert HOSTILE not in html
     main_text = root.find("main").text()
-    assert main_text.count(HOSTILE) >= 3  # heading, paragraph, as embedded: shown as text
+    assert (
+        main_text.count(HOSTILE) >= 3
+    )  # heading, paragraph, as embedded: shown as text
     assert HOSTILE in root.find("nav", "outline").text()
     assert HOSTILE in root.find("ul", "warnings").text()
 
@@ -477,7 +565,9 @@ def test_write_review_page(tmp_path: Path) -> None:
     result = pipeline().run(write_txt(tmp_path, "quy_dinh.txt"))
     written = result.write_review_page(tmp_path / "out.html")
     assert written == tmp_path / "out.html"
-    assert written.read_text(encoding="utf-8") == render_review_html(build_review_data(result))
+    assert written.read_text(encoding="utf-8") == render_review_html(
+        build_review_data(result)
+    )
 
 
 def test_write_review_page_accepts_a_string_and_overwrites(tmp_path: Path) -> None:
@@ -488,7 +578,6 @@ def test_write_review_page_accepts_a_string_and_overwrites(tmp_path: Path) -> No
     target.write_text("old", encoding="utf-8")
     assert result.write_review_page(str(target)) == target
     assert target.read_text(encoding="utf-8").startswith("<!doctype html>")
-
 
 
 # ======================================================================
@@ -506,11 +595,18 @@ def test_frame_is_one_iframe_and_nothing_else() -> None:
 def test_frame_holds_the_whole_page() -> None:
     data, _ = review(regulation())
     (iframe,) = parse(render_review_frame(data)).root.children
-    assert iframe.attrs["srcdoc"] == render_review_html(data)  # html.parser unescapes the attribute once
+    assert iframe.attrs["srcdoc"] == render_review_html(
+        data
+    )  # html.parser unescapes the attribute once
 
 
 def test_frame_survives_quotes_ampersands_and_tags_in_the_page() -> None:
-    document = Blocks().text('Điều 1. "Phạm vi" & <tạm thời>').text('Nội dung "trích dẫn" & ghi chú').build()
+    document = (
+        Blocks()
+        .text('Điều 1. "Phạm vi" & <tạm thời>')
+        .text('Nội dung "trích dẫn" & ghi chú')
+        .build()
+    )
     data, _ = review(document)
     frame = render_review_frame(data)
     (iframe,) = parse(frame).root.children
@@ -520,8 +616,16 @@ def test_frame_survives_quotes_ampersands_and_tags_in_the_page() -> None:
 
 def test_frame_height() -> None:
     data, _ = review(regulation())
-    assert "height:640px" in parse(render_review_frame(data)).root.children[0].attrs["style"]
-    assert "height:900px" in parse(render_review_frame(data, height_px=900)).root.children[0].attrs["style"]
+    assert (
+        "height:640px"
+        in parse(render_review_frame(data)).root.children[0].attrs["style"]
+    )
+    assert (
+        "height:900px"
+        in parse(render_review_frame(data, height_px=900))
+        .root.children[0]
+        .attrs["style"]
+    )
 
 
 def test_repr_html_is_the_frame_of_the_result(tmp_path: Path) -> None:

@@ -112,8 +112,12 @@ OVERRIDE_NUMBERING = numbering(
         7,
         3,
         '<w:lvlOverride w:ilvl="0"><w:startOverride w:val="5"/></w:lvlOverride>',
-        '<w:lvlOverride w:ilvl="1">' + lvl(1, "upperRoman", "%2.", start=4) + "</w:lvlOverride>",
-        '<w:lvlOverride w:ilvl="2">' + lvl(2, "lowerRoman", "(%3)") + "</w:lvlOverride>",
+        '<w:lvlOverride w:ilvl="1">'
+        + lvl(1, "upperRoman", "%2.", start=4)
+        + "</w:lvlOverride>",
+        '<w:lvlOverride w:ilvl="2">'
+        + lvl(2, "lowerRoman", "(%3)")
+        + "</w:lvlOverride>",
     )
     + num(9, 99)  # points to an abstractNum that does not exist
 )
@@ -142,7 +146,9 @@ CONTINUED_SUBLIST_NUMBERING = numbering(
     )
     + num(15, 15)
     + num(44, 44)
-    + num(45, 44, '<w:lvlOverride w:ilvl="0"><w:startOverride w:val="7"/></w:lvlOverride>')
+    + num(
+        45, 44, '<w:lvlOverride w:ilvl="0"><w:startOverride w:val="7"/></w:lvlOverride>'
+    )
 )
 
 
@@ -150,7 +156,9 @@ CONTINUED_SUBLIST_NUMBERING = numbering(
 
 
 def test_read_num_id_and_ilvl() -> None:
-    p = paragraph('<w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="3"/></w:numPr></w:pPr>')
+    p = paragraph(
+        '<w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="3"/></w:numPr></w:pPr>'
+    )
     assert read_num_id(p) == 3
     assert read_ilvl(p) == 1
 
@@ -223,7 +231,9 @@ def test_font_readers_return_none_when_not_written() -> None:
 
 def test_find_level_override() -> None:
     assert find_level_override(OVERRIDE_NUMBERING, 7, 0) is not None
-    assert find_level_override(OVERRIDE_NUMBERING, 8, 0) is None  # no override is normal
+    assert (
+        find_level_override(OVERRIDE_NUMBERING, 8, 0) is None
+    )  # no override is normal
 
 
 def test_override_readers() -> None:
@@ -244,12 +254,16 @@ def test_override_readers() -> None:
 
 
 def test_build_level_definition_reads_all_values() -> None:
-    definition = build_level_definition(level_element(lvl(1, "lowerLetter", "%2)", start=3)))
+    definition = build_level_definition(
+        level_element(lvl(1, "lowerLetter", "%2)", start=3))
+    )
     assert definition == LevelDefinition(num_fmt="lowerLetter", lvl_text="%2)", start=3)
 
 
 def test_build_level_definition_reads_the_font() -> None:
-    definition = build_level_definition(level_element(lvl(0, "bullet", "\uf0fc", font="Wingdings")))
+    definition = build_level_definition(
+        level_element(lvl(0, "bullet", "\uf0fc", font="Wingdings"))
+    )
     assert definition.font == "Wingdings"
 
 
@@ -280,7 +294,9 @@ def test_missing_num_fmt_means_decimal() -> None:
 
 def test_missing_start_means_zero() -> None:
     # ECMA-376 default: 0, not 1.
-    definition = build_level_definition(level_element(lvl(0, "decimal", "%1.", start=None)))
+    definition = build_level_definition(
+        level_element(lvl(0, "decimal", "%1.", start=None))
+    )
     assert definition.start == 0
 
 
@@ -397,7 +413,9 @@ def test_counter_returns_a_copy() -> None:
 # ---------- resolve_marker
 
 
-def definition(num_fmt: str, lvl_text: str | None, font: str | None = None) -> LevelDefinition:
+def definition(
+    num_fmt: str, lvl_text: str | None, font: str | None = None
+) -> LevelDefinition:
     return LevelDefinition(num_fmt=num_fmt, lvl_text=lvl_text, start=1, font=font)
 
 
@@ -407,7 +425,12 @@ def definition(num_fmt: str, lvl_text: str | None, font: str | None = None) -> L
         ("%1.", {0: 3}, {0: "decimal"}, "3."),
         ("%2)", {0: 1, 1: 2}, {1: "lowerLetter"}, "b)"),
         ("%1.%2.", {0: 1, 1: 2}, {0: "decimal", 1: "decimal"}, "1.2."),
-        ("%1.%2.%3.", {0: 1, 1: 1, 2: 1}, {0: "decimal", 1: "lowerLetter", 2: "upperRoman"}, "1.a.I."),
+        (
+            "%1.%2.%3.",
+            {0: 1, 1: 1, 2: 1},
+            {0: "decimal", 1: "lowerLetter", 2: "upperRoman"},
+            "1.a.I.",
+        ),
         ("Điều %1.", {0: 7}, {0: "decimal"}, "Điều 7."),
         ("Chương %1", {0: 4}, {0: "upperRoman"}, "Chương IV"),
         ("(%1)", {0: 1}, {0: "decimal"}, "(1)"),
@@ -418,15 +441,22 @@ def test_resolve_marker(
     lvl_text: str, counts: dict[int, int], formats: dict[int, str], expected: str
 ) -> None:
     # Every level is counted, so the start values are never used.
-    assert resolve_marker(definition("decimal", lvl_text), counts, formats, {}) == expected
+    assert (
+        resolve_marker(definition("decimal", lvl_text), counts, formats, {}) == expected
+    )
 
 
 def test_resolve_marker_none_format_shows_nothing() -> None:
-    assert resolve_marker(definition("none", "%1."), {0: 1}, {0: "none"}, {0: 1}) is None
+    assert (
+        resolve_marker(definition("none", "%1."), {0: 1}, {0: "none"}, {0: 1}) is None
+    )
 
 
 def test_resolve_marker_without_lvl_text_shows_nothing() -> None:
-    assert resolve_marker(definition("decimal", None), {0: 1}, {0: "decimal"}, {0: 1}) is None
+    assert (
+        resolve_marker(definition("decimal", None), {0: 1}, {0: "decimal"}, {0: 1})
+        is None
+    )
 
 
 def test_resolve_marker_bullet_returns_its_character() -> None:
@@ -443,13 +473,20 @@ def test_resolve_marker_bullet_returns_its_character() -> None:
         ("o", "Courier New", "◦"),  # Word's default level-2 bullet
     ],
 )
-def test_resolve_marker_maps_symbol_font_bullets(lvl_text: str, font: str, expected: str) -> None:
-    assert resolve_marker(definition("bullet", lvl_text, font), {0: 1}, {}, {}) == expected
+def test_resolve_marker_maps_symbol_font_bullets(
+    lvl_text: str, font: str, expected: str
+) -> None:
+    assert (
+        resolve_marker(definition("bullet", lvl_text, font), {0: 1}, {}, {}) == expected
+    )
 
 
 def test_resolve_marker_keeps_unknown_symbol_bullet_raw() -> None:
     # Left for generated_bullets to catch.
-    assert resolve_marker(definition("bullet", "\uf021", "Wingdings"), {0: 1}, {}, {}) == "\uf021"
+    assert (
+        resolve_marker(definition("bullet", "\uf021", "Wingdings"), {0: 1}, {}, {})
+        == "\uf021"
+    )
 
 
 def test_resolve_marker_keeps_bullet_without_font_raw() -> None:
@@ -459,7 +496,9 @@ def test_resolve_marker_keeps_bullet_without_font_raw() -> None:
 
 def test_resolve_marker_does_not_map_numbered_levels() -> None:
     # A numbered level in a symbol font keeps its number as formatted.
-    marker = resolve_marker(definition("decimal", "%1.", "Wingdings"), {0: 7}, {0: "decimal"}, {})
+    marker = resolve_marker(
+        definition("decimal", "%1.", "Wingdings"), {0: 7}, {0: "decimal"}, {}
+    )
     assert marker == "7."
 
 
@@ -514,7 +553,9 @@ def test_resolve_marker_missing_format() -> None:
 
 
 def markers(numberer: Numberer, calls: list[tuple[int, int]]) -> list[str | None]:
-    return [numberer.next_list_info(num_id, ilvl).displayed_marker for num_id, ilvl in calls]
+    return [
+        numberer.next_list_info(num_id, ilvl).displayed_marker for num_id, ilvl in calls
+    ]
 
 
 def test_numberer_sample_numbered_list() -> None:
@@ -530,7 +571,12 @@ def test_numberer_sample_numbered_list() -> None:
 
 def test_numberer_sample_lists_are_independent() -> None:
     numberer = Numberer(SAMPLE_NUMBERING)
-    assert markers(numberer, [(3, 0), (5, 0), (3, 0), (5, 0)]) == ["1.", "1.", "2.", "2."]
+    assert markers(numberer, [(3, 0), (5, 0), (3, 0), (5, 0)]) == [
+        "1.",
+        "1.",
+        "2.",
+        "2.",
+    ]
 
 
 def test_numberer_sample_bullets() -> None:
@@ -659,7 +705,9 @@ def test_declared_numbering_follows_order_in_level_text() -> None:
 
 
 def test_declared_numbering_repeated_placeholder_gives_one_segment_each() -> None:
-    numberer = Numberer(numbering(abstract_num(1, lvl(0, "decimal", "%1-%1")) + num(1, 1)))
+    numberer = Numberer(
+        numbering(abstract_num(1, lvl(0, "decimal", "%1-%1")) + num(1, 1))
+    )
     assert declared(numberer, 1, 0) == ("decimal", ("decimal", "decimal"))
 
 
@@ -673,8 +721,7 @@ def test_declared_numbering_recorded_when_nothing_is_displayed() -> None:
     # The source declares a format even if it shows no marker.
     numberer = Numberer(
         numbering(
-            abstract_num(1, lvl(0, "decimal", None), lvl(1, "none", "%2."))
-            + num(1, 1)
+            abstract_num(1, lvl(0, "decimal", None), lvl(1, "none", "%2.")) + num(1, 1)
         )
     )
     no_text = numberer.next_list_info(1, 0)
@@ -695,14 +742,22 @@ def test_declared_numbering_recorded_when_nothing_is_displayed() -> None:
 SYMBOL_NUMBERING = numbering(
     abstract_num(
         22,
-        lvl(0, "bullet", "\uf0fc", font="Wingdings"),      # the real document's check mark
+        lvl(0, "bullet", "\uf0fc", font="Wingdings"),  # the real document's check mark
         lvl(1, "bullet", "\uf0b7", font="Symbol"),
-        lvl(2, "bullet", "\uf0fc"),                         # no font: left raw
+        lvl(2, "bullet", "\uf0fc"),  # no font: left raw
     )
     + num(22, 22)
     # List 23 replaces level 0 with a Symbol bullet; list 24 only restarts it.
-    + num(23, 22, '<w:lvlOverride w:ilvl="0">' + lvl(0, "bullet", "\uf0b7", font="Symbol") + "</w:lvlOverride>")
-    + num(24, 22, '<w:lvlOverride w:ilvl="0"><w:startOverride w:val="1"/></w:lvlOverride>')
+    + num(
+        23,
+        22,
+        '<w:lvlOverride w:ilvl="0">'
+        + lvl(0, "bullet", "\uf0b7", font="Symbol")
+        + "</w:lvlOverride>",
+    )
+    + num(
+        24, 22, '<w:lvlOverride w:ilvl="0"><w:startOverride w:val="1"/></w:lvlOverride>'
+    )
 )
 
 
@@ -742,4 +797,8 @@ WORD_DEFAULT_BULLETS = numbering(
 
 
 def test_numberer_maps_word_default_bullets() -> None:
-    assert markers(Numberer(WORD_DEFAULT_BULLETS), [(30, 0), (30, 1), (30, 2)]) == ["•", "◦", "▪"]
+    assert markers(Numberer(WORD_DEFAULT_BULLETS), [(30, 0), (30, 1), (30, 2)]) == [
+        "•",
+        "◦",
+        "▪",
+    ]

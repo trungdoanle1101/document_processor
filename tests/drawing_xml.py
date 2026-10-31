@@ -28,7 +28,7 @@ def pic(embed: str | None = "rId10", *, link: str | None = None) -> str:
     if link is not None:
         attrs += f' r:link="{link}"'
     return (
-        "<pic:pic><pic:nvPicPr><pic:cNvPr id=\"0\" name=\"image.png\"/><pic:cNvPicPr/></pic:nvPicPr>"
+        '<pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="image.png"/><pic:cNvPicPr/></pic:nvPicPr>'
         f"<pic:blipFill><a:blip{attrs}/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>"
         "<pic:spPr/></pic:pic>"
     )

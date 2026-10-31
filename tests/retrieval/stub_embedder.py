@@ -1,18 +1,5 @@
-"""A deterministic Embedder for tests: no model, no torch.
+"""A deterministic Embedder for tests: no model, each word hashed into a bucket."""
 
-Each word of the text (lowercased, split on non-word characters) counts once
-in a dense bucket and once at a sparse index, both picked by a CRC32 of the
-word. Texts sharing words therefore share vector weight, so a query made of
-a passage's words ranks that passage first, which is all the search tests
-need. It can produce a dense vector, a sparse one, or both, under any names.
-Queries and passages are encoded the same way; the stub records every call so
-a test can check which method a caller used.
-
-The identity follows from the settings, so two stubs built alike give the
-same vectors and the same identity, and stubs built differently do not.
-"""
-
-import re
 import zlib
 from collections import Counter
 from collections.abc import Mapping, Sequence
@@ -29,15 +16,13 @@ from document_processor.retrieval.embedding import (
     VectorSpec,
 )
 
-_WORD = re.compile(r"\w+")
-_SPARSE_INDEX_LIMIT = 2**31
-
-
-def word_ids(text: str) -> Counter[int]:
-    return Counter(zlib.crc32(word.encode("utf-8")) for word in _WORD.findall(text.lower()))
-
 
 class StubEmbedder:
+    """Texts sharing words get similar vectors. Records every call, so tests can check what was encoded.
+
+    dense or sparse may be None to leave that vector out, but not both.
+    """
+
     def __init__(
         self,
         *,
@@ -47,19 +32,23 @@ class StubEmbedder:
         needs_idf: bool = False,
         tokenizer: Tokenizer | None = None,
     ) -> None:
+        if dense is None and sparse is None:
+            raise ValueError(
+                "a stub embedder needs a dense vector, a sparse vector, or both"
+            )
         specs: dict[str, VectorSpec] = {}
         if dense is not None:
             specs[dense] = DenseVectorSpec(dimension=dimension)
         if sparse is not None:
             specs[sparse] = SparseVectorSpec(needs_idf=needs_idf)
-        if not specs:
-            raise ValueError("a stub needs a dense or a sparse vector")
-        self._dense_name, self._sparse_name, self._dimension = dense, sparse, dimension
-        self._vector_specs = MappingProxyType(specs)
+        self._dense = dense
+        self._dimension = dimension
+        self._sparse = sparse
+        self._vector_specs: Mapping[str, VectorSpec] = MappingProxyType(specs)
         self._tokenizer = tokenizer
-        self._identity = f"stub/{dense}:{dimension}/{sparse}:{'idf' if needs_idf else 'final'}"
-        self.passage_batches: list[tuple[str, ...]] = []
+        self._identity = f"stub/{dense or '-'}:{dimension}/{sparse or '-'}:{'idf' if needs_idf else 'final'}"
         self.queries: list[str] = []
+        self.passage_batches: list[list[str]] = []
 
     @property
     def identity(self) -> str:
@@ -75,26 +64,28 @@ class StubEmbedder:
 
     def encode_query(self, text: str) -> Embedding:
         self.queries.append(text)
-        return self._embed(text)
+        return self._encode(text)
 
     def encode_passages(self, texts: Sequence[str]) -> list[Embedding]:
-        self.passage_batches.append(tuple(texts))
-        return [self._embed(text) for text in texts]
+        self.passage_batches.append(list(texts))
+        return [self._encode(text) for text in texts]
 
-    def _embed(self, text: str) -> Embedding:
-        ids = word_ids(text)
+    def _encode(self, text: str) -> Embedding:
+        counts = Counter(_word_hash(word) for word in text.casefold().split())
         vectors: dict[str, Vector] = {}
-        if self._dense_name is not None:
-            dense = [0.0] * self._dimension
-            for word_id, count in ids.items():
-                dense[word_id % self._dimension] += count
-            if not ids:
-                dense[0] = 1.0  # a zero vector has no cosine similarity
-            vectors[self._dense_name] = DenseVector(values=tuple(dense))
-        if self._sparse_name is not None:
-            weights: Counter[int] = Counter()
-            for word_id, count in ids.items():
-                weights[word_id % _SPARSE_INDEX_LIMIT] += count
-            indices = tuple(sorted(weights))
-            vectors[self._sparse_name] = SparseVector(indices=indices, values=tuple(float(weights[i]) for i in indices))
-        return Embedding(vectors=vectors)
+        if self._dense is not None:
+            buckets = [0.0] * self._dimension
+            for word_hash, count in counts.items():
+                buckets[word_hash % self._dimension] += count
+            vectors[self._dense] = DenseVector(values=tuple(buckets))
+        if self._sparse is not None:
+            indices = tuple(sorted(counts))
+            vectors[self._sparse] = SparseVector(
+                indices=indices, values=tuple(float(counts[i]) for i in indices)
+            )
+        return Embedding(embedder_identity=self._identity, vectors=vectors)
+
+
+def _word_hash(word: str) -> int:
+    """Stable across runs and machines, unlike hash()."""
+    return zlib.crc32(word.encode("utf-8"))

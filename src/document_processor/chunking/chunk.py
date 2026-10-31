@@ -84,8 +84,10 @@ class Chunk:
         error_owner = f"chunk {self.id!r}"
 
         if self.token_count < 0:
-            raise ValueError(f"{error_owner}: required token_count >= 0, got token_count={self.token_count}")
-        
+            raise ValueError(
+                f"{error_owner}: required token_count >= 0, got token_count={self.token_count}"
+            )
+
         if not (0 <= self.start < self.end):
             raise ValueError(
                 f"{error_owner}: required 0 <= start < end, got start={self.start}, end={self.end}"

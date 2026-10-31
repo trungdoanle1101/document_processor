@@ -27,7 +27,9 @@ def test_every_profile_is_registered_under_its_own_name(name: str) -> None:
 
 
 def test_unknown_profile_lists_the_known_ones() -> None:
-    with pytest.raises(KeyError, match="unknown profile 'vn_regulaton'; known: vn_regulation"):
+    with pytest.raises(
+        KeyError, match="unknown profile 'vn_regulaton'; known: vn_regulation"
+    ):
         PROFILES.get("vn_regulaton")
 
 

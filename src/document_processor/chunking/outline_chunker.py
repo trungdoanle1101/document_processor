@@ -293,7 +293,7 @@ class OutlineChunker:
             raise ValueError(
                 f"{error_owner}: required breadcrumb_lead_in_words >= 0, got breadcrumb_lead_in_words={self.breadcrumb_lead_in_words}"
             )
-        
+
         limit = self.tokenizer.model_max_tokens
         if limit is not None and self.max_tokens > limit:
             raise ValueError(
@@ -352,7 +352,9 @@ def _cap_words(text: str, n: int) -> str:
     return " ".join(chosen_words) + suffix
 
 
-def _lead_in(document: LogicalDocument, node: LogicalNode, start: int, words: int) -> str | None:
+def _lead_in(
+    document: LogicalDocument, node: LogicalNode, start: int, words: int
+) -> str | None:
     """Opening words of a node without a title, when they come before the chunk at start"""
     index = node.start + 1
     if node.title is not None or words == 0 or not (index < node.end and index < start):

@@ -32,30 +32,64 @@ from tests.factories import (
 def full_document() -> LogicalDocument:
     """Every segment kind, front and end matter, nested nodes, optional fields set and unset.
 
-        0  text     CHÍNH PHỦ                    front matter
-        1  heading  Chương I QUY ĐỊNH CHUNG      chuong-I [1, 9)
-        2  heading  Điều 1. Phạm vi điều chỉnh     dieu-1 [2, 9)
-        3  text     Nghị định này quy định về:
-        4  heading  1.                               khoan-1 [4, 7)
-        5  text     Kiến trúc tổng thể.
-        6  image    (diagram)
-        7  heading  (no marker, no title)            khoan-2 [7, 9)
-        8  table    (two-row table)
-        9  text     Nơi nhận:                    end matter
+    0  text     CHÍNH PHỦ                    front matter
+    1  heading  Chương I QUY ĐỊNH CHUNG      chuong-I [1, 9)
+    2  heading  Điều 1. Phạm vi điều chỉnh     dieu-1 [2, 9)
+    3  text     Nghị định này quy định về:
+    4  heading  1.                               khoan-1 [4, 7)
+    5  text     Kiến trúc tổng thể.
+    6  image    (diagram)
+    7  heading  (no marker, no title)            khoan-2 [7, 9)
+    8  table    (two-row table)
+    9  text     Nơi nhận:                    end matter
     """
     nodes = (
-        make_logical_node(id="chuong-I", parent_id=None, level="chuong", number="I",
-                          marker="Chương I", title="QUY ĐỊNH CHUNG",
-                          head_block_ids=("pb2", "pb3"), start=1, end=9),
-        make_logical_node(id="chuong-I/dieu-1", parent_id="chuong-I", level="dieu", number="1",
-                          marker="Điều 1.", title="Phạm vi điều chỉnh",
-                          head_block_ids=("pb4",), start=2, end=9),
-        make_logical_node(id="chuong-I/dieu-1/khoan-1", parent_id="chuong-I/dieu-1",
-                          level="khoan", is_section=False, number="1", marker="1.", title=None,
-                          head_block_ids=("pb6",), start=4, end=7),
-        make_logical_node(id="chuong-I/dieu-1/khoan-2", parent_id="chuong-I/dieu-1",
-                          level="khoan", is_section=False, number=None, marker=None, title=None,
-                          head_block_ids=("pb8",), start=7, end=9),
+        make_logical_node(
+            id="chuong-I",
+            parent_id=None,
+            level="chuong",
+            number="I",
+            marker="Chương I",
+            title="QUY ĐỊNH CHUNG",
+            head_block_ids=("pb2", "pb3"),
+            start=1,
+            end=9,
+        ),
+        make_logical_node(
+            id="chuong-I/dieu-1",
+            parent_id="chuong-I",
+            level="dieu",
+            number="1",
+            marker="Điều 1.",
+            title="Phạm vi điều chỉnh",
+            head_block_ids=("pb4",),
+            start=2,
+            end=9,
+        ),
+        make_logical_node(
+            id="chuong-I/dieu-1/khoan-1",
+            parent_id="chuong-I/dieu-1",
+            level="khoan",
+            is_section=False,
+            number="1",
+            marker="1.",
+            title=None,
+            head_block_ids=("pb6",),
+            start=4,
+            end=7,
+        ),
+        make_logical_node(
+            id="chuong-I/dieu-1/khoan-2",
+            parent_id="chuong-I/dieu-1",
+            level="khoan",
+            is_section=False,
+            number=None,
+            marker=None,
+            title=None,
+            head_block_ids=("pb8",),
+            start=7,
+            end=9,
+        ),
     )
     segments = (
         make_text_segment(block_id="pb1", text="CHÍNH PHỦ"),
@@ -64,12 +98,16 @@ def full_document() -> LogicalDocument:
         make_text_segment(block_id="pb5", text="Nghị định này quy định về:"),
         heading_for(nodes[2]),
         make_text_segment(block_id="pb6", text="Kiến trúc tổng thể."),
-        make_image_segment(block_id="pb7", image=make_image_info(displayed_width_pt=None)),
+        make_image_segment(
+            block_id="pb7", image=make_image_info(displayed_width_pt=None)
+        ),
         heading_for(nodes[3]),
         make_table_segment(block_id="pb8", table=make_table_info()),
         make_text_segment(block_id="pb9", text="Nơi nhận:"),
     )
-    return make_logical_document(segments=segments, nodes=nodes, body_start=1, body_end=9)
+    return make_logical_document(
+        segments=segments, nodes=nodes, body_start=1, body_end=9
+    )
 
 
 def through_json(d: dict[str, Any]) -> dict[str, Any]:
@@ -123,8 +161,16 @@ def test_loaded_collections_are_tuples() -> None:
 def test_segment_kinds_survive() -> None:
     loaded = round_trip(full_document())
     assert [type(s).__name__ for s in loaded.segments] == [
-        "TextSegment", "HeadingSegment", "HeadingSegment", "TextSegment", "HeadingSegment",
-        "TextSegment", "ImageSegment", "HeadingSegment", "TableSegment", "TextSegment",
+        "TextSegment",
+        "HeadingSegment",
+        "HeadingSegment",
+        "TextSegment",
+        "HeadingSegment",
+        "TextSegment",
+        "ImageSegment",
+        "HeadingSegment",
+        "TableSegment",
+        "TextSegment",
     ]
 
 
@@ -146,8 +192,15 @@ def test_envelope() -> None:
 def test_document_fields() -> None:
     document = logical_document_to_dict(full_document())["document"]
     assert set(document) == {
-        "id", "physical_document_id", "source_file_hash", "profile_name",
-        "profile_version", "segments", "nodes", "body_start", "body_end",
+        "id",
+        "physical_document_id",
+        "source_file_hash",
+        "profile_name",
+        "profile_version",
+        "segments",
+        "nodes",
+        "body_start",
+        "body_end",
     }
     assert (document["body_start"], document["body_end"]) == (1, 9)
 
@@ -160,12 +213,20 @@ def test_derived_lookups_are_not_written() -> None:
 
 
 def test_text_segment_shape() -> None:
-    segments = through_json(logical_document_to_dict(full_document()))["document"]["segments"]
-    assert segments[3] == {"kind": "text", "block_id": "pb5", "text": "Nghị định này quy định về:"}
+    segments = through_json(logical_document_to_dict(full_document()))["document"][
+        "segments"
+    ]
+    assert segments[3] == {
+        "kind": "text",
+        "block_id": "pb5",
+        "text": "Nghị định này quy định về:",
+    }
 
 
 def test_heading_segment_shape() -> None:
-    segments = through_json(logical_document_to_dict(full_document()))["document"]["segments"]
+    segments = through_json(logical_document_to_dict(full_document()))["document"][
+        "segments"
+    ]
     assert segments[1] == {
         "kind": "heading",
         "block_id": "pb2",
@@ -176,12 +237,16 @@ def test_heading_segment_shape() -> None:
 
 
 def test_heading_segment_without_marker_or_title_writes_null() -> None:
-    segments = through_json(logical_document_to_dict(full_document()))["document"]["segments"]
+    segments = through_json(logical_document_to_dict(full_document()))["document"][
+        "segments"
+    ]
     assert (segments[7]["marker"], segments[7]["title"]) == (None, None)
 
 
 def test_image_segment_shape() -> None:
-    segments = through_json(logical_document_to_dict(full_document()))["document"]["segments"]
+    segments = through_json(logical_document_to_dict(full_document()))["document"][
+        "segments"
+    ]
     image = segments[6]
     assert set(image) == {"kind", "block_id", "image"}
     assert image["kind"] == "image"
@@ -190,7 +255,9 @@ def test_image_segment_shape() -> None:
 
 
 def test_table_segment_shape() -> None:
-    segments = through_json(logical_document_to_dict(full_document()))["document"]["segments"]
+    segments = through_json(logical_document_to_dict(full_document()))["document"][
+        "segments"
+    ]
     table = segments[8]
     assert set(table) == {"kind", "block_id", "table"}
     assert table["kind"] == "table"

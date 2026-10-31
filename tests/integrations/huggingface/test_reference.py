@@ -63,7 +63,9 @@ def test_empty_hub_model_id_is_refused() -> None:
     ],
 )
 def test_commit_hash_must_be_40_lower_case_hex(commit_hash: str) -> None:
-    with pytest.raises(ValueError, match="^commit_hash must be 40-character lower-case hex, got ") as raised:
+    with pytest.raises(
+        ValueError, match="^commit_hash must be 40-character lower-case hex, got "
+    ) as raised:
         ModelReference(hub_model_id="BAAI/bge-m3", commit_hash=commit_hash)
     assert repr(commit_hash) in str(raised.value)
 
@@ -83,7 +85,9 @@ def test_references_compare_by_value() -> None:
 
 
 def test_references_can_be_dictionary_keys() -> None:
-    assert {BGE_M3: "folder"}[ModelReference(hub_model_id="BAAI/bge-m3", commit_hash=COMMIT)] == "folder"
+    assert {BGE_M3: "folder"}[
+        ModelReference(hub_model_id="BAAI/bge-m3", commit_hash=COMMIT)
+    ] == "folder"
 
 
 # ============================================================ model_reference.json
@@ -107,20 +111,30 @@ def test_file_is_indented_json_ending_in_a_newline(tmp_path: Path) -> None:
 
 
 def test_writing_replaces_an_existing_file(tmp_path: Path) -> None:
-    write_model_reference(tmp_path, ModelReference(hub_model_id="org/old", commit_hash="0" * 40))
+    write_model_reference(
+        tmp_path, ModelReference(hub_model_id="org/old", commit_hash="0" * 40)
+    )
     write_model_reference(tmp_path, BGE_M3)
     assert read_model_reference(tmp_path) == BGE_M3
 
 
 def test_extra_keys_are_ignored(tmp_path: Path) -> None:
     # Room for later fields (who downloaded it, when) without breaking older readers.
-    write_json(tmp_path, {"hub_model_id": "BAAI/bge-m3", "commit_hash": COMMIT, "downloaded_at": "2026-10-28"})
+    write_json(
+        tmp_path,
+        {
+            "hub_model_id": "BAAI/bge-m3",
+            "commit_hash": COMMIT,
+            "downloaded_at": "2026-10-28",
+        },
+    )
     assert read_model_reference(tmp_path) == BGE_M3
 
 
 def test_missing_file_says_how_to_get_one(tmp_path: Path) -> None:
     with pytest.raises(
-        FileNotFoundError, match="^cannot find model_reference.json in .*download_model.*copy the whole folder"
+        FileNotFoundError,
+        match="^cannot find model_reference.json in .*download_model.*copy the whole folder",
     ) as raised:
         read_model_reference(tmp_path)
     assert str(tmp_path) in str(raised.value)
@@ -133,7 +147,9 @@ def test_missing_folder_is_a_missing_file(tmp_path: Path) -> None:
 
 
 def test_file_that_is_not_json_is_refused(tmp_path: Path) -> None:
-    (tmp_path / MODEL_REFERENCE_FILE).write_text("{hub_model_id: BAAI/bge-m3", encoding="utf-8")
+    (tmp_path / MODEL_REFERENCE_FILE).write_text(
+        "{hub_model_id: BAAI/bge-m3", encoding="utf-8"
+    )
     with pytest.raises(ValueError, match="is not valid JSON") as raised:
         read_model_reference(tmp_path)
     assert str(tmp_path / MODEL_REFERENCE_FILE) in str(raised.value)
@@ -152,16 +168,22 @@ def test_file_that_is_not_json_is_refused(tmp_path: Path) -> None:
         None,
     ],
 )
-def test_file_without_both_fields_is_malformed(tmp_path: Path, contents: object) -> None:
+def test_file_without_both_fields_is_malformed(
+    tmp_path: Path, contents: object
+) -> None:
     write_json(tmp_path, contents)
-    with pytest.raises(ValueError, match="is malformed: needs hub_model_id and commit_hash$") as raised:
+    with pytest.raises(
+        ValueError, match="is malformed: needs hub_model_id and commit_hash$"
+    ) as raised:
         read_model_reference(tmp_path)
     assert str(tmp_path / MODEL_REFERENCE_FILE) in str(raised.value)
 
 
 def test_file_with_a_bad_commit_hash_names_the_file(tmp_path: Path) -> None:
     write_json(tmp_path, {"hub_model_id": "BAAI/bge-m3", "commit_hash": "main"})
-    with pytest.raises(ValueError, match="commit_hash must be 40-character lower-case hex, got 'main'$") as raised:
+    with pytest.raises(
+        ValueError, match="commit_hash must be 40-character lower-case hex, got 'main'$"
+    ) as raised:
         read_model_reference(tmp_path)
     assert str(raised.value).startswith(f"{tmp_path / MODEL_REFERENCE_FILE}: ")
 
@@ -176,7 +198,9 @@ def test_file_with_an_empty_hub_model_id_names_the_file(tmp_path: Path) -> None:
 def test_a_commit_hash_that_is_not_a_string_is_malformed(tmp_path: Path) -> None:
     # The pattern match raises TypeError on a number, which reads as malformed.
     write_json(tmp_path, {"hub_model_id": "BAAI/bge-m3", "commit_hash": 5617})
-    with pytest.raises(ValueError, match="is malformed: needs hub_model_id and commit_hash$"):
+    with pytest.raises(
+        ValueError, match="is malformed: needs hub_model_id and commit_hash$"
+    ):
         read_model_reference(tmp_path)
 
 

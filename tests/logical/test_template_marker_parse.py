@@ -34,7 +34,10 @@ def slot(*styles: str) -> Slot:
         ("{arabic}.", (slot("arabic"), ".")),
         ("{arabic}.{arabic}", (slot("arabic"), ".", slot("arabic"))),
         ("{arabic}.{arabic}.", (slot("arabic"), ".", slot("arabic"), ".")),
-        ("{arabic}.{arabic}.{arabic}", (slot("arabic"), ".", slot("arabic"), ".", slot("arabic"))),
+        (
+            "{arabic}.{arabic}.{arabic}",
+            (slot("arabic"), ".", slot("arabic"), ".", slot("arabic")),
+        ),
         ("{lower_vn})", (slot("lower_vn"), ")")),
         ("({lower_roman})", ("(", slot("lower_roman"), ")")),
         ("Phụ lục {upper_latin}", ("Phụ", " ", "lục", " ", slot("upper_latin"))),
@@ -43,7 +46,9 @@ def slot(*styles: str) -> Slot:
         ("{upper_latin}.{arabic}", (slot("upper_latin"), ".", slot("arabic"))),
     ],
 )
-def test_parses_templates_with_slots(template: str, expected: tuple[TemplatePart, ...]) -> None:
+def test_parses_templates_with_slots(
+    template: str, expected: tuple[TemplatePart, ...]
+) -> None:
     assert parse_template(template) == expected
 
 
@@ -56,7 +61,9 @@ def test_parses_templates_with_slots(template: str, expected: tuple[TemplatePart
         ("x", ("x",)),
     ],
 )
-def test_parses_word_only_templates(template: str, expected: tuple[TemplatePart, ...]) -> None:
+def test_parses_word_only_templates(
+    template: str, expected: tuple[TemplatePart, ...]
+) -> None:
     assert parse_template(template) == expected
 
 
@@ -65,8 +72,16 @@ def test_returns_a_tuple() -> None:
 
 
 def test_slot_keeps_the_order_of_alternatives() -> None:
-    assert parse_template("Chương {arabic|upper_roman}") == ("Chương", " ", slot("arabic", "upper_roman"))
-    assert parse_template("Chương {upper_roman|arabic}") == ("Chương", " ", slot("upper_roman", "arabic"))
+    assert parse_template("Chương {arabic|upper_roman}") == (
+        "Chương",
+        " ",
+        slot("arabic", "upper_roman"),
+    )
+    assert parse_template("Chương {upper_roman|arabic}") == (
+        "Chương",
+        " ",
+        slot("upper_roman", "arabic"),
+    )
 
 
 def test_slot_with_many_alternatives() -> None:
@@ -87,23 +102,50 @@ def test_neighbouring_literal_characters_merge_into_one_part() -> None:
 
 
 def test_a_run_of_spaces_becomes_one_space_part() -> None:
-    assert parse_template("Chương  {upper_roman}") == ("Chương", " ", slot("upper_roman"))
+    assert parse_template("Chương  {upper_roman}") == (
+        "Chương",
+        " ",
+        slot("upper_roman"),
+    )
     assert parse_template("MỞ     ĐẦU") == ("MỞ", " ", "ĐẦU")
 
 
 def test_space_after_a_slot_is_kept() -> None:
-    assert parse_template("{arabic} {lower_vn})") == (slot("arabic"), " ", slot("lower_vn"), ")")
-    assert parse_template("Chương {upper_roman} PHẦN") == ("Chương", " ", slot("upper_roman"), " ", "PHẦN")
+    assert parse_template("{arabic} {lower_vn})") == (
+        slot("arabic"),
+        " ",
+        slot("lower_vn"),
+        ")",
+    )
+    assert parse_template("Chương {upper_roman} PHẦN") == (
+        "Chương",
+        " ",
+        slot("upper_roman"),
+        " ",
+        "PHẦN",
+    )
 
 
 def test_space_between_slots_separates_them() -> None:
     # Not "side by side": the blanks are the separator.
-    assert parse_template("{arabic} - {arabic}") == (slot("arabic"), " ", "-", " ", slot("arabic"))
+    assert parse_template("{arabic} - {arabic}") == (
+        slot("arabic"),
+        " ",
+        "-",
+        " ",
+        slot("arabic"),
+    )
 
 
 @pytest.mark.parametrize(
     "template",
-    ["Điều {arabic}.", "Chương  {upper_roman}", "{arabic} {lower_vn})", "MỞ   ĐẦU", "a b  c   d"],
+    [
+        "Điều {arabic}.",
+        "Chương  {upper_roman}",
+        "{arabic} {lower_vn})",
+        "MỞ   ĐẦU",
+        "a b  c   d",
+    ],
 )
 def test_no_literal_part_contains_a_space(template: str) -> None:
     for part in parse_template(template):
@@ -111,14 +153,18 @@ def test_no_literal_part_contains_a_space(template: str) -> None:
             assert " " not in part, part
 
 
-@pytest.mark.parametrize("template", ["Điều {arabic}.", "MỞ  ĐẦU", "{arabic} {lower_vn})"])
+@pytest.mark.parametrize(
+    "template", ["Điều {arabic}.", "MỞ  ĐẦU", "{arabic} {lower_vn})"]
+)
 def test_never_two_space_parts_in_a_row(template: str) -> None:
     parts = parse_template(template)
     for left, right in zip(parts, parts[1:]):
         assert not (left == " " and right == " ")
 
 
-@pytest.mark.parametrize("template", ["Điều {arabic}.", "Chương {upper_roman}", "{arabic}.", "MỞ ĐẦU"])
+@pytest.mark.parametrize(
+    "template", ["Điều {arabic}.", "Chương {upper_roman}", "{arabic}.", "MỞ ĐẦU"]
+)
 def test_no_empty_parts(template: str) -> None:
     for part in parse_template(template):
         assert part != ""
@@ -179,7 +225,9 @@ def test_spaces_only_template(template: str) -> None:
         parse_template(template)
 
 
-@pytest.mark.parametrize("template", [" Điều {arabic}.", "Điều {arabic}. ", "  MỞ ĐẦU", "MỞ ĐẦU  "])
+@pytest.mark.parametrize(
+    "template", [" Điều {arabic}.", "Điều {arabic}. ", "  MỞ ĐẦU", "MỞ ĐẦU  "]
+)
 def test_leading_or_trailing_space(template: str) -> None:
     assert_error(template, "leading or trailing")
 
@@ -281,12 +329,18 @@ def test_slot_errors_are_reported_before_later_brace_errors() -> None:
 # ---------- the finished parts
 
 
-@pytest.mark.parametrize("template", ["{arabic}{arabic}", "{arabic}{lower_vn})", "Điều {a}{b}.", "{a}{b}{c}."])
+@pytest.mark.parametrize(
+    "template",
+    ["{arabic}{arabic}", "{arabic}{lower_vn})", "Điều {a}{b}.", "{a}{b}{c}."],
+)
 def test_two_slots_side_by_side(template: str) -> None:
     assert_error(template, "side by side")
 
 
-@pytest.mark.parametrize("template", ["{arabic}", "{upper_roman|arabic}", "{arabic} {lower_vn}", "{a} {b} {c}"])
+@pytest.mark.parametrize(
+    "template",
+    ["{arabic}", "{upper_roman|arabic}", "{arabic} {lower_vn}", "{a} {b} {c}"],
+)
 def test_no_literal_text(template: str) -> None:
     # Would match every line that starts with a number.
     assert_error(template, "no literal text")

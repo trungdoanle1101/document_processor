@@ -24,7 +24,12 @@ import pytest
 
 from document_processor.chunking.chunk import Chunk, PathStep
 from document_processor.chunking.chunker import Chunker
-from document_processor.chunking.outline_chunker import OutlineChunker, _ChunkingRun, _path_to, _Piece
+from document_processor.chunking.outline_chunker import (
+    OutlineChunker,
+    _ChunkingRun,
+    _path_to,
+    _Piece,
+)
 from document_processor.chunking.tokenizer import WordTokenizer
 from document_processor.core.models import (
     BlockType,
@@ -63,14 +68,24 @@ def plain(*items: str | None, body: tuple[int, int] | None = None) -> LogicalDoc
     The whole document is body unless ``body`` gives (body_start, body_end).
     """
     segments: list[Segment] = [
-        make_image_segment(block_id=f"pb{i}") if item is None else make_text_segment(block_id=f"pb{i}", text=item)
+        make_image_segment(block_id=f"pb{i}")
+        if item is None
+        else make_text_segment(block_id=f"pb{i}", text=item)
         for i, item in enumerate(items, start=1)
     ]
     body_start, body_end = body if body is not None else (0, len(segments))
-    return make_logical_document(segments=tuple(segments), body_start=body_start, body_end=body_end)
+    return make_logical_document(
+        segments=tuple(segments), body_start=body_start, body_end=body_end
+    )
 
 
-def fits(chunker: OutlineChunker, document: LogicalDocument, owner_id: str | None, start: int, end: int) -> bool:
+def fits(
+    chunker: OutlineChunker,
+    document: LogicalDocument,
+    owner_id: str | None,
+    start: int,
+    end: int,
+) -> bool:
     """Whether segments [start, end), owned by owner_id, fit the chunker's budget."""
     piece = _Piece(part="body", owner_id=owner_id, start=start, end=end)
     return _ChunkingRun(chunker, document)._fits(piece)
@@ -99,34 +114,41 @@ class Blocks:
 
     def image(self) -> "Blocks":
         self.blocks.append(
-            make_block(id=self._next_id(), block_type=BlockType.IMAGE, text="", image_info=make_image_info())
+            make_block(
+                id=self._next_id(),
+                block_type=BlockType.IMAGE,
+                text="",
+                image_info=make_image_info(),
+            )
         )
         return self
 
     def build(self) -> LogicalDocument:
-        return build_logical_document(VN_REGULATION, make_document(blocks=tuple(self.blocks)))
+        return build_logical_document(
+            VN_REGULATION, make_document(blocks=tuple(self.blocks))
+        )
 
 
 def regulation() -> LogicalDocument:
     """A small regulation built by the real profile.
 
-        0  BAN HÀNH QUY ĐỊNH                              front matter
-        1  # Chương I QUY ĐỊNH CHUNG                      n0 chuong [1, 15)
-        2  # Điều 1. Phạm vi điều chỉnh                   n1 dieu   [2, 7)
-        3  Quy định này quy định về quản lý kiến trúc
-        4  (image)
-        5  # 1.                                           n2 khoan  [5, 7)
-        6  Áp dụng cho toàn hệ thống
-        7  # Điều 2. Giải thích từ ngữ                    n3 dieu   [7, 15)
-        8  # 1.                                           n4 khoan  [8, 10)
-        9  Hệ thống là tập hợp các thành phần
-        10 # 2.                                           n5 khoan  [10, 15)
-        11 Kiến trúc gồm:
-        12 # a)                                           n6 diem   [12, 15)
-        13 Kiến trúc ứng dụng
-        14 (table)                                       (tables never close a node)
-        15 Nơi nhận:                                      end matter
-        16 Lưu VT
+    0  BAN HÀNH QUY ĐỊNH                              front matter
+    1  # Chương I QUY ĐỊNH CHUNG                      n0 chuong [1, 15)
+    2  # Điều 1. Phạm vi điều chỉnh                   n1 dieu   [2, 7)
+    3  Quy định này quy định về quản lý kiến trúc
+    4  (image)
+    5  # 1.                                           n2 khoan  [5, 7)
+    6  Áp dụng cho toàn hệ thống
+    7  # Điều 2. Giải thích từ ngữ                    n3 dieu   [7, 15)
+    8  # 1.                                           n4 khoan  [8, 10)
+    9  Hệ thống là tập hợp các thành phần
+    10 # 2.                                           n5 khoan  [10, 15)
+    11 Kiến trúc gồm:
+    12 # a)                                           n6 diem   [12, 15)
+    13 Kiến trúc ứng dụng
+    14 (table)                                       (tables never close a node)
+    15 Nơi nhận:                                      end matter
+    16 Lưu VT
     """
     return (
         Blocks()
@@ -174,16 +196,24 @@ class LimitedTokenizer(WordTokenizer):
 
 
 def test_budget_at_the_models_limit_is_accepted() -> None:
-    assert OutlineChunker(tokenizer=LimitedTokenizer(100), max_tokens=100).max_tokens == 100
+    assert (
+        OutlineChunker(tokenizer=LimitedTokenizer(100), max_tokens=100).max_tokens
+        == 100
+    )
 
 
 def test_budget_above_the_models_limit_is_rejected() -> None:
-    with pytest.raises(ValueError, match="max_tokens=101 is above the tokenizer's model limit of 100"):
+    with pytest.raises(
+        ValueError, match="max_tokens=101 is above the tokenizer's model limit of 100"
+    ):
         OutlineChunker(tokenizer=LimitedTokenizer(100), max_tokens=101)
 
 
 def test_a_tokenizer_without_a_limit_allows_any_budget() -> None:
-    assert OutlineChunker(tokenizer=LimitedTokenizer(None), max_tokens=10**6).max_tokens == 10**6
+    assert (
+        OutlineChunker(tokenizer=LimitedTokenizer(None), max_tokens=10**6).max_tokens
+        == 10**6
+    )
 
 
 def test_breadcrumb_is_not_counted_by_default() -> None:
@@ -193,7 +223,9 @@ def test_breadcrumb_is_not_counted_by_default() -> None:
 # ============================================================ _path_to
 
 
-def path_without_lead_ins(document: LogicalDocument, node_id: str | None) -> tuple[PathStep, ...]:
+def path_without_lead_ins(
+    document: LogicalDocument, node_id: str | None
+) -> tuple[PathStep, ...]:
     """The path structure alone: lead-ins off, start past the end."""
     return _path_to(document, node_id, start=len(document.segments), lead_in_words=0)
 
@@ -204,7 +236,14 @@ def test_no_owner_no_path() -> None:
 
 def test_path_of_a_root() -> None:
     assert path_without_lead_ins(regulation(), "n0") == (
-        PathStep(node_id="n0", level="chuong", number="I", marker="Chương I", title="QUY ĐỊNH CHUNG", start=1),
+        PathStep(
+            node_id="n0",
+            level="chuong",
+            number="I",
+            marker="Chương I",
+            title="QUY ĐỊNH CHUNG",
+            start=1,
+        ),
     )
 
 
@@ -216,7 +255,12 @@ def test_path_is_root_first_owner_last() -> None:
         ("n5", "khoan", "2", "2.", 10),
         ("n6", "diem", "a", "a)", 12),
     ]
-    assert [s.label for s in path] == ["Chương I QUY ĐỊNH CHUNG", "Điều 2. Giải thích từ ngữ", "2.", "a)"]
+    assert [s.label for s in path] == [
+        "Chương I QUY ĐỊNH CHUNG",
+        "Điều 2. Giải thích từ ngữ",
+        "2.",
+        "a)",
+    ]
 
 
 def test_unknown_owner_raises() -> None:
@@ -241,7 +285,9 @@ def test_fits_counts_headings_inside_the_range() -> None:
 
 
 def test_fits_ignores_the_breadcrumb_by_default() -> None:
-    assert fits(chunker(8), regulation(), "n4", 9, 10)  # 8 words; the 12-word breadcrumb is not counted
+    assert fits(
+        chunker(8), regulation(), "n4", 9, 10
+    )  # 8 words; the 12-word breadcrumb is not counted
 
 
 def test_fits_counts_the_breadcrumb_when_asked() -> None:
@@ -297,7 +343,9 @@ def test_oversized_segment_is_a_chunk_by_itself() -> None:
     ],
     ids=["first", "last", "alone", "two-in-a-row"],
 )
-def test_oversized_segment_anywhere(items: tuple[str, ...], expected: list[tuple[int, int]]) -> None:
+def test_oversized_segment_anywhere(
+    items: tuple[str, ...], expected: list[tuple[int, int]]
+) -> None:
     assert ranges(chunker(3).chunk(plain(*items))) == expected
 
 
@@ -332,7 +380,9 @@ def test_empty_document_gives_no_chunks() -> None:
 
 def test_parts_are_never_mixed() -> None:
     # Everything would fit in one chunk, but each part is chunked on its own.
-    chunks = chunker(100).chunk(plain("CHÍNH PHỦ", "Nội dung", "Nơi nhận:", body=(1, 2)))
+    chunks = chunker(100).chunk(
+        plain("CHÍNH PHỦ", "Nội dung", "Nơi nhận:", body=(1, 2))
+    )
     assert [(c.part, c.start, c.end) for c in chunks] == [
         ("front_matter", 0, 1),
         ("body", 1, 2),
@@ -365,14 +415,27 @@ def test_chunk_fields() -> None:
 def test_block_ids_are_unique_and_in_order() -> None:
     # "1. Áp dụng…" gives a heading segment and a text segment from the same block.
     document = regulation()
-    body = [c for c in chunker(100, keep_sections_apart=False).chunk(document) if c.part == "body"]
+    body = [
+        c
+        for c in chunker(100, keep_sections_apart=False).chunk(document)
+        if c.part == "body"
+    ]
     all_ids = [block_id for c in body for block_id in c.block_ids]
     assert len(all_ids) == len(set(all_ids))
-    assert body[0].block_ids[:4] == ("pb2", "pb4", "pb5", "pb6")  # pb3 (the title) is in head_block_ids only
+    assert body[0].block_ids[:4] == (
+        "pb2",
+        "pb4",
+        "pb5",
+        "pb6",
+    )  # pb3 (the title) is in head_block_ids only
 
 
 def test_text_keeps_headings_where_they_are() -> None:
-    (body,) = [c for c in chunker(100, keep_sections_apart=False).chunk(regulation()) if c.part == "body"]
+    (body,) = [
+        c
+        for c in chunker(100, keep_sections_apart=False).chunk(regulation())
+        if c.part == "body"
+    ]
     assert body.text.splitlines()[:4] == [
         "Chương I QUY ĐỊNH CHUNG",
         "Điều 1. Phạm vi điều chỉnh",
@@ -390,7 +453,9 @@ def test_chunks_cover_every_content_segment_once_and_in_order(
     max_tokens: int, include_breadcrumb_in_size: bool
 ) -> None:
     document = regulation()
-    chunks = chunker(max_tokens, include_breadcrumb_in_size=include_breadcrumb_in_size).chunk(document)
+    chunks = chunker(
+        max_tokens, include_breadcrumb_in_size=include_breadcrumb_in_size
+    ).chunk(document)
 
     # in order, no overlap
     assert all(a.end <= b.start for a, b in zip(chunks, chunks[1:]))
@@ -418,7 +483,6 @@ def test_only_single_segments_go_over_the_budget(max_tokens: int) -> None:
             assert chunk.end - chunk.start == 1, (chunk.start, chunk.end, chunk.text)
 
 
-
 # ============================================================ structure
 #
 # Node sizes in regulation(), rendered with their headings (words):
@@ -426,7 +490,9 @@ def test_only_single_segments_go_over_the_budget(max_tokens: int) -> None:
 #   (the table renders as a grid, "TT | Nội dung": each "|" counts as a word)
 
 
-def body_chunks(max_tokens: int, **options: Any) -> list[tuple[tuple[int, int], str | None, tuple[str, ...]]]:
+def body_chunks(
+    max_tokens: int, **options: Any
+) -> list[tuple[tuple[int, int], str | None, tuple[str, ...]]]:
     """(range, owner, context) of each body chunk of regulation().
 
     context = the headings contextualize() puts in front of the text: the
@@ -480,7 +546,11 @@ def test_descends_only_where_needed() -> None:
     assert body_chunks(20) == [
         ((2, 5), "n1", (CHUONG,)),  # Điều 1's heading, its lead-in and the image
         ((5, 7), "n2", (CHUONG, DIEU_1)),
-        ((7, 10), "n3", (CHUONG,)),  # Điều 2's heading merged with khoản 1, owned by Điều 2
+        (
+            (7, 10),
+            "n3",
+            (CHUONG,),
+        ),  # Điều 2's heading merged with khoản 1, owned by Điều 2
         ((10, 15), "n5", (CHUONG, DIEU_2)),
     ]
 
@@ -488,7 +558,10 @@ def test_descends_only_where_needed() -> None:
 def test_lead_in_is_owned_by_the_parent() -> None:
     (lead_in, *_) = chunker(20).chunk(regulation())[1:]
     assert lead_in.node_id == "n1"
-    assert lead_in.text == "Điều 1. Phạm vi điều chỉnh\nQuy định này quy định về quản lý kiến trúc"
+    assert (
+        lead_in.text
+        == "Điều 1. Phạm vi điều chỉnh\nQuy định này quy định về quản lý kiến trúc"
+    )
 
 
 def test_a_heading_that_fits_nothing_else_is_only_in_breadcrumbs() -> None:
@@ -496,13 +569,18 @@ def test_a_heading_that_fits_nothing_else_is_only_in_breadcrumbs() -> None:
     # and every chunk under Điều 2 carries it in its breadcrumb.
     chunks = chunker(12).chunk(regulation())
     assert all("Điều 2." not in c.text for c in chunks)
-    assert all(DIEU_2 in context(c) for c in chunks if c.start >= 7 and c.part == "body")
+    assert all(
+        DIEU_2 in context(c) for c in chunks if c.start >= 7 and c.part == "body"
+    )
 
 
 def test_a_heading_merged_with_its_first_child_stays_in_the_text() -> None:
     chunks = chunker(20).chunk(regulation())
     (merged,) = [c for c in chunks if c.start == 7]
-    assert merged.text.splitlines()[:2] == [DIEU_2, "1. Hệ thống là tập hợp các thành phần"]
+    assert merged.text.splitlines()[:2] == [
+        DIEU_2,
+        "1. Hệ thống là tập hợp các thành phần",
+    ]
     assert context(merged) == (CHUONG,)
     assert merged.headings == (CHUONG, DIEU_2)  # the breadcrumb still names the owner
 
@@ -510,8 +588,16 @@ def test_a_heading_merged_with_its_first_child_stays_in_the_text() -> None:
 def test_a_leaf_that_does_not_fit_is_split_inside_its_own_range() -> None:
     # Điểm a (15) has no children: split by size, both pieces owned by it.
     assert body_chunks(12)[-2:] == [
-        ((12, 14), "n6", (CHUONG, DIEU_2, "2. Kiến trúc gồm:")),  # starts with its own heading "a)"
-        ((14, 15), "n6", (CHUONG, DIEU_2, "2. Kiến trúc gồm:", "a) Kiến trúc ứng dụng")),  # the table
+        (
+            (12, 14),
+            "n6",
+            (CHUONG, DIEU_2, "2. Kiến trúc gồm:"),
+        ),  # starts with its own heading "a)"
+        (
+            (14, 15),
+            "n6",
+            (CHUONG, DIEU_2, "2. Kiến trúc gồm:", "a) Kiến trúc ứng dụng"),
+        ),  # the table
     ]
 
 
@@ -521,22 +607,40 @@ def test_a_heading_split_from_its_text_moves_to_the_breadcrumb() -> None:
 
 
 def outlined(
-    *layout: tuple[str, str | None, int, int], n_segments: int, sections: tuple[str, ...] = ()
+    *layout: tuple[str, str | None, int, int],
+    n_segments: int,
+    sections: tuple[str, ...] = (),
 ) -> LogicalDocument:
     """A document whose nodes are (id, parent, start, end); headings at node starts, two-word text elsewhere.
 
     Nodes are items unless named in ``sections``. The whole document is body.
     """
     nodes = tuple(
-        make_logical_node(id=node_id, parent_id=parent, level="x", is_section=node_id in sections, number=None,
-                          marker=f"[{node_id}]", title=None, head_block_ids=(f"h-{node_id}",), start=start, end=end)
+        make_logical_node(
+            id=node_id,
+            parent_id=parent,
+            level="x",
+            is_section=node_id in sections,
+            number=None,
+            marker=f"[{node_id}]",
+            title=None,
+            head_block_ids=(f"h-{node_id}",),
+            start=start,
+            end=end,
+        )
         for node_id, parent, start, end in layout
     )
     segments: list[Segment] = []
     for index in range(n_segments):
         starting = [n for n in nodes if n.start == index]
-        segments.append(heading_for(starting[0]) if starting else make_text_segment(block_id=f"pb{index}", text=f"w{index} w{index}"))
-    return make_logical_document(segments=tuple(segments), nodes=nodes, body_start=0, body_end=n_segments)
+        segments.append(
+            heading_for(starting[0])
+            if starting
+            else make_text_segment(block_id=f"pb{index}", text=f"w{index} w{index}")
+        )
+    return make_logical_document(
+        segments=tuple(segments), nodes=nodes, body_start=0, body_end=n_segments
+    )
 
 
 def test_text_after_the_last_child_is_owned_by_the_parent() -> None:
@@ -545,14 +649,20 @@ def test_text_after_the_last_child_is_owned_by_the_parent() -> None:
     chunks = chunker(4).chunk(document)
     assert [((c.start, c.end), c.node_id, context(c)) for c in chunks] == [
         ((0, 2), "a", ()),
-        ((2, 4), "a/1", ("[a] w1 w1",)),  # a's lead-in (segment 1) comes before the chunk
+        (
+            (2, 4),
+            "a/1",
+            ("[a] w1 w1",),
+        ),  # a's lead-in (segment 1) comes before the chunk
         ((4, 5), "a", ("[a] w1 w1",)),  # after a/1, so a's heading is in the breadcrumb
     ]
 
 
 def test_text_between_children_is_owned_by_the_parent() -> None:
     #   0 [a]  1 [a/1]  2 text  3 text (between)  4 [a/2]  5 text
-    document = outlined(("a", None, 0, 6), ("a/1", "a", 1, 3), ("a/2", "a", 4, 6), n_segments=6)
+    document = outlined(
+        ("a", None, 0, 6), ("a/1", "a", 1, 3), ("a/2", "a", 4, 6), n_segments=6
+    )
     assert [((c.start, c.end), c.node_id) for c in chunker(4).chunk(document)] == [
         ((0, 3), "a"),  # a's heading with a/1 (4 words)
         ((3, 4), "a"),  # the text between; adding a/2 would make 5
@@ -563,7 +673,9 @@ def test_text_between_children_is_owned_by_the_parent() -> None:
 def test_body_text_outside_every_root_is_owned_by_nothing() -> None:
     #   0 text  1 [a]  2 text  3 text (after the root)  4 [b]  5 text
     document = outlined(("a", None, 1, 3), ("b", None, 4, 6), n_segments=6)
-    assert [((c.start, c.end), c.node_id, context(c)) for c in chunker(3).chunk(document)] == [
+    assert [
+        ((c.start, c.end), c.node_id, context(c)) for c in chunker(3).chunk(document)
+    ] == [
         ((0, 1), None, ()),
         ((1, 3), "a", ()),
         ((3, 4), None, ()),
@@ -573,7 +685,13 @@ def test_body_text_outside_every_root_is_owned_by_nothing() -> None:
 
 def test_small_siblings_are_merged_under_their_parent() -> None:
     #   0 [a]  1 [a/1]  2 text  3 [a/2]  4 text  5 [a/3]  6 text      each child: 3 words, a: 10
-    document = outlined(("a", None, 0, 7), ("a/1", "a", 1, 3), ("a/2", "a", 3, 5), ("a/3", "a", 5, 7), n_segments=7)
+    document = outlined(
+        ("a", None, 0, 7),
+        ("a/1", "a", 1, 3),
+        ("a/2", "a", 3, 5),
+        ("a/3", "a", 5, 7),
+        n_segments=7,
+    )
     assert [((c.start, c.end), c.node_id) for c in chunker(7).chunk(document)] == [
         ((0, 5), "a"),  # heading + a/1 + a/2 = 7
         ((5, 7), "a/3"),  # alone: owned by it
@@ -582,7 +700,9 @@ def test_small_siblings_are_merged_under_their_parent() -> None:
 
 def test_a_group_never_cuts_a_child() -> None:
     # a/2 (5 words) does not fit after [a] + a/1 (4) in 6, so the group closes before it, never inside it.
-    document = outlined(("a", None, 0, 6), ("a/1", "a", 1, 3), ("a/2", "a", 3, 6), n_segments=6)
+    document = outlined(
+        ("a", None, 0, 6), ("a/1", "a", 1, 3), ("a/2", "a", 3, 6), n_segments=6
+    )
     assert [((c.start, c.end), c.node_id) for c in chunker(6).chunk(document)] == [
         ((0, 3), "a"),
         ((3, 6), "a/2"),
@@ -608,17 +728,24 @@ def test_chunks_never_cut_through_a_node(max_tokens: int) -> None:
 def test_owner_is_the_innermost_node_holding_the_chunk(max_tokens: int) -> None:
     document = regulation()
     for chunk in chunker(max_tokens).chunk(document):
-        holders = [n for n in document.nodes if n.start <= chunk.start and chunk.end <= n.end]
-        expected = holders[-1].id if holders else None  # pre-order: the last holder is the innermost
+        holders = [
+            n for n in document.nodes if n.start <= chunk.start and chunk.end <= n.end
+        ]
+        expected = (
+            holders[-1].id if holders else None
+        )  # pre-order: the last holder is the innermost
         assert chunk.node_id == expected, chunk.id
 
 
 @pytest.mark.parametrize("max_tokens", [3, 8, 12, 20, 25, 40])
-def test_contextualized_chunks_fit_when_the_breadcrumb_is_counted(max_tokens: int) -> None:
-    for chunk in chunker(max_tokens, include_breadcrumb_in_size=True).chunk(regulation()):
+def test_contextualized_chunks_fit_when_the_breadcrumb_is_counted(
+    max_tokens: int,
+) -> None:
+    for chunk in chunker(max_tokens, include_breadcrumb_in_size=True).chunk(
+        regulation()
+    ):
         if chunk.end - chunk.start > 1:
             assert len(chunk.contextualize().split()) <= max_tokens, chunk.id
-
 
 
 # ============================================================ sections kept apart
@@ -627,7 +754,13 @@ def test_contextualized_chunks_fit_when_the_breadcrumb_is_counted(max_tokens: in
 
 
 def sections_document() -> LogicalDocument:
-    return outlined(("a", None, 0, 6), ("b", "a", 1, 3), ("c", "a", 3, 6), n_segments=6, sections=("a", "b", "c"))
+    return outlined(
+        ("a", None, 0, 6),
+        ("b", "a", 1, 3),
+        ("c", "a", 3, 6),
+        n_segments=6,
+        sections=("a", "b", "c"),
+    )
 
 
 def test_sections_are_kept_apart_by_default() -> None:
@@ -636,7 +769,9 @@ def test_sections_are_kept_apart_by_default() -> None:
 
 def test_small_sections_are_not_merged() -> None:
     # b and c would fit together in 8, but each is a section: one chunk each.
-    assert [((c.start, c.end), c.node_id) for c in chunker(8).chunk(sections_document())] == [
+    assert [
+        ((c.start, c.end), c.node_id) for c in chunker(8).chunk(sections_document())
+    ] == [
         ((1, 3), "b"),
         ((3, 6), "c"),
     ]
@@ -644,12 +779,17 @@ def test_small_sections_are_not_merged() -> None:
 
 def test_small_sections_are_merged_when_not_kept_apart() -> None:
     chunks = chunker(8, keep_sections_apart=False).chunk(sections_document())
-    assert [((c.start, c.end), c.node_id) for c in chunks] == [((0, 3), "a"), ((3, 6), "c")]
+    assert [((c.start, c.end), c.node_id) for c in chunks] == [
+        ((0, 3), "a"),
+        ((3, 6), "c"),
+    ]
 
 
 def test_a_section_of_items_that_fits_is_one_chunk() -> None:
     # b and c are sections holding only text: each fits whole, so each is one chunk.
-    assert [((c.start, c.end), c.node_id) for c in chunker(20).chunk(sections_document())] == [
+    assert [
+        ((c.start, c.end), c.node_id) for c in chunker(20).chunk(sections_document())
+    ] == [
         ((1, 3), "b"),
         ((3, 6), "c"),
     ]
@@ -658,30 +798,54 @@ def test_a_section_of_items_that_fits_is_one_chunk() -> None:
 def test_items_still_group_inside_a_section() -> None:
     #   0 [a]  1 [a/1]  2 text  3 [a/2]  4 text  5 [a/3]  6 text     a: section; children: items
     document = outlined(
-        ("a", None, 0, 7), ("a/1", "a", 1, 3), ("a/2", "a", 3, 5), ("a/3", "a", 5, 7), n_segments=7, sections=("a",)
+        ("a", None, 0, 7),
+        ("a/1", "a", 1, 3),
+        ("a/2", "a", 3, 5),
+        ("a/3", "a", 5, 7),
+        n_segments=7,
+        sections=("a",),
     )
-    assert [((c.start, c.end), c.node_id) for c in chunker(7).chunk(document)] == [((0, 5), "a"), ((5, 7), "a/3")]
+    assert [((c.start, c.end), c.node_id) for c in chunker(7).chunk(document)] == [
+        ((0, 5), "a"),
+        ((5, 7), "a/3"),
+    ]
 
 
 def test_a_lead_in_does_not_join_the_next_section() -> None:
     #   0 [a]  1 text (lead-in)  2 [b]  3 text           a, b: sections
-    document = outlined(("a", None, 0, 4), ("b", "a", 2, 4), n_segments=4, sections=("a", "b"))
-    assert [((c.start, c.end), c.node_id) for c in chunker(4).chunk(document)] == [((0, 2), "a"), ((2, 4), "b")]
+    document = outlined(
+        ("a", None, 0, 4), ("b", "a", 2, 4), n_segments=4, sections=("a", "b")
+    )
+    assert [((c.start, c.end), c.node_id) for c in chunker(4).chunk(document)] == [
+        ((0, 2), "a"),
+        ((2, 4), "b"),
+    ]
 
 
 def test_a_section_too_big_alone_is_chunked_inside() -> None:
     #   0 [a]  1 [b]  2 text  3 text  4 text             a, b: sections; b (7 words) does not fit in 4
-    document = outlined(("a", None, 0, 5), ("b", "a", 1, 5), n_segments=5, sections=("a", "b"))
-    assert [((c.start, c.end), c.node_id) for c in chunker(4).chunk(document)] == [((1, 3), "b"), ((3, 5), "b")]
+    document = outlined(
+        ("a", None, 0, 5), ("b", "a", 1, 5), n_segments=5, sections=("a", "b")
+    )
+    assert [((c.start, c.end), c.node_id) for c in chunker(4).chunk(document)] == [
+        ((1, 3), "b"),
+        ((3, 5), "b"),
+    ]
 
 
 @pytest.mark.parametrize("keep_sections_apart", [True, False])
 @pytest.mark.parametrize("max_tokens", [1, 3, 8, 12, 20, 40, 60])
-def test_invariants_hold_with_and_without_keeping_sections_apart(max_tokens: int, keep_sections_apart: bool) -> None:
+def test_invariants_hold_with_and_without_keeping_sections_apart(
+    max_tokens: int, keep_sections_apart: bool
+) -> None:
     document = regulation()
-    chunks = chunker(max_tokens, keep_sections_apart=keep_sections_apart).chunk(document)
+    chunks = chunker(max_tokens, keep_sections_apart=keep_sections_apart).chunk(
+        document
+    )
     for chunk in chunks:
-        holders = [n for n in document.nodes if n.start <= chunk.start and chunk.end <= n.end]
+        holders = [
+            n for n in document.nodes if n.start <= chunk.start and chunk.end <= n.end
+        ]
         assert chunk.node_id == (holders[-1].id if holders else None), chunk.id
         for node in document.nodes:
             assert (
@@ -697,10 +861,13 @@ def test_no_chunk_touches_two_sections_of_the_same_parent(max_tokens: int) -> No
     # Not even when everything fits: a Chương holding Điều always comes out as one chunk per Điều.
     document = regulation()
     for chunk in chunker(max_tokens).chunk(document):
-        touched = [n for n in document.nodes if n.is_section and chunk.start < n.end and n.start < chunk.end]
+        touched = [
+            n
+            for n in document.nodes
+            if n.is_section and chunk.start < n.end and n.start < chunk.end
+        ]
         parents = [n.parent_id for n in touched]
         assert len(parents) == len(set(parents)), (chunk.id, [n.id for n in touched])
-
 
 
 # ============================================================ headings are the whole breadcrumb
@@ -710,15 +877,20 @@ def test_no_chunk_touches_two_sections_of_the_same_parent(max_tokens: int) -> No
 def test_headings_name_every_node_holding_the_chunk(max_tokens: int) -> None:
     document = regulation()
     for chunk in chunker(max_tokens).chunk(document):
-        holders = [n for n in document.nodes if n.start <= chunk.start and chunk.end <= n.end]
-        assert [step.node_id for step in chunk.path] == [n.id for n in holders], chunk.id
+        holders = [
+            n for n in document.nodes if n.start <= chunk.start and chunk.end <= n.end
+        ]
+        assert [step.node_id for step in chunk.path] == [n.id for n in holders], (
+            chunk.id
+        )
         assert len(chunk.headings) == len(holders)
 
 
 def test_chunks_inside_one_dieu_share_its_breadcrumb() -> None:
-    chunks = [c for c in chunker(12).chunk(regulation()) if c.part == "body" and c.start >= 7]
+    chunks = [
+        c for c in chunker(12).chunk(regulation()) if c.part == "body" and c.start >= 7
+    ]
     assert all(c.headings[:2] == (CHUONG, DIEU_2) for c in chunks)
-
 
 
 # ============================================================ token_count
@@ -731,19 +903,31 @@ def test_token_count_is_what_the_chunker_measured(max_tokens: int) -> None:
 
 
 @pytest.mark.parametrize("max_tokens", [8, 20, 40])
-def test_token_count_includes_the_breadcrumb_when_it_is_counted(max_tokens: int) -> None:
-    for chunk in chunker(max_tokens, include_breadcrumb_in_size=True).chunk(regulation()):
-        assert chunk.token_count == WordTokenizer().count_tokens(chunk.contextualize()), chunk.id
+def test_token_count_includes_the_breadcrumb_when_it_is_counted(
+    max_tokens: int,
+) -> None:
+    for chunk in chunker(max_tokens, include_breadcrumb_in_size=True).chunk(
+        regulation()
+    ):
+        assert chunk.token_count == WordTokenizer().count_tokens(
+            chunk.contextualize()
+        ), chunk.id
 
 
 @pytest.mark.parametrize("max_tokens", [1, 3, 8, 12, 20, 40, 60])
-def test_token_count_is_within_budget_except_for_single_segments(max_tokens: int) -> None:
+def test_token_count_is_within_budget_except_for_single_segments(
+    max_tokens: int,
+) -> None:
     for chunk in chunker(max_tokens).chunk(regulation()):
         assert chunk.token_count <= max_tokens or chunk.end - chunk.start == 1, chunk.id
 
 
 def test_a_too_big_segment_reports_its_real_size() -> None:
-    (chunk,) = [c for c in chunker(3).chunk(plain("a", "b c d e f", "g")) if c.text == "b c d e f"]
+    (chunk,) = [
+        c
+        for c in chunker(3).chunk(plain("a", "b c d e f", "g"))
+        if c.text == "b c d e f"
+    ]
     assert chunk.token_count == 5
 
 
@@ -754,28 +938,82 @@ def test_a_too_big_segment_reports_its_real_size() -> None:
 
 
 def big_table(n_body_rows: int = 6, words: int = 3) -> TableInfo:
-    cells = [TableCell(row=0, col=0, row_span=1, col_span=1, paragraphs=("STT",)),
-             TableCell(row=0, col=1, row_span=1, col_span=1, paragraphs=("Nội dung",))]
+    cells = [
+        TableCell(row=0, col=0, row_span=1, col_span=1, paragraphs=("STT",)),
+        TableCell(row=0, col=1, row_span=1, col_span=1, paragraphs=("Nội dung",)),
+    ]
     for r in range(1, n_body_rows + 1):
-        cells.append(TableCell(row=r, col=0, row_span=1, col_span=1, paragraphs=(str(r),)))
-        cells.append(TableCell(row=r, col=1, row_span=1, col_span=1, paragraphs=(" ".join(["từ"] * words),)))
-    return TableInfo(n_rows=n_body_rows + 1, n_cols=2, n_header_rows=1, cells=tuple(cells))
+        cells.append(
+            TableCell(row=r, col=0, row_span=1, col_span=1, paragraphs=(str(r),))
+        )
+        cells.append(
+            TableCell(
+                row=r,
+                col=1,
+                row_span=1,
+                col_span=1,
+                paragraphs=(" ".join(["từ"] * words),),
+            )
+        )
+    return TableInfo(
+        n_rows=n_body_rows + 1, n_cols=2, n_header_rows=1, cells=tuple(cells)
+    )
 
 
 def table_document(table: TableInfo, where: str) -> LogicalDocument:
     """The table as the only content of a leaf node ("leaf"), next to a child ("gap"), or in front matter."""
     table_segment = make_table_segment(block_id="pb-table", table=table)
     if where == "front":
-        segments: tuple[Segment, ...] = (table_segment, make_text_segment(block_id="pb2", text="Nội dung"))
+        segments: tuple[Segment, ...] = (
+            table_segment,
+            make_text_segment(block_id="pb2", text="Nội dung"),
+        )
         return make_logical_document(segments=segments, body_start=1, body_end=2)
     if where == "leaf":
-        node = make_logical_node(id="a", level="dieu", marker="Điều 1.", title="Bảng", head_block_ids=("h-a",), start=0, end=2)
-        return make_logical_document(segments=(heading_for(node), table_segment), nodes=(node,), body_start=0, body_end=2)
-    parent = make_logical_node(id="a", level="dieu", marker="Điều 1.", title="Bảng", head_block_ids=("h-a",), start=0, end=4)
-    child = make_logical_node(id="a/1", parent_id="a", level="khoan", is_section=False, marker="1.", title=None,
-                              head_block_ids=("h-a1",), start=2, end=4)
-    segments = (heading_for(parent), table_segment, heading_for(child), make_text_segment(block_id="pb3", text="Nội dung khoản"))
-    return make_logical_document(segments=segments, nodes=(parent, child), body_start=0, body_end=4)
+        node = make_logical_node(
+            id="a",
+            level="dieu",
+            marker="Điều 1.",
+            title="Bảng",
+            head_block_ids=("h-a",),
+            start=0,
+            end=2,
+        )
+        return make_logical_document(
+            segments=(heading_for(node), table_segment),
+            nodes=(node,),
+            body_start=0,
+            body_end=2,
+        )
+    parent = make_logical_node(
+        id="a",
+        level="dieu",
+        marker="Điều 1.",
+        title="Bảng",
+        head_block_ids=("h-a",),
+        start=0,
+        end=4,
+    )
+    child = make_logical_node(
+        id="a/1",
+        parent_id="a",
+        level="khoan",
+        is_section=False,
+        marker="1.",
+        title=None,
+        head_block_ids=("h-a1",),
+        start=2,
+        end=4,
+    )
+    segments = (
+        heading_for(parent),
+        table_segment,
+        heading_for(child),
+        make_text_segment(block_id="pb3", text="Nội dung khoản"),
+    )
+    return make_logical_document(
+        segments=segments, nodes=(parent, child), body_start=0, body_end=4
+    )
 
 
 def table_chunks(chunks: tuple[Chunk, ...]) -> list[Chunk]:
@@ -798,7 +1036,9 @@ def test_every_piece_repeats_the_header_and_stays_within_budget() -> None:
 
 def test_row_groups_cover_every_body_row_once_in_order() -> None:
     for max_tokens in (10, 15, 20, 31):
-        pieces = table_chunks(chunker(max_tokens).chunk(table_document(big_table(), "leaf")))
+        pieces = table_chunks(
+            chunker(max_tokens).chunk(table_document(big_table(), "leaf"))
+        )
         rows = [r for c in pieces for r in range(*(c.table_rows or (0, 0)))]
         assert rows == list(range(1, 7)), max_tokens
 
@@ -819,23 +1059,41 @@ def test_a_table_piece_is_owned_by_the_node_holding_the_table() -> None:
 def test_a_row_too_big_on_its_own_is_a_piece_by_itself() -> None:
     table = big_table(n_body_rows=3, words=3)
     cells = list(table.cells)
-    cells[5] = TableCell(row=2, col=1, row_span=1, col_span=1, paragraphs=(" ".join(["từ"] * 30),))
-    table = TableInfo(n_rows=table.n_rows, n_cols=2, n_header_rows=1, cells=tuple(cells))
+    cells[5] = TableCell(
+        row=2, col=1, row_span=1, col_span=1, paragraphs=(" ".join(["từ"] * 30),)
+    )
+    table = TableInfo(
+        n_rows=table.n_rows, n_cols=2, n_header_rows=1, cells=tuple(cells)
+    )
     pieces = table_chunks(chunker(15).chunk(table_document(table, "leaf")))
     assert [c.table_rows for c in pieces] == [(1, 2), (2, 3), (3, 4)]
     assert pieces[1].token_count > 15
 
 
 def test_a_table_of_header_rows_only_stays_whole() -> None:
-    table = TableInfo(n_rows=1, n_cols=1, n_header_rows=1,
-                      cells=(TableCell(row=0, col=0, row_span=1, col_span=1, paragraphs=(" ".join(["từ"] * 30),)),))
+    table = TableInfo(
+        n_rows=1,
+        n_cols=1,
+        n_header_rows=1,
+        cells=(
+            TableCell(
+                row=0,
+                col=0,
+                row_span=1,
+                col_span=1,
+                paragraphs=(" ".join(["từ"] * 30),),
+            ),
+        ),
+    )
     (piece,) = table_chunks(chunker(15).chunk(table_document(table, "leaf")))
     assert piece.table_rows is None
 
 
 def test_key_value_pieces() -> None:
     # Each key_value line is 7 words and there is no header line: two rows per piece in a budget of 20.
-    pieces = table_chunks(chunker(20, table_layout="key_value").chunk(table_document(big_table(), "leaf")))
+    pieces = table_chunks(
+        chunker(20, table_layout="key_value").chunk(table_document(big_table(), "leaf"))
+    )
     assert [c.table_rows for c in pieces] == [(1, 3), (3, 5), (5, 7)]
     assert pieces[0].text == "STT: 1; Nội dung: từ từ từ\nSTT: 2; Nội dung: từ từ từ"
     assert all(c.token_count <= 20 for c in pieces)
@@ -854,11 +1112,17 @@ def test_token_count_of_a_piece_counts_only_its_rows() -> None:
 
 
 def test_a_merge_across_a_split_is_printed_again_in_the_next_piece() -> None:
-    cells = [TableCell(row=0, col=0, row_span=1, col_span=1, paragraphs=("Nhóm",)),
-             TableCell(row=0, col=1, row_span=1, col_span=1, paragraphs=("Nội dung",)),
-             TableCell(row=1, col=0, row_span=4, col_span=1, paragraphs=("Nhóm A",))]
+    cells = [
+        TableCell(row=0, col=0, row_span=1, col_span=1, paragraphs=("Nhóm",)),
+        TableCell(row=0, col=1, row_span=1, col_span=1, paragraphs=("Nội dung",)),
+        TableCell(row=1, col=0, row_span=4, col_span=1, paragraphs=("Nhóm A",)),
+    ]
     for r in range(1, 5):
-        cells.append(TableCell(row=r, col=1, row_span=1, col_span=1, paragraphs=(" ".join(["từ"] * 3),)))
+        cells.append(
+            TableCell(
+                row=r, col=1, row_span=1, col_span=1, paragraphs=(" ".join(["từ"] * 3),)
+            )
+        )
     table = TableInfo(n_rows=5, n_cols=2, n_header_rows=1, cells=tuple(cells))
     pieces = table_chunks(chunker(15).chunk(table_document(table, "leaf")))
     assert len(pieces) > 1
@@ -867,22 +1131,39 @@ def test_a_merge_across_a_split_is_printed_again_in_the_next_piece() -> None:
 
 def test_a_table_in_end_matter_is_split() -> None:
     table_segment = make_table_segment(block_id="pb-table", table=big_table())
-    segments: tuple[Segment, ...] = (make_text_segment(block_id="pb1", text="Nội dung"), table_segment)
+    segments: tuple[Segment, ...] = (
+        make_text_segment(block_id="pb1", text="Nội dung"),
+        table_segment,
+    )
     document = make_logical_document(segments=segments, body_start=0, body_end=1)
     pieces = table_chunks(chunker(15).chunk(document))
-    assert [(c.part, c.table_rows) for c in pieces] == [("end_matter", (1, 3)), ("end_matter", (3, 5)), ("end_matter", (5, 7))]
+    assert [(c.part, c.table_rows) for c in pieces] == [
+        ("end_matter", (1, 3)),
+        ("end_matter", (3, 5)),
+        ("end_matter", (5, 7)),
+    ]
 
 
 def test_text_around_a_split_table_is_chunked_as_before() -> None:
     #   0 [Điều 1.]  1 paragraph  2 table (too big)  3 paragraph
-    node = make_logical_node(id="a", level="dieu", marker="Điều 1.", title=None, head_block_ids=("h-a",), start=0, end=4)
+    node = make_logical_node(
+        id="a",
+        level="dieu",
+        marker="Điều 1.",
+        title=None,
+        head_block_ids=("h-a",),
+        start=0,
+        end=4,
+    )
     segments: tuple[Segment, ...] = (
         heading_for(node),
         make_text_segment(block_id="pb1", text="Đoạn trước bảng"),
         make_table_segment(block_id="pb-table", table=big_table()),
         make_text_segment(block_id="pb3", text="Đoạn sau bảng"),
     )
-    document = make_logical_document(segments=segments, nodes=(node,), body_start=0, body_end=4)
+    document = make_logical_document(
+        segments=segments, nodes=(node,), body_start=0, body_end=4
+    )
     chunks = chunker(15).chunk(document)
     assert [(c.start, c.end, c.table_rows) for c in chunks] == [
         (0, 2, None),  # the heading and the paragraph before the table, together
@@ -898,7 +1179,9 @@ def test_text_around_a_split_table_is_chunked_as_before() -> None:
 def test_a_table_without_header_rows_is_split_without_a_header() -> None:
     # Header detection is the adapter's job: with n_header_rows == 0 every row is a body row.
     table = big_table()
-    table = TableInfo(n_rows=table.n_rows, n_cols=table.n_cols, n_header_rows=0, cells=table.cells)
+    table = TableInfo(
+        n_rows=table.n_rows, n_cols=table.n_cols, n_header_rows=0, cells=table.cells
+    )
     pieces = table_chunks(chunker(15).chunk(table_document(table, "leaf")))
     assert pieces[0].table_rows is not None and pieces[0].table_rows[0] == 0
     assert pieces[0].text.splitlines()[0] == "STT | Nội dung"
@@ -914,13 +1197,13 @@ def test_a_table_without_header_rows_is_split_without_a_header() -> None:
 
 def lead_in_document() -> LogicalDocument:
     """
-        0  # Điều 1. Phạm vi                 n0 dieu   [0, 7)
-        1  # 1.                              n1 khoan  [1, 7)
-        2  Các hệ thống phải đáp ứng các yêu cầu sau đây về an toàn thông tin:   (16 words)
-        3  # a)                              n2 diem   [3, 7)
-        4  Về lưu trữ:
-        5  # -                               n3 gach   [5, 7)
-        6  Dữ liệu được mã hóa
+    0  # Điều 1. Phạm vi                 n0 dieu   [0, 7)
+    1  # 1.                              n1 khoan  [1, 7)
+    2  Các hệ thống phải đáp ứng các yêu cầu sau đây về an toàn thông tin:   (16 words)
+    3  # a)                              n2 diem   [3, 7)
+    4  Về lưu trữ:
+    5  # -                               n3 gach   [5, 7)
+    6  Dữ liệu được mã hóa
     """
     return (
         Blocks()
@@ -938,7 +1221,10 @@ def test_default_cap_is_40_words() -> None:
 
 
 def test_negative_cap_rejected() -> None:
-    with pytest.raises(ValueError, match="breadcrumb_lead_in_words >= 0, got breadcrumb_lead_in_words=-1"):
+    with pytest.raises(
+        ValueError,
+        match="breadcrumb_lead_in_words >= 0, got breadcrumb_lead_in_words=-1",
+    ):
         chunker(10, breadcrumb_lead_in_words=-1)
 
 
@@ -966,11 +1252,20 @@ def test_lead_in_is_capped_with_an_ellipsis() -> None:
 
 def test_lead_in_of_exactly_the_cap_has_no_ellipsis() -> None:
     path = _path_to(lead_in_document(), "n3", start=6, lead_in_words=16)
-    assert path[1].lead_in == "Các hệ thống phải đáp ứng các yêu cầu sau đây về an toàn thông tin:"
+    assert (
+        path[1].lead_in
+        == "Các hệ thống phải đáp ứng các yêu cầu sau đây về an toàn thông tin:"
+    )
 
 
 def test_lead_in_whitespace_is_collapsed() -> None:
-    document = Blocks().text("Điều 1. Phạm vi").text("1. Hệ thống   gồm\tcác  phần").text("a) Một").build()
+    document = (
+        Blocks()
+        .text("Điều 1. Phạm vi")
+        .text("1. Hệ thống   gồm\tcác  phần")
+        .text("a) Một")
+        .build()
+    )
     path = _path_to(document, "n2", start=len(document.segments), lead_in_words=25)
     assert path[1].lead_in == "Hệ thống gồm các phần"
 
@@ -994,21 +1289,27 @@ def test_no_lead_in_when_the_chunk_starts_before_it() -> None:
 
 def test_regulation_chunk_starting_at_its_lead_in_keeps_the_bare_marker() -> None:
     # At 8 words khoản 1 of Điều 2's heading (8) is split from its text (9).
-    (chunk,) = [c for c in chunker(8).chunk(regulation()) if (c.start, c.end) == (9, 10)]
+    (chunk,) = [
+        c for c in chunker(8).chunk(regulation()) if (c.start, c.end) == (9, 10)
+    ]
     assert chunk.path[-1].lead_in is None
     assert chunk.headings[-1] == "1."
     assert chunk.contextualize().count("Hệ thống là tập hợp các thành phần") == 1
 
 
 def test_no_lead_in_when_the_first_segment_is_an_image() -> None:
-    document = Blocks().text("Điều 1. Phạm vi").text("1.").image().text("Nội dung").build()
+    document = (
+        Blocks().text("Điều 1. Phạm vi").text("1.").image().text("Nội dung").build()
+    )
     khoan = next(node for node in document.nodes if node.level == "khoan")
     path = _path_to(document, khoan.id, start=len(document.segments), lead_in_words=25)
     assert path[-1].lead_in is None
 
 
 def test_no_lead_in_when_the_first_segment_is_a_table() -> None:
-    document = Blocks().text("Điều 1. Phạm vi").text("1.").table().text("Nội dung").build()
+    document = (
+        Blocks().text("Điều 1. Phạm vi").text("1.").table().text("Nội dung").build()
+    )
     khoan = next(node for node in document.nodes if node.level == "khoan")
     path = _path_to(document, khoan.id, start=len(document.segments), lead_in_words=25)
     assert path[-1].lead_in is None
@@ -1018,15 +1319,26 @@ def test_no_lead_in_for_a_node_that_is_only_its_heading() -> None:
     document = Blocks().text("Điều 1. Phạm vi").text("1.").text("2. Nội dung").build()
     first_khoan = next(node for node in document.nodes if node.level == "khoan")
     assert first_khoan.end == first_khoan.start + 1
-    path = _path_to(document, first_khoan.id, start=len(document.segments), lead_in_words=25)
+    path = _path_to(
+        document, first_khoan.id, start=len(document.segments), lead_in_words=25
+    )
     assert path[-1].lead_in is None
 
 
 def test_lead_in_from_the_next_paragraph_when_the_marker_stands_alone() -> None:
     # "1." alone on its line, its words in the next paragraph: still the node's opening words.
-    document = Blocks().text("Điều 1. Phạm vi").text("1.").text("Nội dung khoản một").text("2. Khác").build()
+    document = (
+        Blocks()
+        .text("Điều 1. Phạm vi")
+        .text("1.")
+        .text("Nội dung khoản một")
+        .text("2. Khác")
+        .build()
+    )
     first_khoan = next(node for node in document.nodes if node.level == "khoan")
-    path = _path_to(document, first_khoan.id, start=len(document.segments), lead_in_words=25)
+    path = _path_to(
+        document, first_khoan.id, start=len(document.segments), lead_in_words=25
+    )
     assert path[-1].label == "1. Nội dung khoản một"
 
 
@@ -1048,9 +1360,12 @@ def test_no_lead_in_repeats_text_inside_its_chunk(max_tokens: int) -> None:
 def test_counted_breadcrumb_includes_the_lead_ins() -> None:
     document = lead_in_document()
     piece = _Piece(part="body", owner_id="n3", start=6, end=7)
-    with_lead_ins = _ChunkingRun(chunker(200, include_breadcrumb_in_size=True), document)._count_piece_tokens(piece)
+    with_lead_ins = _ChunkingRun(
+        chunker(200, include_breadcrumb_in_size=True), document
+    )._count_piece_tokens(piece)
     without = _ChunkingRun(
-        chunker(200, include_breadcrumb_in_size=True, breadcrumb_lead_in_words=0), document
+        chunker(200, include_breadcrumb_in_size=True, breadcrumb_lead_in_words=0),
+        document,
     )._count_piece_tokens(piece)
     # 16 words of khoản 1 and 3 of điểm a; "Dữ liệu được mã hóa" is the chunk's own text, not a lead-in.
     assert with_lead_ins - without == 16 + 3

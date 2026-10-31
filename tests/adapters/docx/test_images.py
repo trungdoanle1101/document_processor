@@ -94,7 +94,9 @@ def test_same_bytes_give_the_same_hash() -> None:
 
 
 def test_size_is_converted_from_emu_to_points() -> None:
-    info = read_drawing_image(parse(drawing(cx=EMU_INCH, cy=EMU_INCH // 2)), DEFAULT_PARTS)
+    info = read_drawing_image(
+        parse(drawing(cx=EMU_INCH, cy=EMU_INCH // 2)), DEFAULT_PARTS
+    )
     assert info is not None
     assert info.displayed_width_pt == 72.0
     assert info.displayed_height_pt == 36.0

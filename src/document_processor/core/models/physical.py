@@ -176,7 +176,6 @@ class TableInfo:
                 raise ValueError(
                     f"TableCell ({cell.row}, {cell.col}). Cell crosses the header boundary: spans rows [{cell.row}, {cell.row + cell.row_span}), n_header_rows={self.n_header_rows}"
                 )
-            
 
         # Check cells reading order
         for i in range(len(self.cells) - 1):

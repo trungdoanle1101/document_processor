@@ -18,7 +18,10 @@ from document_processor.chunking.tokenizer import Tokenizer, WordTokenizer
         ("", 0),
         ("   ", 0),
         ("Điều", 1),
-        ("Điều 9. Phạm vi điều chỉnh", 6),  # Vietnamese words are space-separated syllables
+        (
+            "Điều 9. Phạm vi điều chỉnh",
+            6,
+        ),  # Vietnamese words are space-separated syllables
         ("  a\tb\nc  ", 3),  # any whitespace separates, edges ignored
         ("STT | Nội dung", 4),  # punctuation standing alone counts as a word
     ],

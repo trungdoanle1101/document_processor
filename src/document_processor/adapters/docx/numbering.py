@@ -185,7 +185,10 @@ class ListCounter:
 
 # --- markers
 def resolve_marker(
-    level_def: LevelDefinition, counts: dict[int, int], formats: dict[int, str], starts: dict[int, int]
+    level_def: LevelDefinition,
+    counts: dict[int, int],
+    formats: dict[int, str],
+    starts: dict[int, int],
 ) -> str | None:
     if level_def.num_fmt == "none" or level_def.lvl_text is None:
         return None
@@ -195,7 +198,7 @@ def resolve_marker(
 
     def _fill(match: re.Match[str]) -> str:
         ilvl = int(match.group(1)) - 1
-        
+
         if ilvl in counts:
             num = counts[ilvl]
         elif ilvl in starts:
@@ -204,7 +207,6 @@ def resolve_marker(
             raise ValueError(
                 f"lvlText {level_def.lvl_text!r}: no count or start values found for level {ilvl} (%{ilvl + 1})"
             )
-
 
         try:
             num_fmt = formats[ilvl]
@@ -261,8 +263,7 @@ class Numberer:
         # num_fmt recorded as 'decimal' even when no marker is displayed (lvl_text None / numFmt "none");
         # it reflects the source declaration, not the rendered marker.
         declared_numbering = DeclaredNumbering(
-            num_fmt=level_def.num_fmt,
-            segment_formats=tuple(segment_formats)
+            num_fmt=level_def.num_fmt, segment_formats=tuple(segment_formats)
         )
 
         return ListInfo(
@@ -270,5 +271,5 @@ class Numberer:
             is_ordered=level_def.is_ordered,
             displayed_marker=displayed_marker,
             nested_level=ilvl,
-            declared_numbering=declared_numbering
+            declared_numbering=declared_numbering,
         )

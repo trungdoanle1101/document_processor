@@ -216,7 +216,16 @@ def test_letters_to_int_latin(text: str, expected: int) -> None:
 
 @pytest.mark.parametrize(
     ("text", "expected"),
-    [("a", 1), ("d", 4), ("đ", 5), ("e", 6), ("g", 7), ("y", 23), ("aa", 24), ("đđ", 28)],
+    [
+        ("a", 1),
+        ("d", 4),
+        ("đ", 5),
+        ("e", 6),
+        ("g", 7),
+        ("y", 23),
+        ("aa", 24),
+        ("đđ", 28),
+    ],
 )
 def test_letters_to_int_vietnamese(text: str, expected: int) -> None:
     assert letters_to_int(text, LOWER_VN) == expected
@@ -253,8 +262,12 @@ def test_letters_to_int_rejects_latin(text: str) -> None:
     assert letters_to_int(text, UPPER_LATIN) is None
 
 
-@pytest.mark.parametrize("text", ["f", "j", "w", "z", "ff", "A", "Đ", "ă", "â", "ê", "ô", "ơ", "ư"])
-def test_letters_to_int_rejects_letters_outside_the_vietnamese_sequence(text: str) -> None:
+@pytest.mark.parametrize(
+    "text", ["f", "j", "w", "z", "ff", "A", "Đ", "ă", "â", "ê", "ô", "ơ", "ư"]
+)
+def test_letters_to_int_rejects_letters_outside_the_vietnamese_sequence(
+    text: str,
+) -> None:
     assert letters_to_int(text, LOWER_VN) is None
 
 
@@ -270,7 +283,9 @@ LETTER_STYLES: list[tuple[str, ToText, ToNumber, str]] = [
 LETTER_STYLE_IDS = [name for name, *_ in LETTER_STYLES]
 
 
-@pytest.mark.parametrize(("name", "to_text", "to_number", "alphabet"), LETTER_STYLES, ids=LETTER_STYLE_IDS)
+@pytest.mark.parametrize(
+    ("name", "to_text", "to_number", "alphabet"), LETTER_STYLES, ids=LETTER_STYLE_IDS
+)
 def test_letter_style_matches_its_alphabet(
     name: str, to_text: ToText, to_number: ToNumber, alphabet: str
 ) -> None:
@@ -279,14 +294,20 @@ def test_letter_style_matches_its_alphabet(
         assert to_number(letter) == i
 
 
-@pytest.mark.parametrize(("name", "to_text", "to_number", "alphabet"), LETTER_STYLES, ids=LETTER_STYLE_IDS)
-def test_letter_style_round_trips(name: str, to_text: ToText, to_number: ToNumber, alphabet: str) -> None:
+@pytest.mark.parametrize(
+    ("name", "to_text", "to_number", "alphabet"), LETTER_STYLES, ids=LETTER_STYLE_IDS
+)
+def test_letter_style_round_trips(
+    name: str, to_text: ToText, to_number: ToNumber, alphabet: str
+) -> None:
     # Three full passes through the alphabet, so wrap-around is covered.
     for n in range(1, 3 * len(alphabet) + 1):
         assert to_number(to_text(n)) == n
 
 
-@pytest.mark.parametrize(("name", "to_text", "to_number", "alphabet"), LETTER_STYLES, ids=LETTER_STYLE_IDS)
+@pytest.mark.parametrize(
+    ("name", "to_text", "to_number", "alphabet"), LETTER_STYLES, ids=LETTER_STYLE_IDS
+)
 def test_letter_style_rejects_non_positive(
     name: str, to_text: ToText, to_number: ToNumber, alphabet: str
 ) -> None:
@@ -294,7 +315,9 @@ def test_letter_style_rejects_non_positive(
         to_text(0)
 
 
-@pytest.mark.parametrize(("name", "to_text", "to_number", "alphabet"), LETTER_STYLES, ids=LETTER_STYLE_IDS)
+@pytest.mark.parametrize(
+    ("name", "to_text", "to_number", "alphabet"), LETTER_STYLES, ids=LETTER_STYLE_IDS
+)
 def test_letter_style_rejects_text_that_is_never_a_number(
     name: str, to_text: ToText, to_number: ToNumber, alphabet: str
 ) -> None:
@@ -366,7 +389,10 @@ def test_int_to_upper_roman(n: int, expected: str) -> None:
     assert int_to_upper_roman(n) == expected
 
 
-@pytest.mark.parametrize(("n", "expected"), [(1, "i"), (4, "iv"), (9, "ix"), (14, "xiv"), (3999, "mmmcmxcix")])
+@pytest.mark.parametrize(
+    ("n", "expected"),
+    [(1, "i"), (4, "iv"), (9, "ix"), (14, "xiv"), (3999, "mmmcmxcix")],
+)
 def test_int_to_lower_roman(n: int, expected: str) -> None:
     assert int_to_lower_roman(n) == expected
 
@@ -415,10 +441,15 @@ def test_upper_roman_to_int(text: str, expected: int) -> None:
 
 @pytest.mark.parametrize(
     ("to_text", "to_number"),
-    [(int_to_upper_roman, upper_roman_to_int), (int_to_lower_roman, lower_roman_to_int)],
+    [
+        (int_to_upper_roman, upper_roman_to_int),
+        (int_to_lower_roman, lower_roman_to_int),
+    ],
     ids=["upper_roman", "lower_roman"],
 )
-def test_roman_round_trips_over_the_whole_range(to_text: ToText, to_number: ToNumber) -> None:
+def test_roman_round_trips_over_the_whole_range(
+    to_text: ToText, to_number: ToNumber
+) -> None:
     for n in range(1, MAX_ROMAN + 1):
         assert to_number(to_text(n)) == n
 
@@ -497,7 +528,9 @@ def test_lower_roman_to_int_rejects(text: str) -> None:
 
 
 def test_every_canonical_roman_numeral_parses_to_a_different_number() -> None:
-    numbers = {upper_roman_to_int(int_to_upper_roman(n)) for n in range(1, MAX_ROMAN + 1)}
+    numbers = {
+        upper_roman_to_int(int_to_upper_roman(n)) for n in range(1, MAX_ROMAN + 1)
+    }
     assert numbers == set(range(1, MAX_ROMAN + 1))
 
 
@@ -516,14 +549,20 @@ def test_every_canonical_roman_numeral_parses_to_a_different_number() -> None:
         ("m", 1000, 12),
     ],
 )
-def test_single_letters_that_are_valid_in_two_styles(text: str, roman: int, letter: int) -> None:
+def test_single_letters_that_are_valid_in_two_styles(
+    text: str, roman: int, letter: int
+) -> None:
     # Both readings are valid at this layer; choosing one is pass 2's job.
     assert lower_roman_to_int(text) == roman
     assert lower_vn_to_int(text) == letter
 
 
-@pytest.mark.parametrize(("text", "roman", "letter"), [("ii", 2, 32), ("xx", 20, 45), ("ccc", 300, 49)])
-def test_repeated_letters_that_are_valid_in_two_styles(text: str, roman: int, letter: int) -> None:
+@pytest.mark.parametrize(
+    ("text", "roman", "letter"), [("ii", 2, 32), ("xx", 20, 45), ("ccc", 300, 49)]
+)
+def test_repeated_letters_that_are_valid_in_two_styles(
+    text: str, roman: int, letter: int
+) -> None:
     # Only a single-letter candidate pattern keeps "ii" from being read as letter 32.
     assert lower_roman_to_int(text) == roman
     assert lower_vn_to_int(text) == letter

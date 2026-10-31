@@ -82,11 +82,18 @@ def tc(
     elif vmerge is not None:
         props += f'<w:vMerge w:val="{vmerge}"/>'
     tcpr = f"<w:tcPr>{props}</w:tcPr>" if props else ""
-    body = "".join(p(x, bold) for x in paragraphs) or p()  # Word: a cell always has a paragraph
+    body = (
+        "".join(p(x, bold) for x in paragraphs) or p()
+    )  # Word: a cell always has a paragraph
     return f"<w:tc>{tcpr}{body}{raw}</w:tc>"
 
 
-def tr(*cells: str, header: str | None = None, before: int | None = None, after: int | None = None) -> str:
+def tr(
+    *cells: str,
+    header: str | None = None,
+    before: int | None = None,
+    after: int | None = None,
+) -> str:
     """One <w:tr>. `header`: None (absent), "" (bare <w:tblHeader/>), or a w:val."""
     props = ""
     if before is not None:
@@ -130,7 +137,9 @@ def test_tblheader_absent() -> None:
     assert read_tblheader(el(tr(tc("a")))) is False
 
 
-@pytest.mark.parametrize("value", ["", "1", "true", "on"], ids=["bare", "1", "true", "on"])
+@pytest.mark.parametrize(
+    "value", ["", "1", "true", "on"], ids=["bare", "1", "true", "on"]
+)
 def test_tblheader_on(value: str) -> None:
     assert read_tblheader(el(tr(tc("a"), header=value))) is True
 
@@ -170,7 +179,9 @@ def test_gridspan() -> None:
 
 
 def test_gridspan_not_a_number() -> None:
-    cell = parse_xml(f'<w:tc {W}><w:tcPr><w:gridSpan w:val="two"/></w:tcPr>{p("a")}</w:tc>')
+    cell = parse_xml(
+        f'<w:tc {W}><w:tcPr><w:gridSpan w:val="two"/></w:tcPr>{p("a")}</w:tc>'
+    )
     with pytest.raises(ValueError, match="'two'"):
         read_gridspan(cell)
 
@@ -203,7 +214,9 @@ def test_vmerge_unknown_value_rejected() -> None:
 
 
 def run_el(xml: str) -> _Element:
-    run = el(tr(f"<w:tc><w:p>{xml}</w:p></w:tc>")).find(f"{qn('w:tc')}/{qn('w:p')}/{qn('w:r')}")
+    run = el(tr(f"<w:tc><w:p>{xml}</w:p></w:tc>")).find(
+        f"{qn('w:tc')}/{qn('w:p')}/{qn('w:r')}"
+    )
     assert run is not None
     return run
 
@@ -277,7 +290,9 @@ def test_row_without_text_is_not_bold() -> None:
 
 def test_run_inside_a_hyperlink_counts() -> None:
     plain_link = f"<w:tc><w:p><w:hyperlink>{r('xem')}</w:hyperlink></w:p></w:tc>"
-    bold_link = f"<w:tc><w:p><w:hyperlink>{r('xem', bold='')}</w:hyperlink></w:p></w:tc>"
+    bold_link = (
+        f"<w:tc><w:p><w:hyperlink>{r('xem', bold='')}</w:hyperlink></w:p></w:tc>"
+    )
     assert row_is_bold(tc("TT", bold=""), plain_link) is False
     assert row_is_bold(tc("TT", bold=""), bold_link) is True
 
@@ -301,7 +316,9 @@ def test_simple_grid() -> None:
 
 def test_single_cell() -> None:
     t = parse(tr(tc("only")))
-    assert t.cells == (TableCell(row=0, col=0, row_span=1, col_span=1, paragraphs=("only",)),)
+    assert t.cells == (
+        TableCell(row=0, col=0, row_span=1, col_span=1, paragraphs=("only",)),
+    )
 
 
 def test_empty_cells_are_kept_with_no_paragraphs() -> None:
@@ -328,7 +345,12 @@ def test_callback_sees_every_cell_paragraph_in_order() -> None:
         seen.append(text or "<empty>")
         return text
 
-    parse_table(tbl(tr(tc("a", "b"), tc()), tr(tc("c"), tc("d"))), spy, DIRECT_BOLD, "marked_or_bold_first")
+    parse_table(
+        tbl(tr(tc("a", "b"), tc()), tr(tc("c"), tc("d"))),
+        spy,
+        DIRECT_BOLD,
+        "marked_or_bold_first",
+    )
     # Empty paragraphs are still passed to the callback (numbering must see them).
     assert seen == ["a", "b", "<empty>", "c", "d"]
 
@@ -389,7 +411,11 @@ def test_merge_in_both_directions() -> None:
         tr(tc("B", span=2, vmerge="restart"), tc("c")),
         tr(tc(span=2, vmerge=""), tc("d")),
     )
-    assert spans(t) == [(("B",), 0, 0, 2, 2), (("c",), 0, 2, 1, 1), (("d",), 1, 2, 1, 1)]
+    assert spans(t) == [
+        (("B",), 0, 0, 2, 2),
+        (("c",), 0, 2, 1, 1),
+        (("d",), 1, 2, 1, 1),
+    ]
 
 
 def test_explicit_continue_value_works_like_bare() -> None:
@@ -443,7 +469,10 @@ def test_continue_below_a_plain_cell_rejected() -> None:
 
 
 def test_continue_with_different_span_rejected() -> None:
-    with pytest.raises(ValueError, match=r"row 1, col 0: .*different gridSpan\. Previous: 2, current: 1"):
+    with pytest.raises(
+        ValueError,
+        match=r"row 1, col 0: .*different gridSpan\. Previous: 2, current: 1",
+    ):
         parse(
             tr(tc("A", span=2, vmerge="restart")),
             tr(tc(vmerge=""), tc("b")),
@@ -515,7 +544,12 @@ def test_explicit_off_header_not_counted() -> None:
 
 def test_two_level_header_from_the_real_table() -> None:
     t = parse(
-        tr(tc("TT", vmerge="restart"), tc("Nhóm", vmerge="restart"), tc("THAD", span=2), header=""),
+        tr(
+            tc("TT", vmerge="restart"),
+            tc("Nhóm", vmerge="restart"),
+            tc("THAD", span=2),
+            header="",
+        ),
         tr(tc(vmerge=""), tc(vmerge=""), tc("Báo cáo"), tc("Kiểm thử"), header=""),
         tr(tc("1"), tc("Định danh", vmerge="restart"), tc(), tc("x")),
         tr(tc("2"), tc(vmerge=""), tc("x"), tc("x")),
@@ -615,7 +649,9 @@ def test_only_the_first_bold_row_without_merges() -> None:
 
 
 def test_all_bold_table_has_no_header() -> None:
-    t = parse(bold_row("TT", "Nội dung"), bold_row("1", "Phạm vi"), bold_row("2", "Đối tượng"))
+    t = parse(
+        bold_row("TT", "Nội dung"), bold_row("1", "Phạm vi"), bold_row("2", "Đối tượng")
+    )
     assert t.n_header_rows == 0
 
 
@@ -637,8 +673,17 @@ def test_two_level_bold_header() -> None:
     #      |          | Tối thiểu | Tối đa
     #   1  | Đất ở    | 50        | 100
     t = parse(
-        tr(tc("TT", vmerge="restart", bold=""), tc("Loại đất", vmerge="restart", bold=""), tc("Diện tích (m²)", span=2, bold="")),
-        tr(tc(vmerge=""), tc(vmerge=""), tc("Tối thiểu", bold=""), tc("Tối đa", bold="")),
+        tr(
+            tc("TT", vmerge="restart", bold=""),
+            tc("Loại đất", vmerge="restart", bold=""),
+            tc("Diện tích (m²)", span=2, bold=""),
+        ),
+        tr(
+            tc(vmerge=""),
+            tc(vmerge=""),
+            tc("Tối thiểu", bold=""),
+            tc("Tối đa", bold=""),
+        ),
         plain_row("1", "Đất ở", "50", "100"),
     )
     assert t.n_header_rows == 2
@@ -697,11 +742,21 @@ def test_merge_ending_at_the_boundary_does_not_move_it() -> None:
 
 
 def test_table_without_rows_is_none() -> None:
-    assert parse_table(tbl(), read_paragraph, DIRECT_BOLD, "marked_or_bold_first") is None
+    assert (
+        parse_table(tbl(), read_paragraph, DIRECT_BOLD, "marked_or_bold_first") is None
+    )
 
 
 def test_rows_without_cells_is_none() -> None:
-    assert parse_table(tbl("<w:tr/>", "<w:tr/>"), read_paragraph, DIRECT_BOLD, "marked_or_bold_first") is None
+    assert (
+        parse_table(
+            tbl("<w:tr/>", "<w:tr/>"),
+            read_paragraph,
+            DIRECT_BOLD,
+            "marked_or_bold_first",
+        )
+        is None
+    )
 
 
 def test_table_of_empty_cells_is_valid() -> None:
@@ -717,7 +772,10 @@ def test_table_of_empty_cells_is_valid() -> None:
 
 def test_nested_table_not_supported() -> None:
     nested = f"<w:tbl>{tr(tc('inner'))}</w:tbl>"
-    with pytest.raises(NotImplementedError, match=r"/w:tbl/w:tr/w:tc/w:tbl: Nested tables not supported"):
+    with pytest.raises(
+        NotImplementedError,
+        match=r"/w:tbl/w:tr/w:tc/w:tbl: Nested tables not supported",
+    ):
         parse(tr(tc("outer", raw=nested + p())))
 
 
@@ -734,7 +792,12 @@ def test_unknown_element_in_row_rejected() -> None:
 
 def test_unknown_element_in_table_rejected() -> None:
     with pytest.raises(ValueError, match=r"/w:tbl/w:sdt: Unknown tag"):
-        parse_table(tbl(tr(tc("a")), extra="<w:sdt/>"), read_paragraph, DIRECT_BOLD, "marked_or_bold_first")
+        parse_table(
+            tbl(tr(tc("a")), extra="<w:sdt/>"),
+            read_paragraph,
+            DIRECT_BOLD,
+            "marked_or_bold_first",
+        )
 
 
 def test_row_properties_are_skipped() -> None:

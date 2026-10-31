@@ -69,7 +69,9 @@ PLAIN_SEGMENTS = (
 )
 
 
-def node(node_id: str, parent_id: str | None, start: int, end: int, **overrides: Any) -> LogicalNode:
+def node(
+    node_id: str, parent_id: str | None, start: int, end: int, **overrides: Any
+) -> LogicalNode:
     fields: dict[str, Any] = {
         "id": node_id,
         "parent_id": parent_id,
@@ -86,12 +88,48 @@ def node(node_id: str, parent_id: str | None, start: int, end: int, **overrides:
 
 
 OUTLINE = (
-    node(CHUONG, None, 1, 8, level="chuong", number="I", marker="Chương I",
-         title="QUY ĐỊNH CHUNG", head_block_ids=("pb2", "pb3")),
-    node(DIEU, CHUONG, 2, 8, level="dieu", number="1", marker="Điều 1.",
-         title="Phạm vi điều chỉnh", head_block_ids=("pb4",)),
-    node(KHOAN_1, DIEU, 4, 6, level="khoan", number="1", marker="1.", head_block_ids=("pb6",)),
-    node(KHOAN_2, DIEU, 6, 8, level="khoan", number="2", marker="2.", head_block_ids=("pb7",)),
+    node(
+        CHUONG,
+        None,
+        1,
+        8,
+        level="chuong",
+        number="I",
+        marker="Chương I",
+        title="QUY ĐỊNH CHUNG",
+        head_block_ids=("pb2", "pb3"),
+    ),
+    node(
+        DIEU,
+        CHUONG,
+        2,
+        8,
+        level="dieu",
+        number="1",
+        marker="Điều 1.",
+        title="Phạm vi điều chỉnh",
+        head_block_ids=("pb4",),
+    ),
+    node(
+        KHOAN_1,
+        DIEU,
+        4,
+        6,
+        level="khoan",
+        number="1",
+        marker="1.",
+        head_block_ids=("pb6",),
+    ),
+    node(
+        KHOAN_2,
+        DIEU,
+        6,
+        8,
+        level="khoan",
+        number="2",
+        marker="2.",
+        head_block_ids=("pb7",),
+    ),
 )
 
 SEGMENTS: tuple[Segment, ...] = (
@@ -108,7 +146,9 @@ SEGMENTS: tuple[Segment, ...] = (
 
 
 def outline_document(
-    nodes: tuple[LogicalNode, ...] = OUTLINE, segments: tuple[Segment, ...] = SEGMENTS, **overrides: Any
+    nodes: tuple[LogicalNode, ...] = OUTLINE,
+    segments: tuple[Segment, ...] = SEGMENTS,
+    **overrides: Any,
 ) -> LogicalDocument:
     fields: dict[str, Any] = {
         "segments": segments,
@@ -120,7 +160,9 @@ def outline_document(
     return make_logical_document(**fields)
 
 
-def shaped_document(nodes: tuple[LogicalNode, ...], n_segments: int = 6, **overrides: Any) -> LogicalDocument:
+def shaped_document(
+    nodes: tuple[LogicalNode, ...], n_segments: int = 6, **overrides: Any
+) -> LogicalDocument:
     """Segment 0 is front matter and the last is end matter; the body is [1, n_segments - 1).
 
     Where a node starts, the segment is that node's heading (the first such node,
@@ -129,7 +171,11 @@ def shaped_document(nodes: tuple[LogicalNode, ...], n_segments: int = 6, **overr
     segments: list[Segment] = []
     for index in range(n_segments):
         starting_here = [n for n in nodes if n.start == index]
-        segments.append(heading_for(starting_here[0]) if starting_here else text(f"pb{index}", f"Đoạn {index}"))
+        segments.append(
+            heading_for(starting_here[0])
+            if starting_here
+            else text(f"pb{index}", f"Đoạn {index}")
+        )
     fields: dict[str, Any] = {
         "segments": tuple(segments),
         "nodes": nodes,
@@ -150,7 +196,9 @@ def test_text_segment_is_accepted() -> None:
 
 
 def test_heading_segment_is_accepted() -> None:
-    segment = make_heading_segment(block_id="pb4", node_id="dieu-1", marker="Điều 1.", title="Phạm vi điều chỉnh")
+    segment = make_heading_segment(
+        block_id="pb4", node_id="dieu-1", marker="Điều 1.", title="Phạm vi điều chỉnh"
+    )
     assert (segment.block_id, segment.node_id) == ("pb4", "dieu-1")
     assert (segment.marker, segment.title) == ("Điều 1.", "Phạm vi điều chỉnh")
 
@@ -280,7 +328,10 @@ def test_heading_only_range_is_accepted() -> None:
 
 def test_head_may_span_several_blocks() -> None:
     # "Chương I" with its title on the next block.
-    assert make_logical_node(head_block_ids=("pb2", "pb3")).head_block_ids == ("pb2", "pb3")
+    assert make_logical_node(head_block_ids=("pb2", "pb3")).head_block_ids == (
+        "pb2",
+        "pb3",
+    )
 
 
 @pytest.mark.parametrize("node_id", INVISIBLE, ids=INVISIBLE_IDS)
@@ -352,7 +403,14 @@ def test_empty_document_is_accepted() -> None:
 
 
 @pytest.mark.parametrize(
-    "field", ["id", "physical_document_id", "source_file_hash", "profile_name", "profile_version"]
+    "field",
+    [
+        "id",
+        "physical_document_id",
+        "source_file_hash",
+        "profile_name",
+        "profile_version",
+    ],
 )
 @pytest.mark.parametrize("value", INVISIBLE, ids=INVISIBLE_IDS)
 def test_document_rejects_blank_identity_fields(field: str, value: str) -> None:
@@ -362,7 +420,9 @@ def test_document_rejects_blank_identity_fields(field: str, value: str) -> None:
 
 def test_document_without_hierarchy_is_accepted() -> None:
     # Only paragraphs, no headings: segments with an empty outline.
-    doc = make_logical_document(segments=PLAIN_SEGMENTS, body_start=0, body_end=len(PLAIN_SEGMENTS))
+    doc = make_logical_document(
+        segments=PLAIN_SEGMENTS, body_start=0, body_end=len(PLAIN_SEGMENTS)
+    )
     assert doc.nodes == ()
     assert doc.root_ids == ()
     assert doc.get_children(None) == ()
@@ -373,8 +433,12 @@ def test_document_without_hierarchy_is_accepted() -> None:
     [(0, 0), (0, 5), (1, 4), (5, 5), (2, 2)],
     ids=["all-front", "all-body", "front-body-end", "all-front-at-end", "empty-body"],
 )
-def test_body_range_inside_the_segments_is_accepted(body_start: int, body_end: int) -> None:
-    doc = make_logical_document(segments=PLAIN_SEGMENTS, body_start=body_start, body_end=body_end)
+def test_body_range_inside_the_segments_is_accepted(
+    body_start: int, body_end: int
+) -> None:
+    doc = make_logical_document(
+        segments=PLAIN_SEGMENTS, body_start=body_start, body_end=body_end
+    )
     assert (doc.body_start, doc.body_end) == (body_start, body_end)
 
 
@@ -383,9 +447,13 @@ def test_body_range_inside_the_segments_is_accepted(body_start: int, body_end: i
     [(-1, 2), (3, 2), (0, 6), (6, 6)],
     ids=["negative", "start-after-end", "end-past-segments", "both-past-segments"],
 )
-def test_body_range_outside_the_segments_is_rejected(body_start: int, body_end: int) -> None:
+def test_body_range_outside_the_segments_is_rejected(
+    body_start: int, body_end: int
+) -> None:
     with pytest.raises(ValueError, match="body_start"):
-        make_logical_document(segments=PLAIN_SEGMENTS, body_start=body_start, body_end=body_end)
+        make_logical_document(
+            segments=PLAIN_SEGMENTS, body_start=body_start, body_end=body_end
+        )
 
 
 def test_document_is_frozen() -> None:
@@ -476,7 +544,7 @@ def test_deep_nesting_and_return_to_a_shallower_level() -> None:
         node("a/1", "a", 2, 5),
         node("a/1/x", "a/1", 3, 5),
         node("a/1/x/i", "a/1/x", 4, 5),
-        node("a/2", "a", 5, 7),          # back up two levels
+        node("a/2", "a", 5, 7),  # back up two levels
     )
     doc = shaped_document(nodes, n_segments=8)
     assert doc.get_children("a") == ("a/1", "a/2")
@@ -484,7 +552,12 @@ def test_deep_nesting_and_return_to_a_shallower_level() -> None:
 
 
 def test_root_after_a_deep_branch() -> None:
-    nodes = (node("a", None, 1, 4), node("a/1", "a", 2, 4), node("a/1/x", "a/1", 3, 4), node("b", None, 4, 5))
+    nodes = (
+        node("a", None, 1, 4),
+        node("a/1", "a", 2, 4),
+        node("a/1/x", "a/1", 3, 4),
+        node("b", None, 4, 5),
+    )
     assert shaped_document(nodes).root_ids == ("a", "b")
 
 
@@ -528,7 +601,9 @@ def test_child_starting_before_its_parent_rejected() -> None:
         shaped_document(nodes)
 
 
-@pytest.mark.parametrize(("start", "end"), [(0, 2), (4, 6), (0, 6)], ids=["front", "end", "both"])
+@pytest.mark.parametrize(
+    ("start", "end"), [(0, 2), (4, 6), (0, 6)], ids=["front", "end", "both"]
+)
 def test_root_outside_the_body_rejected(start: int, end: int) -> None:
     with pytest.raises(ValueError, match="outside parent's range"):
         shaped_document((node("a", None, start, end),))
@@ -559,7 +634,9 @@ def test_overlapping_roots_rejected() -> None:
 
 def test_outline_error_names_document_node_and_position() -> None:
     nodes = (node("a", None, 1, 5), node("a/1", "a", 2, 4), node("a/2", "a", 3, 5))
-    with pytest.raises(ValueError, match=r"^LogicalDocument 'ld1', node 'a/2' at pos 2"):
+    with pytest.raises(
+        ValueError, match=r"^LogicalDocument 'ld1', node 'a/2' at pos 2"
+    ):
         shaped_document(nodes)
 
 
@@ -569,7 +646,10 @@ def test_outline_error_names_document_node_and_position() -> None:
 def test_node_starting_on_a_text_segment_rejected() -> None:
     segments = list(SEGMENTS)
     segments[4] = text("pb6", "1.")  # khoản 1's heading as plain text
-    with pytest.raises(ValueError, match=rf"node '{KHOAN_1}'.*must be the node's HeadingSegment, got TextSegment"):
+    with pytest.raises(
+        ValueError,
+        match=rf"node '{KHOAN_1}'.*must be the node's HeadingSegment, got TextSegment",
+    ):
         outline_document(segments=tuple(segments))
 
 
@@ -582,7 +662,9 @@ def test_parent_and_first_child_cannot_share_a_start() -> None:
 
 def test_heading_segment_with_another_marker_rejected() -> None:
     segments = list(SEGMENTS)
-    segments[4] = make_heading_segment(block_id="pb6", node_id=KHOAN_1, marker="1)", title=None)
+    segments[4] = make_heading_segment(
+        block_id="pb6", node_id=KHOAN_1, marker="1)", title=None
+    )
     with pytest.raises(ValueError, match=r"different marker.*'1\)'.*'1\.'"):
         outline_document(segments=tuple(segments))
 
@@ -590,7 +672,9 @@ def test_heading_segment_with_another_marker_rejected() -> None:
 def test_heading_segment_with_another_title_rejected() -> None:
     # The builder must rewrite the heading segment when a next_block title arrives.
     segments = list(SEGMENTS)
-    segments[1] = make_heading_segment(block_id="pb2", node_id=CHUONG, marker="Chương I", title=None)
+    segments[1] = make_heading_segment(
+        block_id="pb2", node_id=CHUONG, marker="Chương I", title=None
+    )
     with pytest.raises(ValueError, match=r"different title.*None.*'QUY ĐỊNH CHUNG'"):
         outline_document(segments=tuple(segments))
 
@@ -600,8 +684,13 @@ def test_heading_segment_with_another_title_rejected() -> None:
 
 def test_heading_segment_for_an_unknown_node_rejected() -> None:
     segments = list(SEGMENTS)
-    segments[3] = make_heading_segment(block_id="pb5", node_id="dieu-9", marker="Điều 9.", title=None)
-    with pytest.raises(ValueError, match=r"HeadingSegment at 3 for node 'dieu-9' is not at that node's start"):
+    segments[3] = make_heading_segment(
+        block_id="pb5", node_id="dieu-9", marker="Điều 9.", title=None
+    )
+    with pytest.raises(
+        ValueError,
+        match=r"HeadingSegment at 3 for node 'dieu-9' is not at that node's start",
+    ):
         outline_document(segments=tuple(segments))
 
 
@@ -609,12 +698,18 @@ def test_heading_segment_away_from_its_nodes_start_rejected() -> None:
     # A second heading segment for khoản 1, inside its range.
     segments = list(SEGMENTS)
     segments[5] = heading_for(OUTLINE[2])
-    with pytest.raises(ValueError, match=rf"HeadingSegment at 5 for node '{KHOAN_1}' is not at that node's start"):
+    with pytest.raises(
+        ValueError,
+        match=rf"HeadingSegment at 5 for node '{KHOAN_1}' is not at that node's start",
+    ):
         outline_document(segments=tuple(segments))
 
 
 def test_heading_segment_without_any_nodes_rejected() -> None:
-    segments = (*PLAIN_SEGMENTS[:2], make_heading_segment(block_id="pb9", node_id="dieu-1"))
+    segments = (
+        *PLAIN_SEGMENTS[:2],
+        make_heading_segment(block_id="pb9", node_id="dieu-1"),
+    )
     with pytest.raises(ValueError, match="not at that node's start"):
         make_logical_document(segments=segments, body_start=0, body_end=3)
 
@@ -622,6 +717,8 @@ def test_heading_segment_without_any_nodes_rejected() -> None:
 def test_heading_segments_in_front_and_end_matter_rejected() -> None:
     # A heading segment always belongs to a node, and nodes live in the body.
     segments = list(SEGMENTS)
-    segments[8] = make_heading_segment(block_id="pb8", node_id="x", marker="Nơi nhận:", title=None)
+    segments[8] = make_heading_segment(
+        block_id="pb8", node_id="x", marker="Nơi nhận:", title=None
+    )
     with pytest.raises(ValueError, match="HeadingSegment at 8"):
         outline_document(segments=tuple(segments))

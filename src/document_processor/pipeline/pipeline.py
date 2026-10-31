@@ -65,7 +65,6 @@ class PipelineResult:
         path.write_text(render_review_html(build_review_data(self)), encoding="utf-8")
         return path
 
-
     def summarize(self) -> ResultSummary:
 
         warnings: list[ReviewWarning] = []
@@ -91,12 +90,18 @@ class PipelineResult:
                 )
             )
 
-        chunks_per_table = Counter(c.start for c in self.chunks if c.table_rows is not None)
+        chunks_per_table = Counter(
+            c.start for c in self.chunks if c.table_rows is not None
+        )
         for segment_index, chunk_count in chunks_per_table.items():
             segment = self.logical.segments[segment_index]
             assert isinstance(segment, TableSegment)
             if chunk_count > 1 and segment.table.n_header_rows == 0:
-                first_chunk = next(c for c in self.chunks if c.table_rows is not None and c.start == segment_index)
+                first_chunk = next(
+                    c
+                    for c in self.chunks
+                    if c.table_rows is not None and c.start == segment_index
+                )
                 warnings.append(
                     ReviewWarning(
                         code="table_without_header",
@@ -109,7 +114,6 @@ class PipelineResult:
                         segment=segment_index,
                     )
                 )
-
 
         counts = Counter([node.level for node in self.logical.nodes])
         rank = {name: index for index, name in enumerate(self.level_order)}
@@ -127,7 +131,6 @@ class PipelineResult:
             warnings=tuple(warnings),
             max_tokens=self.max_tokens,
         )
-    
 
     def _repr_html_(self) -> str:
         return render_review_frame(build_review_data(self))

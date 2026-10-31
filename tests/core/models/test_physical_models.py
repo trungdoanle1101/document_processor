@@ -47,7 +47,9 @@ def test_error_message_names_the_block() -> None:
 
 
 def test_image_block_may_have_empty_text() -> None:
-    block = make_block(block_type=BlockType.IMAGE, text="", image_info=make_image_info())
+    block = make_block(
+        block_type=BlockType.IMAGE, text="", image_info=make_image_info()
+    )
     assert block.text == ""
 
 
@@ -128,7 +130,9 @@ def test_declared_numbering_rejects_blank_num_fmt(num_fmt: str) -> None:
     [("",), ("decimal", " "), (" ", "decimal")],
     ids=["only", "last", "first"],
 )
-def test_declared_numbering_rejects_blank_segment(segment_formats: tuple[str, ...]) -> None:
+def test_declared_numbering_rejects_blank_segment(
+    segment_formats: tuple[str, ...],
+) -> None:
     with pytest.raises(ValueError, match="segment format"):
         make_declared_numbering(segment_formats=segment_formats)
 

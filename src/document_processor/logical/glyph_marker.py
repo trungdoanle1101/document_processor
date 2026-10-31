@@ -49,7 +49,9 @@ class GlyphMarker:
         style, glyph, end = read
         if end != len(displayed_marker):
             return []
-        return [GlyphMatch(source="list_marker", style=style.name, glyph=glyph, end=end)]
+        return [
+            GlyphMatch(source="list_marker", style=style.name, glyph=glyph, end=end)
+        ]
 
 
 def compile_glyph_marker(
@@ -70,6 +72,5 @@ def compile_glyph_marker(
             raise ValueError(f"glyphs {names!r}: {e.args[0]}") from None
 
         for glyph in style.glyphs:
-
             by_glyph[glyph] = style
     return GlyphMarker(by_glyph=MappingProxyType(by_glyph))

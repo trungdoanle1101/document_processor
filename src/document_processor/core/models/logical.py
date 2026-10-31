@@ -127,7 +127,9 @@ class LogicalNode:
 
         require_range(owner, self.start, self.end)
         if self.start == self.end:
-            raise ValueError(f"{owner}: a node holds at least its own heading segment, so start < end; got start=end={self.start}")
+            raise ValueError(
+                f"{owner}: a node holds at least its own heading segment, so start < end; got start=end={self.start}"
+            )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -213,7 +215,6 @@ class LogicalDocument:
                 f"{self.__class__.__name__} {self.id!r}: no node with id {node_id}"
             )
         return self._children_by_id[node_id]
-    
 
     @property
     def root_ids(self) -> tuple[str, ...]:
@@ -283,12 +284,11 @@ class LogicalDocument:
                     f"{owner}: segment {node.start} must be the node's HeadingSegment, "
                     f"got {type(start_segment).__name__} (block {start_segment.block_id!r})"
                 )
-            
+
             if start_segment.node_id != node.id:
                 raise ValueError(
                     f"{owner}: segment {node.start} has a different node_id from the node's id, got {start_segment.node_id!r}"
                 )
-    
 
             if start_segment.marker != node.marker:
                 raise ValueError(

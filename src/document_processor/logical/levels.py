@@ -52,8 +52,11 @@ class LevelSpec:
 
     def __post_init__(self) -> None:
         if not NAME_PATTERN.fullmatch(self.name):
-            raise ValueError(f"invalid level name {self.name!r}: must match {NAME_PATTERN.pattern}")
+            raise ValueError(
+                f"invalid level name {self.name!r}: must match {NAME_PATTERN.pattern}"
+            )
 
         if self.title not in TITLE_RULES:
-            raise ValueError(f"level {self.name!r}: 'title' must be one of {TITLE_RULES}, got {self.title!r}")
-    
+            raise ValueError(
+                f"level {self.name!r}: 'title' must be one of {TITLE_RULES}, got {self.title!r}"
+            )

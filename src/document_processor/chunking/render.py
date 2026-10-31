@@ -15,17 +15,23 @@ from document_processor.core.models import (
 type TableLayout = Literal["grid", "key_value"]
 
 
-def render_table_rows(table: TableInfo, start: int, end: int, layout: TableLayout) -> str:
+def render_table_rows(
+    table: TableInfo, start: int, end: int, layout: TableLayout
+) -> str:
     """Render the header rows, then body rows [start, end). Rows count from 0, as cell.row does."""
     if not (table.n_header_rows <= start <= end <= table.n_rows):
-        raise ValueError(f"required: {table.n_header_rows} <= start <= end <= {table.n_rows}, got start={start}, end={end}")
+        raise ValueError(
+            f"required: {table.n_header_rows} <= start <= end <= {table.n_rows}, got start={start}, end={end}"
+        )
 
     if layout == "key_value":
         return _render_table_rows_as_key_value(table, start, end)
     return _render_table_rows_as_grid(table, start, end)
 
 
-def render_segments(document: LogicalDocument, start: int, end: int, table_layout: TableLayout) -> str:
+def render_segments(
+    document: LogicalDocument, start: int, end: int, table_layout: TableLayout
+) -> str:
     if not (0 <= start <= end <= len(document.segments)):
         raise ValueError(
             f"required: 0 <= start <= end <= {len(document.segments)}, got start={start}, end={end}"
@@ -45,7 +51,11 @@ def render_segments(document: LogicalDocument, start: int, end: int, table_layou
                 lines.append(segment.text)
         elif isinstance(segment, TableSegment):
             table = segment.table
-            lines.append(render_table_rows(table, table.n_header_rows, table.n_rows, table_layout))
+            lines.append(
+                render_table_rows(
+                    table, table.n_header_rows, table.n_rows, table_layout
+                )
+            )
         elif isinstance(segment, ImageSegment):
             # Images have no text
             pass
@@ -86,7 +96,9 @@ def _render_table_rows_as_key_value(table: TableInfo, start: int, end: int) -> s
     return "\n".join(lines)
 
 
-def _column_labels(table: TableInfo, grid: tuple[tuple[TableCell, ...], ...]) -> list[str]:
+def _column_labels(
+    table: TableInfo, grid: tuple[tuple[TableCell, ...], ...]
+) -> list[str]:
     labels: list[str] = []
     for c in range(table.n_cols):
         cells_above: list[TableCell] = []

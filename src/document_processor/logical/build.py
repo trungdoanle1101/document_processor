@@ -90,7 +90,7 @@ class _Assembly:
 
         # A node's first segment is its heading (LogicalDocument checks this)
         self.segments.append(_heading_segment_for(draft))
-        
+
         if body_text:
             self.segments.append(TextSegment(block_id=block.id, text=body_text))
         draft_level_spec = self.profile.get_level(draft.level)
@@ -210,7 +210,7 @@ def _heading_segment_for(draft: _NodeDraft) -> HeadingSegment:
         block_id=draft.head_block_ids[0],
         node_id=draft.id,
         marker=draft.marker,
-        title=draft.title
+        title=draft.title,
     )
 
 

@@ -25,8 +25,22 @@ from document_processor.chunking.serialization import (
 )
 from tests.chunking.test_outline_chunker import chunker, regulation
 
-CHUONG = PathStep(node_id="n0", level="chuong", number="I", marker="Chương I", title="QUY ĐỊNH CHUNG", start=1)
-DIEU = PathStep(node_id="n3", level="dieu", number="2", marker="Điều 2.", title="Giải thích từ ngữ", start=7)
+CHUONG = PathStep(
+    node_id="n0",
+    level="chuong",
+    number="I",
+    marker="Chương I",
+    title="QUY ĐỊNH CHUNG",
+    start=1,
+)
+DIEU = PathStep(
+    node_id="n3",
+    level="dieu",
+    number="2",
+    marker="Điều 2.",
+    title="Giải thích từ ngữ",
+    start=7,
+)
 
 
 def make_chunk(**overrides: Any) -> Chunk:
@@ -95,7 +109,9 @@ def test_collections_are_tuples() -> None:
 
 
 def test_front_matter_chunk_without_a_path() -> None:
-    chunk = make_chunk(part="front_matter", path=(), start=0, end=1, text="BAN HÀNH QUY ĐỊNH")
+    chunk = make_chunk(
+        part="front_matter", path=(), start=0, end=1, text="BAN HÀNH QUY ĐỊNH"
+    )
     assert round_trip(chunk) == chunk
 
 
@@ -106,8 +122,15 @@ def test_every_chunk_of_a_real_run_round_trips() -> None:
 
 
 def test_lead_in_round_trips() -> None:
-    khoan = PathStep(node_id="n4", level="khoan", number="1", marker="1.", title=None, start=8,
-                     lead_in="Hệ thống là tập hợp…")
+    khoan = PathStep(
+        node_id="n4",
+        level="khoan",
+        number="1",
+        marker="1.",
+        title=None,
+        start=8,
+        lead_in="Hệ thống là tập hợp…",
+    )
     chunk = make_chunk(path=(CHUONG, DIEU, khoan), start=9, end=10)
     loaded = round_trip(chunk)
     assert loaded == chunk
@@ -116,8 +139,12 @@ def test_lead_in_round_trips() -> None:
 
 
 def test_a_record_written_before_lead_ins_loads_with_none() -> None:
-    khoan = PathStep(node_id="n4", level="khoan", number="1", marker="1.", title=None, start=8)
-    d = through_json(chunk_to_dict(make_chunk(path=(CHUONG, DIEU, khoan), start=9, end=10)))
+    khoan = PathStep(
+        node_id="n4", level="khoan", number="1", marker="1.", title=None, start=8
+    )
+    d = through_json(
+        chunk_to_dict(make_chunk(path=(CHUONG, DIEU, khoan), start=9, end=10))
+    )
     for step in d["chunk"]["path"]:
         del step["lead_in"]
     loaded = chunk_from_dict(d)
@@ -126,14 +153,34 @@ def test_a_record_written_before_lead_ins_loads_with_none() -> None:
 
 
 def test_headings_written_with_the_lead_in() -> None:
-    khoan = PathStep(node_id="n4", level="khoan", number="1", marker="1.", title=None, start=8, lead_in="Hệ thống")
-    d = through_json(chunk_to_dict(make_chunk(path=(CHUONG, DIEU, khoan), start=9, end=10)))
+    khoan = PathStep(
+        node_id="n4",
+        level="khoan",
+        number="1",
+        marker="1.",
+        title=None,
+        start=8,
+        lead_in="Hệ thống",
+    )
+    d = through_json(
+        chunk_to_dict(make_chunk(path=(CHUONG, DIEU, khoan), start=9, end=10))
+    )
     assert d["chunk"]["headings"][-1] == "1. Hệ thống"
 
 
 def test_headings_that_disagree_with_the_lead_in_are_refused() -> None:
-    khoan = PathStep(node_id="n4", level="khoan", number="1", marker="1.", title=None, start=8, lead_in="Hệ thống")
-    d = through_json(chunk_to_dict(make_chunk(path=(CHUONG, DIEU, khoan), start=9, end=10)))
+    khoan = PathStep(
+        node_id="n4",
+        level="khoan",
+        number="1",
+        marker="1.",
+        title=None,
+        start=8,
+        lead_in="Hệ thống",
+    )
+    d = through_json(
+        chunk_to_dict(make_chunk(path=(CHUONG, DIEU, khoan), start=9, end=10))
+    )
     d["chunk"]["path"][-1]["lead_in"] = "Khác"
     with pytest.raises(ValueError, match="mismatched headings"):
         chunk_from_dict(d)
@@ -145,23 +192,45 @@ def test_headings_that_disagree_with_the_lead_in_are_refused() -> None:
 def test_record_shape() -> None:
     d = through_json(chunk_to_dict(make_chunk()))
     assert set(d) == {"kind", "schema_version", "chunk"}
-    assert (d["kind"], d["schema_version"]) == (CHUNK_KIND, CHUNK_SCHEMA_VERSION) == ("chunk", 1)
+    assert (
+        (d["kind"], d["schema_version"])
+        == (CHUNK_KIND, CHUNK_SCHEMA_VERSION)
+        == ("chunk", 1)
+    )
     assert set(d["chunk"]) == {
-        "id", "logical_document_id", "part", "path", "headings", "start", "end",
-        "table_rows", "text_span", "text", "token_count", "block_ids",
+        "id",
+        "logical_document_id",
+        "part",
+        "path",
+        "headings",
+        "start",
+        "end",
+        "table_rows",
+        "text_span",
+        "text",
+        "token_count",
+        "block_ids",
     }
 
 
 def test_headings_are_written_for_consumers() -> None:
     d = through_json(chunk_to_dict(make_chunk()))
-    assert d["chunk"]["headings"] == ["Chương I QUY ĐỊNH CHUNG", "Điều 2. Giải thích từ ngữ"]
+    assert d["chunk"]["headings"] == [
+        "Chương I QUY ĐỊNH CHUNG",
+        "Điều 2. Giải thích từ ngữ",
+    ]
 
 
 def test_path_step_shape() -> None:
     d = through_json(chunk_to_dict(make_chunk()))
     assert d["chunk"]["path"][1] == {
-        "node_id": "n3", "level": "dieu", "number": "2", "marker": "Điều 2.",
-        "title": "Giải thích từ ngữ", "start": 7, "lead_in": None,
+        "node_id": "n3",
+        "level": "dieu",
+        "number": "2",
+        "marker": "Điều 2.",
+        "title": "Giải thích từ ngữ",
+        "start": 7,
+        "lead_in": None,
     }
 
 
@@ -269,7 +338,10 @@ def test_files_can_be_concatenated(tmp_path: Path) -> None:
     save_chunks([make_chunk(logical_document_id="ld1")], first)
     save_chunks([make_chunk(logical_document_id="ld2")], second)
     both = tmp_path / "both.jsonl"
-    both.write_text(first.read_text(encoding="utf-8") + second.read_text(encoding="utf-8"), encoding="utf-8")
+    both.write_text(
+        first.read_text(encoding="utf-8") + second.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
     assert [c.logical_document_id for c in load_chunks(both)] == ["ld1", "ld2"]
 
 
@@ -284,7 +356,10 @@ def test_a_bad_line_is_reported_with_its_number(tmp_path: Path) -> None:
 
 def test_a_line_that_is_not_json_is_reported_with_its_number(tmp_path: Path) -> None:
     path = tmp_path / "c.jsonl"
-    path.write_text(json.dumps(chunk_to_dict(make_chunk()), ensure_ascii=False) + "\n{not json\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(chunk_to_dict(make_chunk()), ensure_ascii=False) + "\n{not json\n",
+        encoding="utf-8",
+    )
     with pytest.raises(ValueError, match="line 2"):
         load_chunks(path)
 

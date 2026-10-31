@@ -14,7 +14,9 @@ import pytest
 from document_processor.logical.glyph_styles import BUILTIN_GLYPH_STYLES, GlyphStyle
 
 
-def make_style(name: str = "test_style", glyphs: frozenset[str] = frozenset({"-"})) -> GlyphStyle:
+def make_style(
+    name: str = "test_style", glyphs: frozenset[str] = frozenset({"-"})
+) -> GlyphStyle:
     return GlyphStyle(name=name, glyphs=glyphs)
 
 
@@ -46,7 +48,19 @@ def test_valid_names(name: str) -> None:
     assert make_style(name=name).name == name
 
 
-@pytest.mark.parametrize("name", ["", "Dash", "1dash", "_dash", "round-bullet", "round bullet", "chữ", "word_bullet "])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "",
+        "Dash",
+        "1dash",
+        "_dash",
+        "round-bullet",
+        "round bullet",
+        "chữ",
+        "word_bullet ",
+    ],
+)
 def test_invalid_names(name: str) -> None:
     with pytest.raises(ValueError, match="name"):
         make_style(name=name)
@@ -131,7 +145,16 @@ def test_the_reported_glyph_is_the_same_on_every_run() -> None:
 # ============================================================ built-in styles
 
 
-BUILTIN_NAMES = ("arrow", "check", "dash", "diamond", "plus", "round_bullet", "square", "white_bullet")
+BUILTIN_NAMES = (
+    "arrow",
+    "check",
+    "dash",
+    "diamond",
+    "plus",
+    "round_bullet",
+    "square",
+    "white_bullet",
+)
 
 
 def test_builtin_names() -> None:

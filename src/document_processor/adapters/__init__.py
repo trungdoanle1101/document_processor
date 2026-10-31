@@ -6,7 +6,6 @@ from document_processor.core.registry import Registry
 __all__ = ["ADAPTERS", "Adapter", "DocxAdapter", "PlainTextAdapter"]
 
 
-ADAPTERS: Registry[Adapter] = Registry("adapter", {
-    ".docx": DocxAdapter(),
-    ".txt": PlainTextAdapter()
-})
+ADAPTERS: Registry[Adapter] = Registry(
+    "adapter", {".docx": DocxAdapter(), ".txt": PlainTextAdapter()}
+)

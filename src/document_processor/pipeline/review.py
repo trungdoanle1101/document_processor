@@ -81,9 +81,10 @@ class ResultSummary:
         ]
         return "\n".join(lines)
 
-
     def format(self) -> str:
-        warning_lines = [f"  ⚠ {w.code}  {w.message}" for w in self.warnings] or ["  no warnings"]
+        warning_lines = [f"  ⚠ {w.code}  {w.message}" for w in self.warnings] or [
+            "  no warnings"
+        ]
         return "\n".join([self.format_statistics(), *warning_lines])
 
 
@@ -147,7 +148,9 @@ def build_table_rows(
         first_row = max(cell.row, start)
         last_row = min(cell.row + cell.row_span, end)
         if first_row < last_row:
-            cells_by_row[first_row].append(replace(cell, row=first_row, row_span=last_row - first_row))
+            cells_by_row[first_row].append(
+                replace(cell, row=first_row, row_span=last_row - first_row)
+            )
 
     return tuple(
         tuple(sorted(cells_by_row[row], key=lambda cell: cell.col))

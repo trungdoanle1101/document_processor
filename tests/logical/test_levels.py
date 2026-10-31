@@ -11,7 +11,11 @@ import dataclasses
 import pytest
 
 from document_processor.logical.counter_styles import BUILTIN_COUNTER_STYLES
-from document_processor.logical.glyph_marker import GlyphMarker, GlyphMatch, compile_glyph_marker
+from document_processor.logical.glyph_marker import (
+    GlyphMarker,
+    GlyphMatch,
+    compile_glyph_marker,
+)
 from document_processor.logical.glyph_styles import BUILTIN_GLYPH_STYLES
 from document_processor.logical.levels import (
     TITLE_RULES,
@@ -23,7 +27,11 @@ from document_processor.logical.levels import (
     TemplateMarkerSpec,
     TitleRule,
 )
-from document_processor.logical.template_marker import TemplateMarker, TemplateMatch, compile_template_marker
+from document_processor.logical.template_marker import (
+    TemplateMarker,
+    TemplateMatch,
+    compile_template_marker,
+)
 
 DIEU = TemplateMarkerSpec(templates=("Điều {arabic}.",))
 DASH = GlyphMarkerSpec(glyphs=("dash",))
@@ -69,7 +77,9 @@ def test_title_rules_come_from_the_literal() -> None:
 
 
 def test_template_spec_keeps_its_fields() -> None:
-    spec = TemplateMarkerSpec(templates=("Điều {arabic}.", "Điều {arabic}:"), case_sensitive=True)
+    spec = TemplateMarkerSpec(
+        templates=("Điều {arabic}.", "Điều {arabic}:"), case_sensitive=True
+    )
     assert spec.templates == ("Điều {arabic}.", "Điều {arabic}:")
     assert spec.case_sensitive is True
 
@@ -92,7 +102,9 @@ def test_template_spec_must_not_be_empty() -> None:
 
 def test_template_spec_must_not_repeat() -> None:
     with pytest.raises(ValueError, match="repeat"):
-        TemplateMarkerSpec(templates=("Điều {arabic}.", "Điều {arabic}:", "Điều {arabic}."))
+        TemplateMarkerSpec(
+            templates=("Điều {arabic}.", "Điều {arabic}:", "Điều {arabic}.")
+        )
 
 
 def test_template_repeat_error_shows_the_templates() -> None:
@@ -119,7 +131,9 @@ def test_template_specs_compare_by_value_and_hash() -> None:
     same = TemplateMarkerSpec(templates=("Điều {arabic}.",))
     assert same == DIEU
     assert hash(same) == hash(DIEU)
-    assert TemplateMarkerSpec(templates=("Điều {arabic}.",), case_sensitive=True) != DIEU
+    assert (
+        TemplateMarkerSpec(templates=("Điều {arabic}.",), case_sensitive=True) != DIEU
+    )
 
 
 # ============================================================ GlyphMarkerSpec
@@ -131,7 +145,10 @@ def test_glyph_spec_keeps_its_fields() -> None:
 
 def test_glyph_spec_does_not_look_up_its_styles() -> None:
     # Unknown names and the reserved word_bullet are resolved by the profile.
-    assert GlyphMarkerSpec(glyphs=("word_bullet", "no_such_style")).glyphs == ("word_bullet", "no_such_style")
+    assert GlyphMarkerSpec(glyphs=("word_bullet", "no_such_style")).glyphs == (
+        "word_bullet",
+        "no_such_style",
+    )
 
 
 def test_glyph_spec_must_not_be_empty() -> None:
@@ -196,7 +213,14 @@ def test_level_with_a_glyph_marker() -> None:
 def test_level_has_no_rank() -> None:
     # The position in Profile.levels is the rank.
     field_names = {f.name for f in dataclasses.fields(LevelSpec)}
-    assert field_names == {"name", "marker", "is_section", "title", "closes_on_plain_paragraph", "inside"}
+    assert field_names == {
+        "name",
+        "marker",
+        "is_section",
+        "title",
+        "closes_on_plain_paragraph",
+        "inside",
+    }
 
 
 def test_is_section_is_required() -> None:
@@ -222,7 +246,12 @@ def test_level_is_keyword_only() -> None:
 
 def test_levels_compare_by_value_and_hash() -> None:
     a = LevelSpec(name="khoan", is_section=False, marker=DIEU, inside=("dieu",))
-    b = LevelSpec(name="khoan", is_section=False, marker=TemplateMarkerSpec(templates=("Điều {arabic}.",)), inside=("dieu",))
+    b = LevelSpec(
+        name="khoan",
+        is_section=False,
+        marker=TemplateMarkerSpec(templates=("Điều {arabic}.",)),
+        inside=("dieu",),
+    )
     assert a == b
     assert hash(a) == hash(b)
 
@@ -235,7 +264,9 @@ def test_valid_level_names(name: str) -> None:
     assert level(name=name).name == name
 
 
-@pytest.mark.parametrize("name", ["", "Dieu", "điều", "2dieu", "_dieu", "diem-con", "diem con", "dieu "])
+@pytest.mark.parametrize(
+    "name", ["", "Dieu", "điều", "2dieu", "_dieu", "diem-con", "diem con", "dieu "]
+)
 def test_invalid_level_names(name: str) -> None:
     with pytest.raises(ValueError, match="invalid level name"):
         level(name=name)
@@ -257,7 +288,9 @@ def test_every_title_rule_is_accepted(title: str) -> None:
     assert level(title=title).title == title
 
 
-@pytest.mark.parametrize("title", ["", "None", "next_paragraph", "nxt_block", "rest-of-paragraph", " none"])
+@pytest.mark.parametrize(
+    "title", ["", "None", "next_paragraph", "nxt_block", "rest-of-paragraph", " none"]
+)
 def test_unknown_title_rule(title: str) -> None:
     # mypy rejects these in Python profiles (title is a Literal); YAML gets this message.
     with pytest.raises(ValueError, match="title"):

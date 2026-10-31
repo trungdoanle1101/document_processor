@@ -68,19 +68,32 @@ def test_every_adapter_names_itself() -> None:
 
 
 def test_docx_is_read_by_the_docx_adapter(tmp_path: Path) -> None:
-    path = write_docx(tmp_path, "quy_dinh.docx", "Điều 1. Phạm vi điều chỉnh", "Nội dung")
+    path = write_docx(
+        tmp_path, "quy_dinh.docx", "Điều 1. Phạm vi điều chỉnh", "Nội dung"
+    )
     document = extract_physical_document(path)
     assert document.source_format is DocSourceFormat.DOCX
-    assert (document.adapter_name, document.source_filename) == ("docx", "quy_dinh.docx")
-    assert [b.text for b in document.blocks] == ["Điều 1. Phạm vi điều chỉnh", "Nội dung"]
+    assert (document.adapter_name, document.source_filename) == (
+        "docx",
+        "quy_dinh.docx",
+    )
+    assert [b.text for b in document.blocks] == [
+        "Điều 1. Phạm vi điều chỉnh",
+        "Nội dung",
+    ]
 
 
 def test_txt_is_read_by_the_plain_text_adapter(tmp_path: Path) -> None:
-    path = write_txt(tmp_path, "quy_dinh.txt", "Điều 1. Phạm vi điều chỉnh\n\nNội dung\n")
+    path = write_txt(
+        tmp_path, "quy_dinh.txt", "Điều 1. Phạm vi điều chỉnh\n\nNội dung\n"
+    )
     document = extract_physical_document(path)
     assert document.source_format is DocSourceFormat.TXT
     assert document.adapter_name == "plain_text"
-    assert [b.text for b in document.blocks] == ["Điều 1. Phạm vi điều chỉnh", "Nội dung"]
+    assert [b.text for b in document.blocks] == [
+        "Điều 1. Phạm vi điều chỉnh",
+        "Nội dung",
+    ]
 
 
 def test_same_result_as_calling_the_adapter_directly(tmp_path: Path) -> None:
@@ -121,7 +134,9 @@ def test_replaced_adapter_reads_the_file(tmp_path: Path) -> None:
 
 def test_replacing_docx_keeps_txt(tmp_path: Path) -> None:
     marked_only = ADAPTERS.replace({".docx": DocxAdapter(header_row_rule="marked")})
-    document = extract_physical_document(write_txt(tmp_path, "a.txt", "Nội dung"), marked_only)
+    document = extract_physical_document(
+        write_txt(tmp_path, "a.txt", "Nội dung"), marked_only
+    )
     assert document.source_format is DocSourceFormat.TXT
 
 

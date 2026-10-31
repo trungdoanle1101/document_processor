@@ -21,9 +21,25 @@ import pytest
 from document_processor.chunking.chunk import Chunk, PathStep
 from document_processor.core.models import heading_label
 
-CHUONG = PathStep(node_id="n0", level="chuong", number="I", marker="Chương I", title="QUY ĐỊNH CHUNG", start=1)
-DIEU = PathStep(node_id="n4", level="dieu", number="2", marker="Điều 2.", title="Giải thích từ ngữ", start=12)
-KHOAN = PathStep(node_id="n14", level="khoan", number="10", marker="10.", title=None, start=40)
+CHUONG = PathStep(
+    node_id="n0",
+    level="chuong",
+    number="I",
+    marker="Chương I",
+    title="QUY ĐỊNH CHUNG",
+    start=1,
+)
+DIEU = PathStep(
+    node_id="n4",
+    level="dieu",
+    number="2",
+    marker="Điều 2.",
+    title="Giải thích từ ngữ",
+    start=12,
+)
+KHOAN = PathStep(
+    node_id="n14", level="khoan", number="10", marker="10.", title=None, start=40
+)
 
 
 def make_chunk(**overrides: Any) -> Chunk:
@@ -54,7 +70,12 @@ def test_label_without_a_title_is_the_marker() -> None:
 
 
 def test_label_without_a_marker_is_the_title() -> None:
-    assert PathStep(node_id="n1", level="x", number=None, marker=None, title="Tiêu đề", start=0).label == "Tiêu đề"
+    assert (
+        PathStep(
+            node_id="n1", level="x", number=None, marker=None, title="Tiêu đề", start=0
+        ).label
+        == "Tiêu đề"
+    )
 
 
 def test_label_is_heading_label() -> None:
@@ -64,7 +85,9 @@ def test_label_is_heading_label() -> None:
 
 
 def test_label_without_a_title_uses_the_lead_in() -> None:
-    step = dataclasses.replace(KHOAN, lead_in="Các hệ thống phải đáp ứng các yêu cầu sau:")
+    step = dataclasses.replace(
+        KHOAN, lead_in="Các hệ thống phải đáp ứng các yêu cầu sau:"
+    )
     assert step.label == "10. Các hệ thống phải đáp ứng các yêu cầu sau:"
 
 
@@ -73,18 +96,35 @@ def test_lead_in_defaults_to_none() -> None:
 
 
 def test_lead_in_without_a_marker() -> None:
-    step = PathStep(node_id="n1", level="x", number=None, marker=None, title=None, start=0, lead_in="Mở đầu")
+    step = PathStep(
+        node_id="n1",
+        level="x",
+        number=None,
+        marker=None,
+        title=None,
+        start=0,
+        lead_in="Mở đầu",
+    )
     assert step.label == "Mở đầu"
 
 
 def test_title_and_lead_in_together_rejected() -> None:
-    with pytest.raises(ValueError, match="'n4' at level 'dieu': title and lead-in cannot both be set"):
+    with pytest.raises(
+        ValueError, match="'n4' at level 'dieu': title and lead-in cannot both be set"
+    ):
         dataclasses.replace(DIEU, lead_in="Trong Quy định này")
 
 
-@pytest.mark.parametrize("lead_in", ["", "   ", "\n\t", "\u200b"], ids=["empty", "spaces", "whitespace", "zero-width"])
+@pytest.mark.parametrize(
+    "lead_in",
+    ["", "   ", "\n\t", "\u200b"],
+    ids=["empty", "spaces", "whitespace", "zero-width"],
+)
 def test_invisible_lead_in_rejected(lead_in: str) -> None:
-    with pytest.raises(ValueError, match="'n14' at level 'khoan': lead-in is empty or contains invisible text"):
+    with pytest.raises(
+        ValueError,
+        match="'n14' at level 'khoan': lead-in is empty or contains invisible text",
+    ):
         dataclasses.replace(KHOAN, lead_in=lead_in)
 
 
@@ -93,13 +133,17 @@ def test_headings_and_contextualize_use_the_lead_in() -> None:
     chunk = make_chunk(path=(CHUONG, DIEU, khoan))
     assert chunk.headings[-1] == "10. Hệ thống gồm:"
     assert chunk.contextualize().split("\n")[:3] == [
-        "Chương I QUY ĐỊNH CHUNG", "Điều 2. Giải thích từ ngữ", "10. Hệ thống gồm:"
+        "Chương I QUY ĐỊNH CHUNG",
+        "Điều 2. Giải thích từ ngữ",
+        "10. Hệ thống gồm:",
     ]
 
 
 def test_path_step_rejects_a_negative_start() -> None:
     with pytest.raises(ValueError, match="start >= 0"):
-        PathStep(node_id="n1", level="x", number=None, marker=None, title=None, start=-1)
+        PathStep(
+            node_id="n1", level="x", number=None, marker=None, title=None, start=-1
+        )
 
 
 def test_path_step_is_frozen() -> None:
@@ -149,13 +193,21 @@ def test_negative_token_count_rejected() -> None:
 
 
 def test_headings_are_the_path_labels_root_first() -> None:
-    assert make_chunk().headings == ("Chương I QUY ĐỊNH CHUNG", "Điều 2. Giải thích từ ngữ", "10.")
+    assert make_chunk().headings == (
+        "Chương I QUY ĐỊNH CHUNG",
+        "Điều 2. Giải thích từ ngữ",
+        "10.",
+    )
 
 
 def test_headings_include_the_owner_even_when_its_heading_is_in_the_text() -> None:
     # The breadcrumb names every node containing the chunk, wherever the chunk starts.
     chunk = make_chunk(start=40, end=42, text="10. “Hệ thống Log tập trung”: …")
-    assert chunk.headings == ("Chương I QUY ĐỊNH CHUNG", "Điều 2. Giải thích từ ngữ", "10.")
+    assert chunk.headings == (
+        "Chương I QUY ĐỊNH CHUNG",
+        "Điều 2. Giải thích từ ngữ",
+        "10.",
+    )
 
 
 def test_chunks_of_one_owner_share_their_headings() -> None:
@@ -165,7 +217,9 @@ def test_chunks_of_one_owner_share_their_headings() -> None:
 
 
 def test_a_root_chunk_has_its_root_as_heading() -> None:
-    chunk = make_chunk(path=(CHUONG,), start=1, end=5, text="Chương I QUY ĐỊNH CHUNG\n…")
+    chunk = make_chunk(
+        path=(CHUONG,), start=1, end=5, text="Chương I QUY ĐỊNH CHUNG\n…"
+    )
     assert chunk.headings == ("Chương I QUY ĐỊNH CHUNG",)
 
 
@@ -180,9 +234,16 @@ def test_no_path_no_headings() -> None:
 
 def test_headings_are_in_asdict_and_json() -> None:
     data = dataclasses.asdict(make_chunk())
-    assert data["headings"] == ("Chương I QUY ĐỊNH CHUNG", "Điều 2. Giải thích từ ngữ", "10.")
+    assert data["headings"] == (
+        "Chương I QUY ĐỊNH CHUNG",
+        "Điều 2. Giải thích từ ngữ",
+        "10.",
+    )
     assert data["path"][2]["start"] == 40
-    assert json.loads(json.dumps(data, ensure_ascii=False))["headings"][1] == "Điều 2. Giải thích từ ngữ"
+    assert (
+        json.loads(json.dumps(data, ensure_ascii=False))["headings"][1]
+        == "Điều 2. Giải thích từ ngữ"
+    )
 
 
 def test_chunks_compare_by_their_fields() -> None:
@@ -211,17 +272,25 @@ def test_node_id_of_a_body_chunk_outside_every_node() -> None:
 
 def test_contextualize_puts_the_headings_first() -> None:
     chunk = make_chunk(text="Nội dung")
-    assert chunk.contextualize() == "Chương I QUY ĐỊNH CHUNG\nĐiều 2. Giải thích từ ngữ\n10.\nNội dung"
+    assert (
+        chunk.contextualize()
+        == "Chương I QUY ĐỊNH CHUNG\nĐiều 2. Giải thích từ ngữ\n10.\nNội dung"
+    )
 
 
 def test_contextualize_leaves_out_the_owner_heading_already_in_the_text() -> None:
     # Starting at the owner's start means the text begins with "10."; no second copy.
     chunk = make_chunk(start=40, end=42, text="10. “Hệ thống Log tập trung”: …")
-    assert chunk.contextualize() == "Chương I QUY ĐỊNH CHUNG\nĐiều 2. Giải thích từ ngữ\n10. “Hệ thống Log tập trung”: …"
+    assert (
+        chunk.contextualize()
+        == "Chương I QUY ĐỊNH CHUNG\nĐiều 2. Giải thích từ ngữ\n10. “Hệ thống Log tập trung”: …"
+    )
 
 
 def test_contextualize_of_a_root_chunk_starting_at_its_owner_is_the_text() -> None:
-    chunk = make_chunk(path=(CHUONG,), start=1, end=5, text="Chương I QUY ĐỊNH CHUNG\n…")
+    chunk = make_chunk(
+        path=(CHUONG,), start=1, end=5, text="Chương I QUY ĐỊNH CHUNG\n…"
+    )
     assert chunk.contextualize() == "Chương I QUY ĐỊNH CHUNG\n…"
 
 
@@ -230,11 +299,18 @@ def test_contextualize_of_chunks_of_one_owner_reads_alike() -> None:
     at_owner_start = make_chunk(start=40, end=41, text="10. Đầu khoản")
     later = make_chunk(start=41, end=42, text="Phần sau")
     assert at_owner_start.contextualize().count("10.") == 1
-    assert later.contextualize().splitlines()[:3] == ["Chương I QUY ĐỊNH CHUNG", "Điều 2. Giải thích từ ngữ", "10."]
+    assert later.contextualize().splitlines()[:3] == [
+        "Chương I QUY ĐỊNH CHUNG",
+        "Điều 2. Giải thích từ ngữ",
+        "10.",
+    ]
 
 
 def test_contextualize_without_a_path_is_the_text() -> None:
-    assert make_chunk(part="end_matter", path=(), text="Nơi nhận:").contextualize() == "Nơi nhận:"
+    assert (
+        make_chunk(part="end_matter", path=(), text="Nơi nhận:").contextualize()
+        == "Nơi nhận:"
+    )
 
 
 def test_text_never_contains_the_headings() -> None:
@@ -252,18 +328,26 @@ def test_range_must_be_non_empty(start: int, end: int) -> None:
 
 
 def test_path_starts_must_increase() -> None:
-    late_dieu = PathStep(node_id="n4", level="dieu", number="2", marker="Điều 2.", title=None, start=1)
+    late_dieu = PathStep(
+        node_id="n4", level="dieu", number="2", marker="Điều 2.", title=None, start=1
+    )
     with pytest.raises(ValueError, match="strictly increasing"):
         make_chunk(path=(CHUONG, late_dieu, KHOAN))
 
 
 def test_owner_cannot_start_after_the_chunk() -> None:
-    with pytest.raises(ValueError, match=r"owner must not start after the chunk.*owner start=40 > chunk start=30"):
+    with pytest.raises(
+        ValueError,
+        match=r"owner must not start after the chunk.*owner start=40 > chunk start=30",
+    ):
         make_chunk(start=30, end=31)
 
 
 def test_a_range_of_several_segments() -> None:
-    assert (make_chunk(start=50, end=54).start, make_chunk(start=50, end=54).end) == (50, 54)
+    assert (make_chunk(start=50, end=54).start, make_chunk(start=50, end=54).end) == (
+        50,
+        54,
+    )
 
 
 @pytest.mark.parametrize("part", ["front_matter", "end_matter"])

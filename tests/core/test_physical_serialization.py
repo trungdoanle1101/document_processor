@@ -20,7 +20,9 @@ from tests.factories import (
 
 def round_trip(doc: PhysicalDocument) -> PhysicalDocument:
     # Through real JSON text, so tuples really become lists on the way.
-    return physical_document_from_dict(json.loads(json.dumps(physical_document_to_dict(doc))))
+    return physical_document_from_dict(
+        json.loads(json.dumps(physical_document_to_dict(doc)))
+    )
 
 
 def list_document(**list_info_overrides: Any) -> PhysicalDocument:
@@ -34,7 +36,9 @@ def list_document(**list_info_overrides: Any) -> PhysicalDocument:
 
 
 def list_info_dict(doc: PhysicalDocument) -> dict[str, Any]:
-    result: dict[str, Any] = physical_document_to_dict(doc)["document"]["blocks"][0]["list_info"]
+    result: dict[str, Any] = physical_document_to_dict(doc)["document"]["blocks"][0][
+        "list_info"
+    ]
     return result
 
 
@@ -69,7 +73,10 @@ def test_round_trip_with_declared_numbering(
 
 
 def test_declared_numbering_written_as_null_when_absent() -> None:
-    assert list_info_dict(list_document(declared_numbering=None))["declared_numbering"] is None
+    assert (
+        list_info_dict(list_document(declared_numbering=None))["declared_numbering"]
+        is None
+    )
 
 
 def test_declared_numbering_json_shape() -> None:
@@ -94,7 +101,11 @@ def test_load_rejects_missing_declared_numbering_key() -> None:
 
 
 def test_load_runs_declared_numbering_validation() -> None:
-    d = physical_document_to_dict(list_document(declared_numbering=make_declared_numbering()))
-    d["document"]["blocks"][0]["list_info"]["declared_numbering"]["segment_formats"] = [" "]
+    d = physical_document_to_dict(
+        list_document(declared_numbering=make_declared_numbering())
+    )
+    d["document"]["blocks"][0]["list_info"]["declared_numbering"]["segment_formats"] = [
+        " "
+    ]
     with pytest.raises(ValueError, match="segment format"):
         physical_document_from_dict(d)

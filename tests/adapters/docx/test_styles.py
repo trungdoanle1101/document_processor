@@ -80,10 +80,20 @@ def bold_xml(bold: str | None) -> str:
     return f"<w:rPr><w:b{val}/></w:rPr>"
 
 
-def styles_root(*styles: str, default_jc: str | None = None, default_bold: str | None = None) -> _Element:
+def styles_root(
+    *styles: str, default_jc: str | None = None, default_bold: str | None = None
+) -> _Element:
     """A <w:styles> root, optionally with a document-default jc and bold."""
-    p_pr_default = f"<w:pPrDefault>{jc_xml(default_jc)}</w:pPrDefault>" if default_jc is not None else ""
-    r_pr_default = f"<w:rPrDefault>{bold_xml(default_bold)}</w:rPrDefault>" if default_bold is not None else ""
+    p_pr_default = (
+        f"<w:pPrDefault>{jc_xml(default_jc)}</w:pPrDefault>"
+        if default_jc is not None
+        else ""
+    )
+    r_pr_default = (
+        f"<w:rPrDefault>{bold_xml(default_bold)}</w:rPrDefault>"
+        if default_bold is not None
+        else ""
+    )
     doc_defaults = (
         f"<w:docDefaults>{r_pr_default}{p_pr_default}</w:docDefaults>"
         if (p_pr_default or r_pr_default)
@@ -162,7 +172,9 @@ def test_read_p_style() -> None:
 
 
 def test_style_readers() -> None:
-    el = parse_xml(f"<w:styles {W}>{style('Dieu', name='heading 2', based_on='Normal')}</w:styles>")[0]
+    el = parse_xml(
+        f"<w:styles {W}>{style('Dieu', name='heading 2', based_on='Normal')}</w:styles>"
+    )[0]
     assert read_style_id(el) == "Dieu"
     assert read_style_name(el) == "heading 2"
     assert read_style_based_on(el) == "Normal"
@@ -244,8 +256,12 @@ def test_duplicate_style_ids_rejected() -> None:
 
 
 def test_style_without_id_is_ignored() -> None:
-    root = styles_root(style(None, name="orphan", jc="center"), style("Normal", default="1"))
-    assert resolve(root, paragraph()) == ParagraphFormat(alignment=LEFT, style_name="Normal")
+    root = styles_root(
+        style(None, name="orphan", jc="center"), style("Normal", default="1")
+    )
+    assert resolve(root, paragraph()) == ParagraphFormat(
+        alignment=LEFT, style_name="Normal"
+    )
 
 
 def test_unknown_doc_default_jc_rejected_at_construction() -> None:
@@ -361,7 +377,9 @@ def test_unknown_jc_on_style_raises() -> None:
 
 
 def test_style_name_from_p_style() -> None:
-    root = styles_root(style("Heading1", name="heading 1"), style("Normal", default="1"))
+    root = styles_root(
+        style("Heading1", name="heading 1"), style("Normal", default="1")
+    )
     assert resolve(root, paragraph(p_style="Heading1")).style_name == "heading 1"
 
 
@@ -412,7 +430,9 @@ def test_no_styles_uses_paragraph_jc() -> None:
 
 
 def test_no_styles_falls_back_to_left() -> None:
-    assert resolve(None, paragraph()) == ParagraphFormat(alignment=LEFT, style_name=None)
+    assert resolve(None, paragraph()) == ParagraphFormat(
+        alignment=LEFT, style_name=None
+    )
 
 
 def test_no_styles_ignores_p_style() -> None:
@@ -428,13 +448,23 @@ def test_no_styles_ignores_p_style() -> None:
 @pytest.mark.parametrize(
     ("p_style", "jc", "expected"),
     [
-        ("DieuHeading", "center", ParagraphFormat(alignment=CENTER, style_name="DieuHeading")),
-        ("DieuHeading", None, ParagraphFormat(alignment=JUSTIFIED, style_name="DieuHeading")),
+        (
+            "DieuHeading",
+            "center",
+            ParagraphFormat(alignment=CENTER, style_name="DieuHeading"),
+        ),
+        (
+            "DieuHeading",
+            None,
+            ParagraphFormat(alignment=JUSTIFIED, style_name="DieuHeading"),
+        ),
         (None, None, ParagraphFormat(alignment=LEFT, style_name="Normal")),
     ],
     ids=["direct-jc", "inherited-from-base", "default-style-then-left"],
 )
-def test_worked_example(p_style: str | None, jc: str | None, expected: ParagraphFormat) -> None:
+def test_worked_example(
+    p_style: str | None, jc: str | None, expected: ParagraphFormat
+) -> None:
     assert resolve(styles_root(*CHAIN), paragraph(p_style=p_style, jc=jc)) == expected
 
 
@@ -459,7 +489,9 @@ def run(
     r_xml = f"<w:r>{r_pr}<w:t>TT</w:t></w:r>"
     if in_hyperlink:
         r_xml = f"<w:hyperlink>{r_xml}</w:hyperlink>"
-    p_pr = f'<w:pPr><w:pStyle w:val="{p_style}"/></w:pPr>' if p_style is not None else ""
+    p_pr = (
+        f'<w:pPr><w:pStyle w:val="{p_style}"/></w:pPr>' if p_style is not None else ""
+    )
     p = parse_xml(f"<w:p {W}>{p_pr}{r_xml}</w:p>")
     found = p.find(f".//{qn('w:r')}")
     assert found is not None
@@ -480,7 +512,9 @@ def character_style(style_id: str, **kwargs: str) -> str:
 def test_read_bold_on_a_run_a_style_and_rpr_default() -> None:
     assert read_bold(run(bold="")) is True
     assert read_bold(parse_xml(f"<w:style {W}>{bold_xml('0')}</w:style>")) is False
-    assert read_bold(parse_xml(f"<w:rPrDefault {W}>{bold_xml('')}</w:rPrDefault>")) is True
+    assert (
+        read_bold(parse_xml(f"<w:rPrDefault {W}>{bold_xml('')}</w:rPrDefault>")) is True
+    )
 
 
 def test_read_bold_is_none_when_not_set() -> None:
@@ -500,7 +534,9 @@ def test_plain_run_without_styles_is_not_bold() -> None:
     assert is_bold(None, run()) is False
 
 
-@pytest.mark.parametrize("value", ["", "1", "true", "on"], ids=["bare", "1", "true", "on"])
+@pytest.mark.parametrize(
+    "value", ["", "1", "true", "on"], ids=["bare", "1", "true", "on"]
+)
 def test_direct_bold_on(value: str) -> None:
     assert is_bold(None, run(bold=value)) is True
 
@@ -535,12 +571,17 @@ def test_bold_from_the_character_style() -> None:
 
 
 def test_bold_from_the_character_style_base() -> None:
-    root = styles_root(character_style("Strong", bold=""), character_style("Emphasis", based_on="Strong"))
+    root = styles_root(
+        character_style("Strong", bold=""),
+        character_style("Emphasis", based_on="Strong"),
+    )
     assert is_bold(root, run(r_style="Emphasis")) is True
 
 
 def test_character_style_off_wins_over_a_bold_paragraph_style() -> None:
-    root = styles_root(style("Normal", default="1", bold=""), character_style("Plain", bold="0"))
+    root = styles_root(
+        style("Normal", default="1", bold=""), character_style("Plain", bold="0")
+    )
     assert is_bold(root, run(r_style="Plain", p_style="Normal")) is False
 
 
@@ -556,7 +597,9 @@ def test_unknown_character_style_falls_through() -> None:
 
 def test_bold_character_style_on_a_bold_paragraph_style_stays_bold() -> None:
     # The spec would toggle this off; the nearest-level rule keeps it bold (documented simplification).
-    root = styles_root(style("Normal", default="1", bold=""), character_style("Strong", bold=""))
+    root = styles_root(
+        style("Normal", default="1", bold=""), character_style("Strong", bold="")
+    )
     assert is_bold(root, run(r_style="Strong", p_style="Normal")) is True
 
 
@@ -569,12 +612,17 @@ def test_bold_from_the_paragraph_style() -> None:
 
 
 def test_bold_from_the_paragraph_style_base() -> None:
-    root = styles_root(style("TableHeading", bold=""), style("TableHeadingCenter", based_on="TableHeading"))
+    root = styles_root(
+        style("TableHeading", bold=""),
+        style("TableHeadingCenter", based_on="TableHeading"),
+    )
     assert is_bold(root, run(p_style="TableHeadingCenter")) is True
 
 
 def test_nearest_paragraph_style_in_the_chain_wins() -> None:
-    root = styles_root(style("Normal", bold=""), style("BodyText", based_on="Normal", bold="false"))
+    root = styles_root(
+        style("Normal", bold=""), style("BodyText", based_on="Normal", bold="false")
+    )
     assert is_bold(root, run(p_style="BodyText")) is False
 
 
@@ -613,7 +661,9 @@ def test_paragraph_style_off_wins_over_a_bold_document_default() -> None:
 
 
 def test_document_default_without_bold() -> None:
-    root = parse_xml(f"<w:styles {W}><w:docDefaults><w:rPrDefault><w:rPr/></w:rPrDefault></w:docDefaults></w:styles>")
+    root = parse_xml(
+        f"<w:styles {W}><w:docDefaults><w:rPrDefault><w:rPr/></w:rPrDefault></w:docDefaults></w:styles>"
+    )
     assert is_bold(root, run()) is False
 
 
@@ -625,8 +675,12 @@ def test_nothing_set_anywhere_is_not_bold() -> None:
 
 
 def test_bold_based_on_cycle_terminates() -> None:
-    root = styles_root(style("A", based_on="B"), style("B", based_on="A"), default_bold="")
-    assert is_bold(root, run(p_style="A")) is True  # the cycle says nothing; the document default decides
+    root = styles_root(
+        style("A", based_on="B"), style("B", based_on="A"), default_bold=""
+    )
+    assert (
+        is_bold(root, run(p_style="A")) is True
+    )  # the cycle says nothing; the document default decides
 
 
 def test_cycle_still_finds_bold_before_looping() -> None:

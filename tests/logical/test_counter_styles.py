@@ -19,7 +19,13 @@ from collections.abc import Callable
 
 import pytest
 
-from document_processor.core.numerals import LOWER_LATIN, LOWER_VN, MAX_ROMAN, UPPER_LATIN, UPPER_VN
+from document_processor.core.numerals import (
+    LOWER_LATIN,
+    LOWER_VN,
+    MAX_ROMAN,
+    UPPER_LATIN,
+    UPPER_VN,
+)
 from document_processor.logical.counter_styles import (
     BUILTIN_COUNTER_STYLES,
     CounterStyle,
@@ -37,7 +43,9 @@ def make_style(
     to_number: Callable[[str], int | None] = never,
     to_text: Callable[[int], str] = str,
 ) -> CounterStyle:
-    return CounterStyle(name=name, numeral_pattern=numeral_pattern, to_number=to_number, to_text=to_text)
+    return CounterStyle(
+        name=name, numeral_pattern=numeral_pattern, to_number=to_number, to_text=to_text
+    )
 
 
 def fullmatches(style: CounterStyle, text: str) -> bool:
@@ -48,7 +56,9 @@ def fullmatches(style: CounterStyle, text: str) -> bool:
 
 
 def test_counter_style_keeps_its_fields() -> None:
-    style = make_style(name="digits", numeral_pattern="[0-9]+", to_number=int, to_text=str)
+    style = make_style(
+        name="digits", numeral_pattern="[0-9]+", to_number=int, to_text=str
+    )
     assert style.name == "digits"
     assert style.numeral_pattern == "[0-9]+"
     assert style.to_number("12") == 12
@@ -69,7 +79,9 @@ def test_counter_style_is_keyword_only() -> None:
 # ---------- name: must be usable as {name} in a template
 
 
-@pytest.mark.parametrize("name", ["a", "arabic", "lower_vn", "upper_roman", "x1", "style_2_b"])
+@pytest.mark.parametrize(
+    "name", ["a", "arabic", "lower_vn", "upper_roman", "x1", "style_2_b"]
+)
 def test_valid_names(name: str) -> None:
     assert make_style(name=name).name == name
 
@@ -135,7 +147,9 @@ def test_numeral_pattern_must_not_have_capturing_groups(pattern: str) -> None:
         make_style(numeral_pattern=pattern)
 
 
-@pytest.mark.parametrize("pattern", ["(?i)[a-z]", "(?x)[0-9] +", "(?s).", "(?m)[0-9]+", "(?a)\\d+"])
+@pytest.mark.parametrize(
+    "pattern", ["(?i)[a-z]", "(?x)[0-9] +", "(?s).", "(?m)[0-9]+", "(?a)\\d+"]
+)
 def test_numeral_pattern_must_not_have_flags(pattern: str) -> None:
     # A global flag would change the whole template regex, e.g. make it case-insensitive.
     with pytest.raises(ValueError, match="flags"):
@@ -251,7 +265,15 @@ def test_alphabet_style_matches_the_builtin_for_the_same_alphabet() -> None:
 # ============================================================ built-ins
 
 
-BUILTIN_NAMES = ("arabic", "lower_latin", "lower_roman", "lower_vn", "upper_latin", "upper_roman", "upper_vn")
+BUILTIN_NAMES = (
+    "arabic",
+    "lower_latin",
+    "lower_roman",
+    "lower_vn",
+    "upper_latin",
+    "upper_roman",
+    "upper_vn",
+)
 LETTER_STYLES = {
     "lower_latin": LOWER_LATIN,
     "upper_latin": UPPER_LATIN,
@@ -305,7 +327,9 @@ def test_roman(name: str) -> None:
         assert style.to_number(text) == n
 
 
-@pytest.mark.parametrize(("name", "four"), [("upper_roman", "IV"), ("lower_roman", "iv")])
+@pytest.mark.parametrize(
+    ("name", "four"), [("upper_roman", "IV"), ("lower_roman", "iv")]
+)
 def test_roman_case(name: str, four: str) -> None:
     style = BUILTIN_COUNTER_STYLES.get(name)
     assert style.to_text(4) == four
@@ -343,7 +367,9 @@ def test_letter_style_pattern_matches_one_letter_only(name: str, alphabet: str) 
 
 
 @pytest.mark.parametrize(("name", "alphabet"), LETTER_STYLES.items())
-def test_letter_style_pattern_rejects_letters_outside_its_alphabet(name: str, alphabet: str) -> None:
+def test_letter_style_pattern_rejects_letters_outside_its_alphabet(
+    name: str, alphabet: str
+) -> None:
     style = BUILTIN_COUNTER_STYLES.get(name)
     for letter in "abcdefghijklmnopqrstuvwxyzđABCDEFGHIJKLMNOPQRSTUVWXYZĐ":
         assert fullmatches(style, letter) == (letter in alphabet), letter

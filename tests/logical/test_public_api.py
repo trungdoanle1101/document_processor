@@ -20,5 +20,11 @@ def test_built_in_profile_is_registered() -> None:
 
 
 def test_internals_are_not_exported() -> None:
-    for internal in ("find_candidates", "narrow_candidates", "choose_headings", "Candidate", "BlockCandidates"):
+    for internal in (
+        "find_candidates",
+        "narrow_candidates",
+        "choose_headings",
+        "Candidate",
+        "BlockCandidates",
+    ):
         assert internal not in logical.__all__, internal

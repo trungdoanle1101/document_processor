@@ -23,9 +23,16 @@ from document_processor.integrations.huggingface._prompts import (
 )
 
 BGE_M3 = {"query": "", "document": ""}  # declares none; 6.2 adds the empty pair
-E5 = {"query": "query: ", "document": "", "passage": "passage: "}  # "query" and "passage"
+E5 = {
+    "query": "query: ",
+    "document": "",
+    "passage": "passage: ",
+}  # "query" and "passage"
 QUERY_AND_DOCUMENT = {"query": "query: ", "document": "passage: "}
-QUERY_ONLY = {"query": "Represent this sentence for searching relevant passages: ", "document": ""}
+QUERY_ONLY = {
+    "query": "Represent this sentence for searching relevant passages: ",
+    "document": "",
+}
 CORPUS = {"query": "query: ", "document": "", "corpus": "corpus: "}
 NOMIC = {
     "query": "",
@@ -35,7 +42,11 @@ NOMIC = {
     "classification": "classification: ",
     "clustering": "clustering: ",
 }
-WITH_TASK_PROMPTS = {"query": "query: ", "document": "passage: ", "classification": "classify: "}
+WITH_TASK_PROMPTS = {
+    "query": "query: ",
+    "document": "passage: ",
+    "classification": "classify: ",
+}
 # codefuse-ai/F2LLM-v2-0.6B declares an instruction for queries and, on purpose, an empty document prompt.
 F2LLM = {
     "query": "Instruct: Given a question, retrieve passages that can help answer the question.\nQuery: ",
@@ -43,7 +54,9 @@ F2LLM = {
 }
 
 
-def resolve(prompts: dict[str, str], *, query: str | None = None, passage: str | None = None) -> tuple[str | None, str | None]:
+def resolve(
+    prompts: dict[str, str], *, query: str | None = None, passage: str | None = None
+) -> tuple[str | None, str | None]:
     return resolve_prompt_names(prompts, query=query, passage=passage)
 
 
@@ -72,7 +85,10 @@ def test_a_space_alone_is_a_prompt() -> None:
 
 
 def test_the_convention_is_sentence_transformers_own() -> None:
-    assert CONVENTIONAL_PROMPT_NAMES == {"query": ("query",), "passage": ("document", "passage", "corpus")}
+    assert CONVENTIONAL_PROMPT_NAMES == {
+        "query": ("query",),
+        "passage": ("document", "passage", "corpus"),
+    }
 
 
 def test_bge_m3_gets_no_prompts() -> None:
@@ -100,7 +116,10 @@ def test_corpus_counts_for_documents() -> None:
 def test_document_is_preferred_to_passage_and_corpus() -> None:
     every_name = {"query": "q: ", "document": "d: ", "passage": "p: ", "corpus": "c: "}
     assert resolve(every_name) == ("query", "document")
-    assert resolve({"query": "q: ", "passage": "p: ", "corpus": "c: "}) == ("query", "passage")
+    assert resolve({"query": "q: ", "passage": "p: ", "corpus": "c: "}) == (
+        "query",
+        "passage",
+    )
 
 
 def test_an_explicit_name_wins_over_the_convention() -> None:
@@ -108,7 +127,10 @@ def test_an_explicit_name_wins_over_the_convention() -> None:
 
 
 def test_an_explicit_name_must_be_one_the_model_has() -> None:
-    with pytest.raises(ValueError, match=r"^query prompt 'question' is not one the model has; it has: document, query$"):
+    with pytest.raises(
+        ValueError,
+        match=r"^query prompt 'question' is not one the model has; it has: document, query$",
+    ):
         resolve(QUERY_AND_DOCUMENT, query="question")
 
 
@@ -153,26 +175,40 @@ def test_nomic_style_names_must_both_be_named() -> None:
 
 
 def test_naming_one_role_is_not_enough() -> None:
-    with pytest.raises(ValueError, match="name the ones to use in the spec: passage_prompt_name$"):
+    with pytest.raises(
+        ValueError, match="name the ones to use in the spec: passage_prompt_name$"
+    ):
         resolve(NOMIC, query="search_query")
-    with pytest.raises(ValueError, match="name the ones to use in the spec: query_prompt_name$"):
+    with pytest.raises(
+        ValueError, match="name the ones to use in the spec: query_prompt_name$"
+    ):
         resolve(NOMIC, passage="search_document")
 
 
 def test_naming_both_roles_resolves() -> None:
-    assert resolve(NOMIC, query="search_query", passage="search_document") == ("search_query", "search_document")
+    assert resolve(NOMIC, query="search_query", passage="search_document") == (
+        "search_query",
+        "search_document",
+    )
 
 
 def test_a_task_prompt_next_to_conventional_ones_also_requires_names() -> None:
     # The convention would pick query and document, but the model shows it has
     # more than one use; the spec must say which prompts retrieval uses.
-    with pytest.raises(ValueError, match=r"\(classification; all: classification, document, query\)"):
+    with pytest.raises(
+        ValueError, match=r"\(classification; all: classification, document, query\)"
+    ):
         resolve(WITH_TASK_PROMPTS)
-    assert resolve(WITH_TASK_PROMPTS, query="query", passage="document") == ("query", "document")
+    assert resolve(WITH_TASK_PROMPTS, query="query", passage="document") == (
+        "query",
+        "document",
+    )
 
 
 def test_names_in_an_unconventional_model_are_still_checked() -> None:
-    with pytest.raises(ValueError, match="^passage prompt 'search_passage' is not one the model has"):
+    with pytest.raises(
+        ValueError, match="^passage prompt 'search_passage' is not one the model has"
+    ):
         resolve(NOMIC, query="search_query", passage="search_passage")
 
 
@@ -189,4 +225,7 @@ def test_none_values_count_as_empty() -> None:
     # sentence-transformers' type for prompts allows None (its placeholder before loading).
     with_none: dict[str, str | None] = {"query": "query: ", "document": None}
     assert declared_prompts(with_none) == {"query": "query: "}
-    assert resolve_prompt_names(with_none, query=None, passage="document") == ("query", None)
+    assert resolve_prompt_names(with_none, query=None, passage="document") == (
+        "query",
+        None,
+    )

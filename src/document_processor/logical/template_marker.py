@@ -49,7 +49,7 @@ class _Variant:
         m = self.regex.fullmatch(s) if full else self.regex.match(s)
         if m is None:
             return None
-        
+
         numerals: list[Numeral] = []
         for k, style in enumerate(self.styles):
             group = f"s{k}"
@@ -65,12 +65,11 @@ class _Variant:
                     text=numeral_text,
                     value=numeral_value,
                     start=start,
-                    end=end
+                    end=end,
                 )
             )
         return TemplateMatch(
-            source=source, template=self.template,
-            numerals=tuple(numerals), end=m.end()
+            source=source, template=self.template, numerals=tuple(numerals), end=m.end()
         )
 
 
@@ -83,18 +82,17 @@ class TemplateMarker:
 
     def match_list_marker(self, displayed_marker: str) -> list[TemplateMatch]:
         return self._match(displayed_marker, full=True, source="list_marker")
-    
+
     def _match(self, s: str, *, full: bool, source: MatchSource) -> list[TemplateMatch]:
         results: list[TemplateMatch] = []
-        
+
         for v in self.variants:
             marker_match = v.match(s, full=full, source=source)
             if marker_match is None:
                 continue
             results.append(marker_match)
-           
-        return results
 
+        return results
 
 
 def _parse_slot(slot_content: str) -> _Slot:
@@ -102,9 +100,13 @@ def _parse_slot(slot_content: str) -> _Slot:
     seen: set[str] = set()
     for style in styles:
         if style in seen:
-            raise ValueError(f"style {style!r} appears multiple times in slot {{{slot_content}}}")
+            raise ValueError(
+                f"style {style!r} appears multiple times in slot {{{slot_content}}}"
+            )
         if not NAME_PATTERN.fullmatch(style):
-            raise ValueError(f"invalid style string {style!r}. Must fully match '[a-z][a-z0-9_]*'")
+            raise ValueError(
+                f"invalid style string {style!r}. Must fully match '[a-z][a-z0-9_]*'"
+            )
         seen.add(style)
     return _Slot(styles=tuple(styles))
 
@@ -114,22 +116,28 @@ def _check_blanks(template: str) -> None:
         raise ValueError("marker template: must not be empty")
 
     if template.strip() != template:
-        raise ValueError(f"marker template {template!r}: must not contain leading or trailing white spaces")
+        raise ValueError(
+            f"marker template {template!r}: must not contain leading or trailing white spaces"
+        )
 
     for i, c in enumerate(template):
         if is_blank_char(c) and c != " ":
-            raise ValueError(f"marker template {template!r}: found whitespace character (not plain space) at column {i + 1}. Hint: use plain space only")
+            raise ValueError(
+                f"marker template {template!r}: found whitespace character (not plain space) at column {i + 1}. Hint: use plain space only"
+            )
 
 
 def _check_parts(parts: list[_TemplatePart], template: str) -> None:
     for left, right in zip(parts, parts[1:]):
         if isinstance(left, _Slot) and isinstance(right, _Slot):
-            raise ValueError(f"marker template {template!r}: two slots side by side not allowed")
+            raise ValueError(
+                f"marker template {template!r}: two slots side by side not allowed"
+            )
 
     has_literal = any(isinstance(part, str) and part != " " for part in parts)
     if not has_literal:
         raise ValueError(f"marker template {template!r}: no literal text")
-    
+
 
 def _parse_template(template: str) -> tuple[_TemplatePart, ...]:
     _check_blanks(template)
@@ -151,36 +159,42 @@ def _parse_template(template: str) -> tuple[_TemplatePart, ...]:
 
     while i < n:
         c = template[i]
-        
+
         if c == " ":
             add_space()
         elif c == "{":
-            if i + 1 < n and template[i+1] == "{":
+            if i + 1 < n and template[i + 1] == "{":
                 buffer.append("{")
                 i += 1
             else:
                 content_start = i + 1
                 content_stop = template.find("}", i + 1)
-                
-                if content_stop == -1:
-                    raise ValueError(f"marker template {template!r}, column {i + 1}: brace '{{' is never closed")
 
-                slot_content = template[content_start : content_stop]
+                if content_stop == -1:
+                    raise ValueError(
+                        f"marker template {template!r}, column {i + 1}: brace '{{' is never closed"
+                    )
+
+                slot_content = template[content_start:content_stop]
 
                 try:
                     slot = _parse_slot(slot_content)
                 except ValueError as e:
-                    raise ValueError(f"marker template {template!r}, column {content_start}: {e}") from None
-                
+                    raise ValueError(
+                        f"marker template {template!r}, column {content_start}: {e}"
+                    ) from None
+
                 flush()
                 parts.append(slot)
                 i = content_stop
         elif c == "}":
-            if i + 1 < n and template[i+1] == "}":
+            if i + 1 < n and template[i + 1] == "}":
                 buffer.append("}")
                 i += 1
             else:
-                raise ValueError(f"marker template {template!r}, column {i + 1}: lone brace '}}'")
+                raise ValueError(
+                    f"marker template {template!r}, column {i + 1}: lone brace '}}'"
+                )
         else:
             buffer.append(c)
 
@@ -199,7 +213,9 @@ def _literal_pattern(text: str, case_sensitive: bool) -> str:
 
 
 def _build_regex(
-    parts: tuple[_TemplatePart, ...], styles: tuple[CounterStyle, ...], case_sensitive: bool
+    parts: tuple[_TemplatePart, ...],
+    styles: tuple[CounterStyle, ...],
+    case_sensitive: bool,
 ) -> re.Pattern[str]:
     pieces: list[str] = []
     slots = iter(enumerate(styles))
@@ -218,21 +234,25 @@ def _build_regex(
 def _compile_variants(
     template: str, styles_registry: Registry[CounterStyle], case_sensitive: bool = False
 ) -> list[_Variant]:
-    
+
     normalized_template = normalize_nfc(template)
     parts = _parse_template(normalized_template)
     slots = [part for part in parts if isinstance(part, _Slot)]
 
     try:
-        slot_styles = [tuple(styles_registry.get(name) for name in s.styles) for s in slots]
+        slot_styles = [
+            tuple(styles_registry.get(name) for name in s.styles) for s in slots
+        ]
     except KeyError as e:
         raise ValueError(f"marker template {template!r}: {e.args[0]}") from None
 
     count = math.prod(len(option) for option in slot_styles)
     if count > _MAX_VARIANTS:
-        raise ValueError(f"marker template {template!r}: {count} style combinations, at most {_MAX_VARIANTS} allowed")
-    
-    variants: list[_Variant] = [] 
+        raise ValueError(
+            f"marker template {template!r}: {count} style combinations, at most {_MAX_VARIANTS} allowed"
+        )
+
+    variants: list[_Variant] = []
     for choice in product(*slot_styles):
         regex = _build_regex(parts, choice, case_sensitive)
         variant = _Variant(template=template, regex=regex, styles=choice)
@@ -242,7 +262,10 @@ def _compile_variants(
 
 
 def compile_template_marker(
-    templates: list[str], styles_registry: Registry[CounterStyle], *, case_sensitive: bool = False
+    templates: list[str],
+    styles_registry: Registry[CounterStyle],
+    *,
+    case_sensitive: bool = False,
 ) -> TemplateMarker:
     if isinstance(templates, str):
         raise ValueError("templates must be a list of string, not one string")
@@ -254,6 +277,3 @@ def compile_template_marker(
     for template in templates:
         variants.extend(_compile_variants(template, styles_registry, case_sensitive))
     return TemplateMarker(variants=tuple(variants))
-
-
-

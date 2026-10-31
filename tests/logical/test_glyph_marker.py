@@ -16,7 +16,11 @@ import dataclasses
 
 import pytest
 
-from document_processor.logical.glyph_marker import GlyphMarker, GlyphMatch, compile_glyph_marker
+from document_processor.logical.glyph_marker import (
+    GlyphMarker,
+    GlyphMatch,
+    compile_glyph_marker,
+)
 from document_processor.logical.glyph_styles import BUILTIN_GLYPH_STYLES, GlyphStyle
 from document_processor.core.registry import Registry
 
@@ -45,7 +49,10 @@ def test_maps_every_glyph_of_every_chosen_style_to_its_style() -> None:
     m = marker("dash", "check")
     dash = BUILTIN_GLYPH_STYLES.get("dash")
     check = BUILTIN_GLYPH_STYLES.get("check")
-    assert dict(m.by_glyph) == {**{g: dash for g in dash.glyphs}, **{g: check for g in check.glyphs}}
+    assert dict(m.by_glyph) == {
+        **{g: dash for g in dash.glyphs},
+        **{g: check for g in check.glyphs},
+    }
 
 
 def test_only_the_chosen_styles_are_mapped() -> None:
@@ -115,12 +122,18 @@ def test_unknown_style_error_is_a_value_error_not_a_key_error() -> None:
 
 
 def test_full_text_result() -> None:
-    assert marker("dash").match_text("- Nội dung") == [GlyphMatch(source="text", style="dash", glyph="-", end=1)]
+    assert marker("dash").match_text("- Nội dung") == [
+        GlyphMatch(source="text", style="dash", glyph="-", end=1)
+    ]
 
 
 @pytest.mark.parametrize(
     ("name", "glyph"),
-    [(name, glyph) for name in BUILTIN_GLYPH_STYLES.names() for glyph in sorted(BUILTIN_GLYPH_STYLES.get(name).glyphs)],
+    [
+        (name, glyph)
+        for name in BUILTIN_GLYPH_STYLES.names()
+        for glyph in sorted(BUILTIN_GLYPH_STYLES.get(name).glyphs)
+    ],
 )
 def test_every_builtin_glyph_is_read_in_text(name: str, glyph: str) -> None:
     found = marker(name).match_text(f"{glyph} Nội dung")
@@ -233,7 +246,9 @@ def test_full_list_marker_result() -> None:
         (("dash",), "–", "dash"),
     ],
 )
-def test_list_markers_from_real_sources(names: tuple[str, ...], displayed: str, style: str) -> None:
+def test_list_markers_from_real_sources(
+    names: tuple[str, ...], displayed: str, style: str
+) -> None:
     [found] = marker(*names).match_list_marker(displayed)
     assert found.style == style
     assert found.source == "list_marker"
@@ -278,7 +293,11 @@ def test_source_tells_the_two_methods_apart() -> None:
     [from_text] = marker("dash").match_text("- Nội dung")
     [from_list] = marker("dash").match_list_marker("-")
     assert (from_text.source, from_list.source) == ("text", "list_marker")
-    assert (from_text.style, from_text.glyph, from_text.end) == (from_list.style, from_list.glyph, from_list.end)
+    assert (from_text.style, from_text.glyph, from_text.end) == (
+        from_list.style,
+        from_list.glyph,
+        from_list.end,
+    )
 
 
 # ============================================================ result shape

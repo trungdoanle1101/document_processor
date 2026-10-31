@@ -23,7 +23,10 @@ pytest.importorskip("huggingface_hub")
 from huggingface_hub.utils._paths import filter_repo_objects  # noqa: E402
 
 from document_processor.integrations.huggingface import download  # noqa: E402
-from document_processor.integrations.huggingface.download import IGNORED_FILES, download_model  # noqa: E402
+from document_processor.integrations.huggingface.download import (
+    IGNORED_FILES,
+    download_model,
+)  # noqa: E402
 from document_processor.integrations.huggingface.reference import (  # noqa: E402
     MODEL_REFERENCE_FILE,
     ModelReference,
@@ -81,10 +84,20 @@ class FakeHub:
         self.calls: list[dict[str, object]] = []
 
     def snapshot_download(
-        self, repo_id: str, *, revision: str, local_dir: Path, ignore_patterns: list[str]
+        self,
+        repo_id: str,
+        *,
+        revision: str,
+        local_dir: Path,
+        ignore_patterns: list[str],
     ) -> str:
         self.calls.append(
-            {"repo_id": repo_id, "revision": revision, "local_dir": Path(local_dir), "ignore_patterns": ignore_patterns}
+            {
+                "repo_id": repo_id,
+                "revision": revision,
+                "local_dir": Path(local_dir),
+                "ignore_patterns": ignore_patterns,
+            }
         )
         kept = list(filter_repo_objects(self.files, ignore_patterns=ignore_patterns))
         for written, name in enumerate(kept):
@@ -107,7 +120,11 @@ def hub(monkeypatch: pytest.MonkeyPatch) -> FakeHub:
 
 
 def files_in(folder: Path) -> set[str]:
-    return {path.relative_to(folder).as_posix() for path in folder.rglob("*") if path.is_file()}
+    return {
+        path.relative_to(folder).as_posix()
+        for path in folder.rglob("*")
+        if path.is_file()
+    }
 
 
 def partial_of(folder: Path) -> Path:
@@ -117,10 +134,17 @@ def partial_of(folder: Path) -> Path:
 # ============================================================ downloading
 
 
-def test_download_fills_the_folder_and_records_the_reference(tmp_path: Path, hub: FakeHub) -> None:
+def test_download_fills_the_folder_and_records_the_reference(
+    tmp_path: Path, hub: FakeHub
+) -> None:
     folder = tmp_path / "models" / "bge-m3"
     download_model(BGE_M3, folder)
-    assert files_in(folder) == {"config.json", "pytorch_model.bin", "tokenizer.json", MODEL_REFERENCE_FILE}
+    assert files_in(folder) == {
+        "config.json",
+        "pytorch_model.bin",
+        "tokenizer.json",
+        MODEL_REFERENCE_FILE,
+    }
     assert read_model_reference(folder) == BGE_M3
 
 
@@ -158,7 +182,9 @@ def test_no_partial_folder_is_left_behind(tmp_path: Path, hub: FakeHub) -> None:
 
 
 def test_two_models_side_by_side(tmp_path: Path, hub: FakeHub) -> None:
-    other = ModelReference(hub_model_id="intfloat/multilingual-e5-large", commit_hash="0" * 40)
+    other = ModelReference(
+        hub_model_id="intfloat/multilingual-e5-large", commit_hash="0" * 40
+    )
     download_model(BGE_M3, tmp_path / "bge-m3")
     download_model(other, tmp_path / "e5")
     assert read_model_reference(tmp_path / "bge-m3") == BGE_M3
@@ -238,7 +264,9 @@ def test_each_kind_of_ignored_file_is_skipped(name: str) -> None:
     ],
 )
 def test_model_files_are_not_skipped(name: str) -> None:
-    assert list(filter_repo_objects([name], ignore_patterns=list(IGNORED_FILES))) == [name]
+    assert list(filter_repo_objects([name], ignore_patterns=list(IGNORED_FILES))) == [
+        name
+    ]
 
 
 # ============================================================ refusals, before any network use
@@ -256,13 +284,17 @@ def test_a_folder_with_files_is_refused(tmp_path: Path, hub: FakeHub) -> None:
     folder = tmp_path / "bge-m3"
     folder.mkdir()
     (folder / "config.json").write_text("{}", encoding="utf-8")
-    with pytest.raises(OSError, match="is not empty; delete it or choose another folder$"):
+    with pytest.raises(
+        OSError, match="is not empty; delete it or choose another folder$"
+    ):
         download_model(BGE_M3, folder)
     assert hub.calls == []
     assert files_in(folder) == {"config.json"}
 
 
-def test_an_already_downloaded_model_is_not_downloaded_again(tmp_path: Path, hub: FakeHub) -> None:
+def test_an_already_downloaded_model_is_not_downloaded_again(
+    tmp_path: Path, hub: FakeHub
+) -> None:
     folder = tmp_path / "bge-m3"
     download_model(BGE_M3, folder)
     with pytest.raises(OSError, match="is not empty"):
@@ -273,7 +305,9 @@ def test_an_already_downloaded_model_is_not_downloaded_again(tmp_path: Path, hub
 # ============================================================ interrupted downloads
 
 
-def test_an_interrupted_download_leaves_no_model_folder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_an_interrupted_download_leaves_no_model_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     use_hub(monkeypatch, FakeHub(fail_after=2))
     folder = tmp_path / "bge-m3"
     with pytest.raises(ConnectionError):
@@ -283,7 +317,9 @@ def test_an_interrupted_download_leaves_no_model_folder(tmp_path: Path, monkeypa
     assert MODEL_REFERENCE_FILE not in files_in(partial_of(folder))
 
 
-def test_an_interrupted_download_keeps_an_empty_folder_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_an_interrupted_download_keeps_an_empty_folder_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     use_hub(monkeypatch, FakeHub(fail_after=1))
     folder = tmp_path / "bge-m3"
     folder.mkdir()
@@ -292,9 +328,14 @@ def test_an_interrupted_download_keeps_an_empty_folder_empty(tmp_path: Path, mon
     assert folder.is_dir() and not any(folder.iterdir())
 
 
-def test_the_next_run_starts_over_and_succeeds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_next_run_starts_over_and_succeeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     folder = tmp_path / "bge-m3"
-    use_hub(monkeypatch, FakeHub(files=("config.json", "stale.bin", "pytorch_model.bin"), fail_after=2))
+    use_hub(
+        monkeypatch,
+        FakeHub(files=("config.json", "stale.bin", "pytorch_model.bin"), fail_after=2),
+    )
     with pytest.raises(ConnectionError):
         download_model(BGE_M3, folder)
     assert "stale.bin" in files_in(partial_of(folder))
@@ -302,11 +343,17 @@ def test_the_next_run_starts_over_and_succeeds(tmp_path: Path, monkeypatch: pyte
     use_hub(monkeypatch, FakeHub(files=("config.json", "pytorch_model.bin")))
     download_model(BGE_M3, folder)
     # Nothing from the interrupted run survives into the model folder.
-    assert files_in(folder) == {"config.json", "pytorch_model.bin", MODEL_REFERENCE_FILE}
+    assert files_in(folder) == {
+        "config.json",
+        "pytorch_model.bin",
+        MODEL_REFERENCE_FILE,
+    }
     assert not partial_of(folder).exists()
 
 
-def test_reading_an_interrupted_download_finds_no_reference(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_reading_an_interrupted_download_finds_no_reference(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     use_hub(monkeypatch, FakeHub(fail_after=1))
     folder = tmp_path / "bge-m3"
     with pytest.raises(ConnectionError):

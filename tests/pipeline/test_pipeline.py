@@ -23,9 +23,17 @@ import pytest
 from document_processor.core.models import LogicalDocument, TableSegment
 from document_processor.logical.profiles.vn_regulation import VN_REGULATION
 from document_processor.adapters import ADAPTERS, DocxAdapter
-from document_processor.chunking import Chunk, OutlineChunker, WordTokenizer, load_chunks
+from document_processor.chunking import (
+    Chunk,
+    OutlineChunker,
+    WordTokenizer,
+    load_chunks,
+)
 from document_processor.core.cleaning import clean_document
-from document_processor.core.serialization import load_logical_document, load_physical_document
+from document_processor.core.serialization import (
+    load_logical_document,
+    load_physical_document,
+)
 from document_processor.logical import PROFILES, build_logical_document
 from document_processor.pipeline import (
     Pipeline,
@@ -78,7 +86,9 @@ def write_docx(folder: Path, name: str, *paragraphs: str) -> Path:
 
 
 def test_profile_by_name() -> None:
-    assert pipeline(profile="vn_regulation")._resolved_profile is PROFILES.get("vn_regulation")
+    assert pipeline(profile="vn_regulation")._resolved_profile is PROFILES.get(
+        "vn_regulation"
+    )
 
 
 def test_profile_object() -> None:
@@ -173,7 +183,11 @@ def test_same_as_running_the_steps_by_hand(tmp_path: Path) -> None:
     physical = clean_document(extract_physical_document(path))
     logical = build_logical_document(VN_REGULATION, physical)
     result = pipeline().run(path)
-    assert (result.physical, result.logical, result.chunks) == (physical, logical, chunker().chunk(logical))
+    assert (result.physical, result.logical, result.chunks) == (
+        physical,
+        logical,
+        chunker().chunk(logical),
+    )
 
 
 def test_the_regulation_is_read_by_the_profile(tmp_path: Path) -> None:
@@ -185,7 +199,12 @@ def test_the_regulation_is_read_by_the_profile(tmp_path: Path) -> None:
         ("khoan", "2."),
         ("dieu", "Điều 2."),
     ]
-    assert [c.part for c in result.chunks] == ["front_matter", "body", "body", "end_matter"]
+    assert [c.part for c in result.chunks] == [
+        "front_matter",
+        "body",
+        "body",
+        "end_matter",
+    ]
 
 
 def test_accepts_a_string_path(tmp_path: Path) -> None:
@@ -194,14 +213,18 @@ def test_accepts_a_string_path(tmp_path: Path) -> None:
 
 
 def test_runs_a_docx_too(tmp_path: Path) -> None:
-    path = write_docx(tmp_path, "quy_dinh.docx", "Điều 1. Phạm vi điều chỉnh", "1. Nội dung khoản")
+    path = write_docx(
+        tmp_path, "quy_dinh.docx", "Điều 1. Phạm vi điều chỉnh", "1. Nội dung khoản"
+    )
     result = pipeline().run(path)
     assert [n.level for n in result.logical.nodes] == ["dieu", "khoan"]
 
 
 def test_the_chunker_decides_the_chunks(tmp_path: Path) -> None:
     path = write_txt(tmp_path, "quy_dinh.txt")
-    assert len(pipeline(chunker=chunker(5)).run(path).chunks) > len(pipeline(chunker=chunker(200)).run(path).chunks)
+    assert len(pipeline(chunker=chunker(5)).run(path).chunks) > len(
+        pipeline(chunker=chunker(200)).run(path).chunks
+    )
 
 
 # ============================================================ cleaning
@@ -269,10 +292,15 @@ def test_batch_turns_input_problems_into_failures(tmp_path: Path) -> None:
     ]
     failures = [o for o in outcomes if isinstance(o, PipelineFailure)]
     assert [f.source for f in failures] == [broken, unknown, missing, not_utf8]
-    assert failures[0].error.startswith("ValueError: ") and "broken.docx" in failures[0].error
+    assert (
+        failures[0].error.startswith("ValueError: ")
+        and "broken.docx" in failures[0].error
+    )
     assert failures[1].error.startswith("KeyError: ") and ".pdf" in failures[1].error
     assert failures[2].error.startswith("FileNotFoundError: ")
-    assert failures[3].error.startswith("ValueError: ") and "line 1" in failures[3].error
+    assert (
+        failures[3].error.startswith("ValueError: ") and "line 1" in failures[3].error
+    )
 
 
 def test_batch_accepts_any_iterable_and_string_paths(tmp_path: Path) -> None:
@@ -306,7 +334,6 @@ def test_failures_are_plain_data(tmp_path: Path) -> None:
     assert isinstance(failure.error, str)
 
 
-
 # ============================================================ save
 
 
@@ -318,7 +345,9 @@ def test_save_writes_three_files_named_after_the_source(tmp_path: Path) -> None:
         logical=tmp_path / "out" / "quy_dinh.logical.json",
         chunks=tmp_path / "out" / "quy_dinh.chunks.jsonl",
     )
-    assert files.physical.is_file() and files.logical.is_file() and files.chunks.is_file()
+    assert (
+        files.physical.is_file() and files.logical.is_file() and files.chunks.is_file()
+    )
 
 
 def test_saved_stages_load_back_equal(tmp_path: Path) -> None:
@@ -338,11 +367,16 @@ def test_save_creates_the_folder(tmp_path: Path) -> None:
 
 def test_save_accepts_a_string_folder(tmp_path: Path) -> None:
     result = pipeline().run(write_txt(tmp_path, "a.txt"))
-    assert result.save(str(tmp_path / "out")).logical == tmp_path / "out" / "a.logical.json"
+    assert (
+        result.save(str(tmp_path / "out")).logical
+        == tmp_path / "out" / "a.logical.json"
+    )
 
 
 def test_the_source_extension_is_not_part_of_the_names(tmp_path: Path) -> None:
-    result = pipeline().run(write_docx(tmp_path, "quy_dinh.docx", "Điều 1. A", "Nội dung"))
+    result = pipeline().run(
+        write_docx(tmp_path, "quy_dinh.docx", "Điều 1. A", "Nội dung")
+    )
     assert result.save(tmp_path / "out").physical.name == "quy_dinh.physical.json"
 
 
@@ -355,7 +389,9 @@ def test_saving_again_replaces_the_files(tmp_path: Path) -> None:
     assert load_chunks(files.chunks) == result.chunks
 
 
-def test_same_file_name_in_two_folders_replaces_each_others_outputs(tmp_path: Path) -> None:
+def test_same_file_name_in_two_folders_replaces_each_others_outputs(
+    tmp_path: Path,
+) -> None:
     # Documented behaviour: outputs are named after the file name only.
     first = write_txt(tmp_path / "2024", "quy_dinh.txt", "Điều 1. Cũ\n")
     second = write_txt(tmp_path / "2025", "quy_dinh.txt", "Điều 1. Mới\n")
@@ -368,16 +404,19 @@ def test_same_file_name_in_two_folders_replaces_each_others_outputs(tmp_path: Pa
 def test_saving_every_result_of_a_batch(tmp_path: Path) -> None:
     paths = [write_txt(tmp_path, f"{name}.txt") for name in ("a", "b")]
     outcomes = pipeline().run_batch([*paths, tmp_path / "missing.txt"])
-    saved = [o.save(tmp_path / "out") for o in outcomes if isinstance(o, PipelineResult)]
+    saved = [
+        o.save(tmp_path / "out") for o in outcomes if isinstance(o, PipelineResult)
+    ]
     assert [f.chunks.name for f in saved] == ["a.chunks.jsonl", "b.chunks.jsonl"]
-
 
 
 # ============================================================ summarize
 
 
 def test_result_records_the_chunkers_budget(tmp_path: Path) -> None:
-    assert pipeline(chunker=chunker(37)).run(write_txt(tmp_path, "a.txt")).max_tokens == 37
+    assert (
+        pipeline(chunker=chunker(37)).run(write_txt(tmp_path, "a.txt")).max_tokens == 37
+    )
 
 
 def test_summary_counts(tmp_path: Path) -> None:
@@ -405,7 +444,9 @@ def test_summary_front_and_end_matter(tmp_path: Path) -> None:
 
 
 def test_a_clean_document_has_no_warnings(tmp_path: Path) -> None:
-    assert pipeline().run(write_txt(tmp_path, "quy_dinh.txt")).summarize().warnings == ()
+    assert (
+        pipeline().run(write_txt(tmp_path, "quy_dinh.txt")).summarize().warnings == ()
+    )
 
 
 def test_chunk_over_budget_is_warned(tmp_path: Path) -> None:
@@ -450,12 +491,22 @@ def test_summary_of_a_result_without_chunks(tmp_path: Path) -> None:
     path = tmp_path / "empty.txt"
     path.write_text("\n\n", encoding="utf-8")
     summary = pipeline().run(path).summarize()
-    assert (summary.block_count, summary.chunk_count, summary.chunk_tokens) == (0, 0, ())
+    assert (summary.block_count, summary.chunk_count, summary.chunk_tokens) == (
+        0,
+        0,
+        (),
+    )
     assert [w.code for w in summary.warnings] == ["no_headings"]
 
 
 def test_summary_records_the_budget(tmp_path: Path) -> None:
-    assert pipeline(chunker=chunker(37)).run(write_txt(tmp_path, "a.txt")).summarize().max_tokens == 37
+    assert (
+        pipeline(chunker=chunker(37))
+        .run(write_txt(tmp_path, "a.txt"))
+        .summarize()
+        .max_tokens
+        == 37
+    )
 
 
 # ---------- table_without_header
@@ -485,7 +536,9 @@ TABLE_ROWS = (
 
 
 def write_table_docx(folder: Path, name: str, *tables: str) -> Path:
-    body = p("Điều 1. Phạm vi điều chỉnh") + "".join(p("Bảng") + table for table in tables)
+    body = p("Điều 1. Phạm vi điều chỉnh") + "".join(
+        p("Bảng") + table for table in tables
+    )
     path = folder / name
     path.write_bytes(build_docx(body))
     return path
@@ -496,15 +549,21 @@ def table_warnings(result: PipelineResult) -> list[ReviewWarning]:
 
 
 def test_split_table_without_header_is_warned(tmp_path: Path) -> None:
-    path = write_table_docx(tmp_path, "bang.docx", table_xml(*TABLE_ROWS, bold_first_row=False))
+    path = write_table_docx(
+        tmp_path, "bang.docx", table_xml(*TABLE_ROWS, bold_first_row=False)
+    )
     result = pipeline(chunker=chunker(12)).run(path)
     (warning,) = table_warnings(result)
 
-    (index,) = [i for i, s in enumerate(result.logical.segments) if isinstance(s, TableSegment)]
+    (index,) = [
+        i for i, s in enumerate(result.logical.segments) if isinstance(s, TableSegment)
+    ]
     pieces = [c for c in result.chunks if c.table_rows is not None]
     assert len(pieces) > 1
     assert warning.segment == index
-    assert warning.chunk_id == pieces[0].id  # the first piece: where the column names are still shown
+    assert (
+        warning.chunk_id == pieces[0].id
+    )  # the first piece: where the column names are still shown
     block_id = result.logical.segments[index].block_id
     assert warning.message.startswith(
         f"table at segment {index} (block {block_id}) is split into {len(pieces)} chunks but has no header rows"
@@ -513,22 +572,34 @@ def test_split_table_without_header_is_warned(tmp_path: Path) -> None:
 
 def test_each_table_warning_points_at_its_own_first_piece(tmp_path: Path) -> None:
     table = table_xml(*TABLE_ROWS, bold_first_row=False)
-    result = pipeline(chunker=chunker(12)).run(write_table_docx(tmp_path, "bang.docx", table, table))
+    result = pipeline(chunker=chunker(12)).run(
+        write_table_docx(tmp_path, "bang.docx", table, table)
+    )
     for warning in table_warnings(result):
-        (first_piece, *_) = [c for c in result.chunks if c.table_rows is not None and c.start == warning.segment]
+        (first_piece, *_) = [
+            c
+            for c in result.chunks
+            if c.table_rows is not None and c.start == warning.segment
+        ]
         assert warning.chunk_id == first_piece.id
-        assert first_piece.table_rows is not None and first_piece.table_rows[0] == 0  # no header rows: starts at row 0
+        assert (
+            first_piece.table_rows is not None and first_piece.table_rows[0] == 0
+        )  # no header rows: starts at row 0
 
 
 def test_split_table_with_header_is_not_warned(tmp_path: Path) -> None:
-    path = write_table_docx(tmp_path, "bang.docx", table_xml(*TABLE_ROWS, bold_first_row=True))
+    path = write_table_docx(
+        tmp_path, "bang.docx", table_xml(*TABLE_ROWS, bold_first_row=True)
+    )
     result = pipeline(chunker=chunker(12)).run(path)
     assert len([c for c in result.chunks if c.table_rows is not None]) > 1
     assert table_warnings(result) == []
 
 
 def test_table_in_one_chunk_without_header_is_not_warned(tmp_path: Path) -> None:
-    path = write_table_docx(tmp_path, "bang.docx", table_xml(*TABLE_ROWS, bold_first_row=False))
+    path = write_table_docx(
+        tmp_path, "bang.docx", table_xml(*TABLE_ROWS, bold_first_row=False)
+    )
     result = pipeline(chunker=chunker(200)).run(path)
     assert all(c.table_rows is None for c in result.chunks)
     assert table_warnings(result) == []
@@ -536,22 +607,34 @@ def test_table_in_one_chunk_without_header_is_not_warned(tmp_path: Path) -> None
 
 def test_table_split_into_one_piece_is_not_warned(tmp_path: Path) -> None:
     # A single row too big on its own: one piece with table_rows set, nothing lost.
-    one_row = table_xml(("1", "một hai ba bốn năm sáu bảy tám chín mười"), bold_first_row=False)
-    result = pipeline(chunker=chunker(5)).run(write_table_docx(tmp_path, "bang.docx", one_row))
+    one_row = table_xml(
+        ("1", "một hai ba bốn năm sáu bảy tám chín mười"), bold_first_row=False
+    )
+    result = pipeline(chunker=chunker(5)).run(
+        write_table_docx(tmp_path, "bang.docx", one_row)
+    )
     assert [c.table_rows for c in result.chunks if c.table_rows is not None] == [(0, 1)]
     assert table_warnings(result) == []
 
 
-def test_each_split_table_without_header_is_warned_once_in_document_order(tmp_path: Path) -> None:
+def test_each_split_table_without_header_is_warned_once_in_document_order(
+    tmp_path: Path,
+) -> None:
     table = table_xml(*TABLE_ROWS, bold_first_row=False)
-    result = pipeline(chunker=chunker(12)).run(write_table_docx(tmp_path, "bang.docx", table, table))
-    indexes = [i for i, s in enumerate(result.logical.segments) if isinstance(s, TableSegment)]
+    result = pipeline(chunker=chunker(12)).run(
+        write_table_docx(tmp_path, "bang.docx", table, table)
+    )
+    indexes = [
+        i for i, s in enumerate(result.logical.segments) if isinstance(s, TableSegment)
+    ]
     assert [w.segment for w in table_warnings(result)] == indexes
     assert len(indexes) == 2
 
 
 def test_format_shows_the_table_warning(tmp_path: Path) -> None:
-    path = write_table_docx(tmp_path, "bang.docx", table_xml(*TABLE_ROWS, bold_first_row=False))
+    path = write_table_docx(
+        tmp_path, "bang.docx", table_xml(*TABLE_ROWS, bold_first_row=False)
+    )
     text = pipeline(chunker=chunker(12)).run(path).summarize().format()
     assert "  ⚠ table_without_header  table at segment " in text
     assert "Hint: mark the header row" in text
@@ -559,14 +642,26 @@ def test_format_shows_the_table_warning(tmp_path: Path) -> None:
 
 def _summary(chunk_tokens: tuple[int, ...]) -> ResultSummary:
     return ResultSummary(
-        source=Path("a.txt"), block_count=0, segment_count=0, nodes_by_levels=(), front_matter=(0, 0),
-        end_matter=(0, 0), chunk_count=len(chunk_tokens), chunk_tokens=chunk_tokens, warnings=(), max_tokens=300,
+        source=Path("a.txt"),
+        block_count=0,
+        segment_count=0,
+        nodes_by_levels=(),
+        front_matter=(0, 0),
+        end_matter=(0, 0),
+        chunk_count=len(chunk_tokens),
+        chunk_tokens=chunk_tokens,
+        warnings=(),
+        max_tokens=300,
     )
 
 
 def test_chunk_size_statistics() -> None:
     summary = _summary((40, 12, 847, 180))
-    assert (summary.smallest_chunk_tokens, summary.median_chunk_tokens, summary.largest_chunk_tokens) == (12, 110, 847)
+    assert (
+        summary.smallest_chunk_tokens,
+        summary.median_chunk_tokens,
+        summary.largest_chunk_tokens,
+    ) == (12, 110, 847)
 
 
 def test_median_of_an_even_count_falls_between_two_sizes() -> None:
@@ -579,7 +674,11 @@ def test_median_of_an_odd_count_is_the_middle_size() -> None:
 
 def test_statistics_of_no_chunks_are_none() -> None:
     summary = _summary(())
-    assert (summary.smallest_chunk_tokens, summary.median_chunk_tokens, summary.largest_chunk_tokens) == (None, None, None)
+    assert (
+        summary.smallest_chunk_tokens,
+        summary.median_chunk_tokens,
+        summary.largest_chunk_tokens,
+    ) == (None, None, None)
 
 
 def test_statistics_come_from_the_runs_chunks(tmp_path: Path) -> None:
@@ -595,14 +694,16 @@ def test_statistics_come_from_the_runs_chunks(tmp_path: Path) -> None:
 
 def test_format_a_clean_document(tmp_path: Path) -> None:
     summary = pipeline().run(write_txt(tmp_path, "quy_dinh.txt")).summarize()
-    assert summary.format() == "\n".join([
-        "quy_dinh.txt",
-        "  10 blocks → 11 segments, 5 nodes, 4 chunks",
-        "  front matter [0, 1) · end matter [9, 11)",
-        "  nodes: chuong 1 · dieu 2 · khoan 2",
-        "  chunk tokens: min 4 · median 12 · max 29 (budget 200)",
-        "  no warnings",
-    ])
+    assert summary.format() == "\n".join(
+        [
+            "quy_dinh.txt",
+            "  10 blocks → 11 segments, 5 nodes, 4 chunks",
+            "  front matter [0, 1) · end matter [9, 11)",
+            "  nodes: chuong 1 · dieu 2 · khoan 2",
+            "  chunk tokens: min 4 · median 12 · max 29 (budget 200)",
+            "  no warnings",
+        ]
+    )
 
 
 def test_format_lists_each_warning(tmp_path: Path) -> None:
@@ -633,7 +734,13 @@ def test_format_shows_the_file_name_not_the_whole_path(tmp_path: Path) -> None:
 
 
 def test_format_does_not_end_with_a_newline(tmp_path: Path) -> None:
-    assert not pipeline().run(write_txt(tmp_path, "a.txt")).summarize().format().endswith("\n")
+    assert (
+        not pipeline()
+        .run(write_txt(tmp_path, "a.txt"))
+        .summarize()
+        .format()
+        .endswith("\n")
+    )
 
 
 # ============================================================ level order
@@ -641,11 +748,15 @@ def test_format_does_not_end_with_a_newline(tmp_path: Path) -> None:
 
 def test_result_records_the_profiles_level_order(tmp_path: Path) -> None:
     result = pipeline().run(write_txt(tmp_path, "a.txt"))
-    assert result.level_order == tuple(level.name for level in VN_REGULATION.levels or ())
+    assert result.level_order == tuple(
+        level.name for level in VN_REGULATION.levels or ()
+    )
     assert result.level_order[:3] == ("chuong", "muc", "dieu")
 
 
-def test_levels_are_summarized_in_profile_order_not_first_appearance(tmp_path: Path) -> None:
+def test_levels_are_summarized_in_profile_order_not_first_appearance(
+    tmp_path: Path,
+) -> None:
     # Chương I has a Điều and a dash item before Chương II brings the first Mục.
     text = """Chương I
 QUY ĐỊNH CHUNG
@@ -661,7 +772,23 @@ a) Điểm a
 """
     result = pipeline().run(write_txt(tmp_path, "a.txt", text))
     first_seen = list(dict.fromkeys(n.level for n in result.logical.nodes))
-    assert first_seen.index("gach") < first_seen.index("muc")  # the case this test is about
+    assert first_seen.index("gach") < first_seen.index(
+        "muc"
+    )  # the case this test is about
     summary = result.summarize()
-    assert [level for level, _ in summary.nodes_by_levels] == ["chuong", "muc", "dieu", "khoan", "diem", "gach"]
-    assert dict(summary.nodes_by_levels) == {"chuong": 2, "muc": 1, "dieu": 2, "khoan": 1, "diem": 1, "gach": 1}
+    assert [level for level, _ in summary.nodes_by_levels] == [
+        "chuong",
+        "muc",
+        "dieu",
+        "khoan",
+        "diem",
+        "gach",
+    ]
+    assert dict(summary.nodes_by_levels) == {
+        "chuong": 2,
+        "muc": 1,
+        "dieu": 2,
+        "khoan": 1,
+        "diem": 1,
+        "gach": 1,
+    }

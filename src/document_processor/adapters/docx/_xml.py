@@ -9,6 +9,7 @@ NAMESPACES = {
     "wp": nsmap["wp"],
 }
 
+
 def _xpath_zero_or_more(element: _Element, path: str) -> list[object]:
     compiled = etree.XPath(path, namespaces=NAMESPACES, smart_strings=False)
     result = compiled(element)
@@ -45,7 +46,7 @@ def xpath_element_zero_or_more(element: _Element, path: str) -> list[_Element]:
                 f"XPath: {path}. Expected an _Element, got {value!r} (type: {type(value).__name__})"
             )
         elements.append(value)
-        
+
     return elements
 
 

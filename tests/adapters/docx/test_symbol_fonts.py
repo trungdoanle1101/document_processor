@@ -32,13 +32,15 @@ def test_symbol_bullet_in_private_use_form() -> None:
     ("text", "font", "expected"),
     [
         ("\uf0fc", "Wingdings", "✓"),
-        ("\u00fc", "Wingdings", "✓"),   # plain byte 0xFC ("ü")
+        ("\u00fc", "Wingdings", "✓"),  # plain byte 0xFC ("ü")
         ("\uf0b7", "Symbol", "•"),
-        ("\u00b7", "Symbol", "•"),      # plain byte 0xB7 ("·")
+        ("\u00b7", "Symbol", "•"),  # plain byte 0xB7 ("·")
     ],
     ids=["wingdings-pua", "wingdings-byte", "symbol-pua", "symbol-byte"],
 )
-def test_private_use_and_plain_byte_forms_map_the_same(text: str, font: str, expected: str) -> None:
+def test_private_use_and_plain_byte_forms_map_the_same(
+    text: str, font: str, expected: str
+) -> None:
     assert map_symbol_text(text, font) == expected
 
 
@@ -77,7 +79,9 @@ def test_no_font_leaves_text_unchanged(font: str | None) -> None:
     assert map_symbol_text("\uf0fc", font) == "\uf0fc"
 
 
-@pytest.mark.parametrize("font", ["Arial", "Times New Roman", "Wingdings 2", "Webdings"])
+@pytest.mark.parametrize(
+    "font", ["Arial", "Times New Roman", "Wingdings 2", "Webdings"]
+)
 def test_unknown_font_leaves_text_unchanged(font: str) -> None:
     # Fonts without a table are left alone; generated_bullets can still catch them.
     assert map_symbol_text("\uf0fc", font) == "\uf0fc"

@@ -25,15 +25,13 @@ from ._review_page_css import _CSS
 
 
 def render_review_html(data: ReviewData) -> str:
-    entries = "\n".join(
-        _render_entry(entry, data) for entry in data.chunks_or_gaps
-    )
-    
+    entries = "\n".join(_render_entry(entry, data) for entry in data.chunks_or_gaps)
+
     return _render_page(
         title=data.summary.source.name,
         summary=_render_summary(data.summary),
         outline=_render_outline(data),
-        entries=entries
+        entries=entries,
     )
 
 
@@ -48,7 +46,11 @@ def render_review_frame(data: ReviewData, height_px: int = 640) -> str:
 
 
 def _render_entry(entry: ChunkOrGap, data: ReviewData) -> str:
-    return _render_chunk(entry, data) if isinstance(entry, Chunk) else _render_gap(entry, data)
+    return (
+        _render_chunk(entry, data)
+        if isinstance(entry, Chunk)
+        else _render_gap(entry, data)
+    )
 
 
 def _render_page(title: str, summary: str, outline: str, entries: str) -> str:
@@ -72,9 +74,12 @@ def _render_page(title: str, summary: str, outline: str, entries: str) -> str:
         "</html>\n"
     )
 
+
 def _render_gap(gap: Gap, data: ReviewData) -> str:
     """Segments in no chunk: headings a later breadcrumb shows (heading lines), or dropped (a grey stub)"""
-    segments = "\n".join(_render_segment(index, None, data) for index in range(gap.start, gap.end))
+    segments = "\n".join(
+        _render_segment(index, None, data) for index in range(gap.start, gap.end)
+    )
     if gap.in_breadcrumb:
         return f'<section id="{escape(gap.id)}" class="gap in-breadcrumb {gap.part}">\n{segments}\n</section>'
     count = gap.end - gap.start
@@ -91,7 +96,8 @@ def _render_chunk(chunk: Chunk, data: ReviewData) -> str:
     """One chunk as a box: header strip, its segments rendered, and the exact embedded text"""
     over = " over" if chunk.token_count > data.summary.max_tokens else ""
     segments = "\n".join(
-        _render_segment(index, chunk.table_rows, data) for index in range(chunk.start, chunk.end)
+        _render_segment(index, chunk.table_rows, data)
+        for index in range(chunk.start, chunk.end)
     )
     return (
         f'<section id="{escape(chunk.id)}" class="chunk {chunk.part}{over}">\n'
@@ -104,7 +110,9 @@ def _render_chunk(chunk: Chunk, data: ReviewData) -> str:
 
 def _render_chunk_header(chunk: Chunk, max_tokens: int) -> str:
     """Id, breadcrumb, table rows of a piece, and a token bar against the budget"""
-    breadcrumb = " › ".join(escape(step.label or f"[{step.level}]") for step in chunk.path)
+    breadcrumb = " › ".join(
+        escape(step.label or f"[{step.level}]") for step in chunk.path
+    )
     rows = (
         f' <span class="rows">rows [{chunk.table_rows[0]}, {chunk.table_rows[1]})</span>'
         if chunk.table_rows is not None
@@ -121,7 +129,9 @@ def _render_chunk_header(chunk: Chunk, max_tokens: int) -> str:
     )
 
 
-def _render_segment(index: int, table_rows: tuple[int, int] | None, data: ReviewData) -> str:
+def _render_segment(
+    index: int, table_rows: tuple[int, int] | None, data: ReviewData
+) -> str:
     """One segment of a chunk or gap; hovering shows its index and block id"""
     segment = data.document.segments[index]
     title = f"segment {index} · {segment.block_id}"
@@ -137,15 +147,23 @@ def _render_segment(index: int, table_rows: tuple[int, int] | None, data: Review
             return f'<p title="{escape(title)}">{escape(segment.text)}</p>'
         case TableSegment():
             table = segment.table
-            start, end = table_rows if table_rows is not None else (table.n_header_rows, table.n_rows)
-            return _render_table(build_table_rows(table, start, end), table.n_header_rows, title)
+            start, end = (
+                table_rows
+                if table_rows is not None
+                else (table.n_header_rows, table.n_rows)
+            )
+            return _render_table(
+                build_table_rows(table, start, end), table.n_header_rows, title
+            )
         case ImageSegment():
             return f'<div class="image" title="{escape(title)}">[image]</div>'
         case _:
             assert_never(segment)
 
 
-def _render_table(rows: tuple[tuple[TableCell, ...], ...], n_header_rows: int, title: str) -> str:
+def _render_table(
+    rows: tuple[tuple[TableCell, ...], ...], n_header_rows: int, title: str
+) -> str:
     """Header rows as <th> in <thead>, the rest as <td>; spans written only when above 1"""
     head = "".join(_render_row(row, "th") for row in rows[:n_header_rows])
     body = "".join(_render_row(row, "td") for row in rows[n_header_rows:])
@@ -166,7 +184,10 @@ def _render_cell(cell: TableCell, tag: str) -> str:
 
 
 def _render_summary(summary: ResultSummary) -> str:
-    warnings = "\n".join(_render_warning(w) for w in summary.warnings) or "<li>no warnings</li>"
+    warnings = (
+        "\n".join(_render_warning(w) for w in summary.warnings)
+        or "<li>no warnings</li>"
+    )
     return (
         '<header class="summary">'
         f"<pre>{escape(summary.format_statistics())}</pre>"
@@ -193,10 +214,14 @@ def _render_outline(data: ReviewData) -> str:
         while open_details > node.depth:
             lines.append("</details>")
             open_details -= 1
-        has_children = position + 1 < len(outline) and outline[position + 1].depth > node.depth
+        has_children = (
+            position + 1 < len(outline) and outline[position + 1].depth > node.depth
+        )
         if has_children:
             opened = " open" if node.is_section else ""
-            lines.append(f"<details{opened}><summary>{_render_outline_line(node)}</summary>")
+            lines.append(
+                f"<details{opened}><summary>{_render_outline_line(node)}</summary>"
+            )
             open_details += 1
         else:
             lines.append(f"<div>{_render_outline_line(node)}</div>")

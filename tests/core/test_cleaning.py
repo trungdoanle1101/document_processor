@@ -142,7 +142,9 @@ class TestDocument:
         assert cleaned.source_filename == doc.source_filename
 
     def test_other_block_fields_kept(self) -> None:
-        block = make_block(text="\tĐiều 1.", source_reference="/w:document/w:body/w:p[3]")
+        block = make_block(
+            text="\tĐiều 1.", source_reference="/w:document/w:body/w:p[3]"
+        )
         cleaned = clean_document(make_document(blocks=(block,))).blocks[0]
         assert cleaned.source_reference == block.source_reference
         assert cleaned.paragraph_format == block.paragraph_format

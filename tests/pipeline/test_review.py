@@ -27,10 +27,21 @@ import pytest
 
 from document_processor.chunking import Chunk, OutlineChunker, WordTokenizer
 from document_processor.chunking.render import render_table_rows
-from document_processor.core.models import LogicalDocument, LogicalNode, Segment, TableCell, TableInfo
+from document_processor.core.models import (
+    LogicalDocument,
+    LogicalNode,
+    Segment,
+    TableCell,
+    TableInfo,
+)
 from document_processor.logical import VN_REGULATION
 from document_processor.pipeline import PipelineResult, format_outline
-from document_processor.pipeline.review import Gap, ReviewData, build_review_data, build_table_rows
+from document_processor.pipeline.review import (
+    Gap,
+    ReviewData,
+    build_review_data,
+    build_table_rows,
+)
 from tests.chunking.test_outline_chunker import Blocks, regulation
 from tests.factories import (
     heading_for,
@@ -52,18 +63,35 @@ Chương I QUY ĐỊNH CHUNG  [1, 15)
 end matter  [15, 17)"""
 
 
-def outlined(*nodes: LogicalNode, n_segments: int, body: tuple[int, int]) -> LogicalDocument:
+def outlined(
+    *nodes: LogicalNode, n_segments: int, body: tuple[int, int]
+) -> LogicalDocument:
     segments: list[Segment] = []
     for index in range(n_segments):
         starting = [n for n in nodes if n.start == index]
-        segments.append(heading_for(starting[0]) if starting else make_text_segment(block_id=f"pb{index}", text="x"))
-    return make_logical_document(segments=tuple(segments), nodes=nodes, body_start=body[0], body_end=body[1])
+        segments.append(
+            heading_for(starting[0])
+            if starting
+            else make_text_segment(block_id=f"pb{index}", text="x")
+        )
+    return make_logical_document(
+        segments=tuple(segments), nodes=nodes, body_start=body[0], body_end=body[1]
+    )
 
 
-def node(node_id: str, parent: str | None, start: int, end: int, **overrides: Any) -> LogicalNode:
+def node(
+    node_id: str, parent: str | None, start: int, end: int, **overrides: Any
+) -> LogicalNode:
     fields: dict[str, Any] = {
-        "id": node_id, "parent_id": parent, "level": "dieu", "number": None,
-        "marker": f"Điều {node_id}.", "title": None, "head_block_ids": (f"h{node_id}",), "start": start, "end": end,
+        "id": node_id,
+        "parent_id": parent,
+        "level": "dieu",
+        "number": None,
+        "marker": f"Điều {node_id}.",
+        "title": None,
+        "head_block_ids": (f"h{node_id}",),
+        "start": start,
+        "end": end,
     }
     fields.update(overrides)
     return make_logical_node(**fields)
@@ -86,11 +114,14 @@ def test_returns_text_without_printing(capsys: pytest.CaptureFixture[str]) -> No
 
 
 def test_sections_only() -> None:
-    assert format_outline(regulation(), sections_only=True) == """front matter  [0, 1)
+    assert (
+        format_outline(regulation(), sections_only=True)
+        == """front matter  [0, 1)
 Chương I QUY ĐỊNH CHUNG  [1, 15)
   Điều 1. Phạm vi điều chỉnh  [2, 7)
   Điều 2. Giải thích từ ngữ  [7, 15)
 end matter  [15, 17)"""
+    )
 
 
 def test_sections_only_keeps_front_and_end_matter() -> None:
@@ -109,7 +140,8 @@ def test_sections_only_finds_dieu_at_any_depth() -> None:
         node("2-1", "2", 5, 6, level="khoan", is_section=False, marker="1."),
         node("3", None, 6, 8),
         node("3-1", "3", 7, 8, level="khoan", is_section=False, marker="1."),
-        n_segments=8, body=(0, 8),
+        n_segments=8,
+        body=(0, 8),
     )
     assert format_outline(document, sections_only=True).splitlines()[1:-1] == [
         "Chương I  [0, 6)",
@@ -121,8 +153,15 @@ def test_sections_only_finds_dieu_at_any_depth() -> None:
 
 
 def test_sections_only_on_a_document_of_items_only() -> None:
-    document = outlined(node("1", None, 0, 2, level="gach", is_section=False, marker="-"), n_segments=2, body=(0, 2))
-    assert format_outline(document, sections_only=True) == "front matter  none\nend matter  none"
+    document = outlined(
+        node("1", None, 0, 2, level="gach", is_section=False, marker="-"),
+        n_segments=2,
+        body=(0, 2),
+    )
+    assert (
+        format_outline(document, sections_only=True)
+        == "front matter  none\nend matter  none"
+    )
 
 
 @pytest.mark.parametrize("indent", [1, 4])
@@ -134,8 +173,12 @@ def test_indent_width(indent: int) -> None:
 
 def test_siblings_after_a_deep_branch_return_to_their_depth() -> None:
     document = outlined(
-        node("1", None, 0, 4), node("1a", "1", 1, 3), node("1a-i", "1a", 2, 3), node("2", None, 4, 5),
-        n_segments=5, body=(0, 5),
+        node("1", None, 0, 4),
+        node("1a", "1", 1, 3),
+        node("1a-i", "1a", 2, 3),
+        node("2", None, 4, 5),
+        n_segments=5,
+        body=(0, 5),
     )
     assert format_outline(document).splitlines()[1:-1] == [
         "Điều 1.  [0, 4)",
@@ -149,12 +192,20 @@ def test_siblings_after_a_deep_branch_return_to_their_depth() -> None:
 
 
 def test_title_without_a_marker() -> None:
-    document = outlined(node("1", None, 0, 2, marker=None, title="Lời nói đầu"), n_segments=2, body=(0, 2))
+    document = outlined(
+        node("1", None, 0, 2, marker=None, title="Lời nói đầu"),
+        n_segments=2,
+        body=(0, 2),
+    )
     assert format_outline(document).splitlines()[1] == "Lời nói đầu  [0, 2)"
 
 
 def test_neither_marker_nor_title_shows_the_level() -> None:
-    document = outlined(node("1", None, 0, 2, level="gach", marker=None, title=None), n_segments=2, body=(0, 2))
+    document = outlined(
+        node("1", None, 0, 2, level="gach", marker=None, title=None),
+        n_segments=2,
+        body=(0, 2),
+    )
     assert format_outline(document).splitlines()[1] == "[gach]  [0, 2)"
 
 
@@ -173,13 +224,18 @@ def test_no_end_matter() -> None:
 
 def test_document_without_nodes() -> None:
     document = make_logical_document(
-        segments=(make_text_segment(block_id="pb1"), make_text_segment(block_id="pb2")), body_start=0, body_end=2
+        segments=(make_text_segment(block_id="pb1"), make_text_segment(block_id="pb2")),
+        body_start=0,
+        body_end=2,
     )
     assert format_outline(document) == "front matter  none\nend matter  none"
 
 
 def test_empty_document() -> None:
-    assert format_outline(make_logical_document()) == "front matter  none\nend matter  none"
+    assert (
+        format_outline(make_logical_document())
+        == "front matter  none\nend matter  none"
+    )
 
 
 # ======================================================================
@@ -187,8 +243,12 @@ def test_empty_document() -> None:
 # ======================================================================
 
 
-def review(document: LogicalDocument, max_tokens: int = 200) -> tuple[ReviewData, tuple[Chunk, ...]]:
-    chunks = OutlineChunker(tokenizer=WordTokenizer(), max_tokens=max_tokens).chunk(document)
+def review(
+    document: LogicalDocument, max_tokens: int = 200
+) -> tuple[ReviewData, tuple[Chunk, ...]]:
+    chunks = OutlineChunker(tokenizer=WordTokenizer(), max_tokens=max_tokens).chunk(
+        document
+    )
     result = PipelineResult(
         source=Path("quy_dinh.docx"),
         physical=make_document(),
@@ -209,7 +269,13 @@ def ranges(data: ReviewData) -> list[tuple[str, int, int]]:
 
 
 def covered(data: ReviewData) -> list[int]:
-    return sorted({index for entry in data.chunks_or_gaps for index in range(entry.start, entry.end)})
+    return sorted(
+        {
+            index
+            for entry in data.chunks_or_gaps
+            for index in range(entry.start, entry.end)
+        }
+    )
 
 
 # ---------- what it holds
@@ -225,7 +291,15 @@ def test_summary_and_document_come_from_the_result() -> None:
 
 def test_depths_follow_the_parent_chain() -> None:
     data, _ = review(regulation())
-    assert data.depths == {"n0": 0, "n1": 1, "n2": 2, "n3": 1, "n4": 2, "n5": 2, "n6": 3}
+    assert data.depths == {
+        "n0": 0,
+        "n1": 1,
+        "n2": 2,
+        "n3": 1,
+        "n4": 2,
+        "n5": 2,
+        "n6": 3,
+    }
 
 
 # ---------- chunks_or_gaps
@@ -251,7 +325,11 @@ def test_entries_are_in_document_order_without_overlap(max_tokens: int) -> None:
     data, _ = review(regulation(), max_tokens)
     entries = data.chunks_or_gaps
     for before, after in zip(entries, entries[1:]):
-        same_table = isinstance(before, Chunk) and isinstance(after, Chunk) and before.table_rows is not None
+        same_table = (
+            isinstance(before, Chunk)
+            and isinstance(after, Chunk)
+            and before.table_rows is not None
+        )
         assert after.start == before.end or (same_table and after.start == before.start)
 
 
@@ -260,14 +338,22 @@ def test_chapter_heading_is_shown_in_the_breadcrumb() -> None:
     # the chunks below carry it in their breadcrumb.
     data, chunks = review(regulation())
     (gap,) = gaps(data)
-    assert (gap.id, gap.part, gap.start, gap.end, gap.in_breadcrumb) == ("gap-1", "body", 1, 2, True)
+    assert (gap.id, gap.part, gap.start, gap.end, gap.in_breadcrumb) == (
+        "gap-1",
+        "body",
+        1,
+        2,
+        True,
+    )
     assert "Chương I QUY ĐỊNH CHUNG" in chunks[1].headings
 
 
 def test_gap_ids_are_unique() -> None:
     data, _ = review(regulation(), 3)
     ids = [gap.id for gap in gaps(data)]
-    assert len(ids) == len(set(ids)) and all(id_ == f"gap-{gap.start}" for id_, gap in zip(ids, gaps(data)))
+    assert len(ids) == len(set(ids)) and all(
+        id_ == f"gap-{gap.start}" for id_, gap in zip(ids, gaps(data))
+    )
 
 
 def test_dropped_image_is_not_in_breadcrumb() -> None:
@@ -276,12 +362,20 @@ def test_dropped_image_is_not_in_breadcrumb() -> None:
     #   2 Nội dung
     document = Blocks().image().text("Điều 1. Phạm vi").text("Nội dung").build()
     data, _ = review(document)
-    assert [(gap.part, gap.start, gap.end, gap.in_breadcrumb) for gap in gaps(data)] == [("front_matter", 0, 1, False)]
+    assert [
+        (gap.part, gap.start, gap.end, gap.in_breadcrumb) for gap in gaps(data)
+    ] == [("front_matter", 0, 1, False)]
 
 
 def test_heading_only_article_is_dropped() -> None:
     # A typed table of contents entry, or an article with only a title: no chunk, no breadcrumb.
-    document = Blocks().text("Điều 1. Phạm vi").text("Điều 2. Đối tượng").text("Nội dung").build()
+    document = (
+        Blocks()
+        .text("Điều 1. Phạm vi")
+        .text("Điều 2. Đối tượng")
+        .text("Nội dung")
+        .build()
+    )
     data, _ = review(document)
     (gap,) = gaps(data)
     assert (gap.start, gap.end, gap.in_breadcrumb) == (0, 1, False)
@@ -293,9 +387,19 @@ def test_a_run_splits_where_breadcrumb_headings_meet_dropped_segments() -> None:
     #   2 (image)                                 dropped
     #   3 # Điều 1. Phạm vi       dieu   [3, 5)
     #   4 Nội dung
-    document = Blocks().image().text("Chương I").image().text("Điều 1. Phạm vi").text("Nội dung").build()
+    document = (
+        Blocks()
+        .image()
+        .text("Chương I")
+        .image()
+        .text("Điều 1. Phạm vi")
+        .text("Nội dung")
+        .build()
+    )
     data, _ = review(document)
-    assert [(gap.id, gap.part, gap.start, gap.end, gap.in_breadcrumb) for gap in gaps(data)] == [
+    assert [
+        (gap.id, gap.part, gap.start, gap.end, gap.in_breadcrumb) for gap in gaps(data)
+    ] == [
         ("gap-0", "front_matter", 0, 1, False),
         ("gap-1", "body", 1, 2, True),
         ("gap-2", "body", 2, 3, False),
@@ -307,7 +411,11 @@ def test_split_table_pieces_follow_each_other_without_a_gap() -> None:
     blocks = Blocks().text("Điều 1. Phạm vi").text("Bảng:")
     blocks.blocks.append(make_table_block(id="pb3", table_info=MERGED))
     data, _ = review(blocks.build(), 6)
-    pieces = [entry for entry in data.chunks_or_gaps if isinstance(entry, Chunk) and entry.table_rows is not None]
+    pieces = [
+        entry
+        for entry in data.chunks_or_gaps
+        if isinstance(entry, Chunk) and entry.table_rows is not None
+    ]
     assert len(pieces) > 1 and len({piece.start for piece in pieces}) == 1
     first = data.chunks_or_gaps.index(pieces[0])
     assert list(data.chunks_or_gaps[first : first + len(pieces)]) == pieces
@@ -363,7 +471,9 @@ def test_a_split_node_lists_every_chunk_it_spans() -> None:
     document = regulation()
     data, chunks = review(document, 3)
     dieu_2 = document.get_node("n3")
-    expected = tuple(c.id for c in chunks if c.start < dieu_2.end and dieu_2.start < c.end)
+    expected = tuple(
+        c.id for c in chunks if c.start < dieu_2.end and dieu_2.start < c.end
+    )
     by_id = {n.node_id: n for n in data.outline}
     assert len(expected) > 1
     assert by_id["n3"].overlap_chunk_ids == expected
@@ -385,7 +495,9 @@ def test_every_node_of_the_regulation_lists_a_chunk() -> None:
 
 
 def test_label_falls_back_to_the_level() -> None:
-    bare = node("1", None, 0, 2, marker=None, title=None, level="gach", is_section=False)
+    bare = node(
+        "1", None, 0, 2, marker=None, title=None, level="gach", is_section=False
+    )
     data, _ = review(outlined(bare, n_segments=2, body=(0, 2)))
     assert data.outline[0].label == "[gach]"
 
@@ -395,7 +507,9 @@ def test_label_falls_back_to_the_level() -> None:
 # ======================================================================
 
 
-def cell(row: int, col: int, text: str = "", rs: int = 1, cs: int = 1, *more: str) -> TableCell:
+def cell(
+    row: int, col: int, text: str = "", rs: int = 1, cs: int = 1, *more: str
+) -> TableCell:
     paragraphs = (text, *more) if text else ()
     return TableCell(row=row, col=col, row_span=rs, col_span=cs, paragraphs=paragraphs)
 
@@ -412,16 +526,21 @@ MERGED = TableInfo(
     n_cols=2,
     n_header_rows=1,
     cells=(
-        cell(0, 0, "TT"), cell(0, 1, "Nội dung"),
-        cell(1, 0, "A", 3), cell(1, 1, "x1"),
+        cell(0, 0, "TT"),
+        cell(0, 1, "Nội dung"),
+        cell(1, 0, "A", 3),
+        cell(1, 1, "x1"),
         cell(2, 1, "x2"),
         cell(3, 1, "x3"),
-        cell(4, 0, "B"), cell(4, 1, "x4"),
+        cell(4, 0, "B"),
+        cell(4, 1, "x4"),
     ),
 )
 
 
-def shape(rows: tuple[tuple[TableCell, ...], ...]) -> list[list[tuple[int, int, str, int]]]:
+def shape(
+    rows: tuple[tuple[TableCell, ...], ...],
+) -> list[list[tuple[int, int, str, int]]]:
     """(row, col, text, row_span) per cell, row by row."""
     return [[(c.row, c.col, c.text(), c.row_span) for c in row] for row in rows]
 
@@ -441,13 +560,22 @@ def test_whole_table() -> None:
     [
         (1, 2, [(1, 0, "A", 1), (1, 1, "x1", 1)]),  # cut at the end of the piece
         (2, 4, [(2, 0, "A", 2), (2, 1, "x2", 1)]),  # carried down, cut at both sides
-        (3, 5, [(3, 0, "A", 1), (3, 1, "x3", 1)]),  # carried down to the last row it covers
+        (
+            3,
+            5,
+            [(3, 0, "A", 1), (3, 1, "x3", 1)],
+        ),  # carried down to the last row it covers
     ],
     ids=["cut-at-end", "carried-and-cut", "carried-to-its-last-row"],
 )
-def test_merged_cell_in_a_piece(start: int, end: int, first_body_row: list[tuple[int, int, str, int]]) -> None:
+def test_merged_cell_in_a_piece(
+    start: int, end: int, first_body_row: list[tuple[int, int, str, int]]
+) -> None:
     rows = shape(build_table_rows(MERGED, start, end))
-    assert rows[0] == [(0, 0, "TT", 1), (0, 1, "Nội dung", 1)]  # header first, every piece
+    assert rows[0] == [
+        (0, 0, "TT", 1),
+        (0, 1, "Nội dung", 1),
+    ]  # header first, every piece
     assert rows[1] == first_body_row
     assert len(rows) == 1 + (end - start)
 
@@ -462,8 +590,17 @@ def test_piece_after_a_merge_does_not_repeat_it() -> None:
 def test_carried_cell_lands_in_its_own_column() -> None:
     # The merged cell is in column 1, so it is met before row 2's column-0 cell.
     table = TableInfo(
-        n_rows=4, n_cols=2, n_header_rows=1,
-        cells=(cell(0, 0, "TT"), cell(0, 1, "Nhóm"), cell(1, 0, "1"), cell(1, 1, "G", 3), cell(2, 0, "2"), cell(3, 0, "3")),
+        n_rows=4,
+        n_cols=2,
+        n_header_rows=1,
+        cells=(
+            cell(0, 0, "TT"),
+            cell(0, 1, "Nhóm"),
+            cell(1, 0, "1"),
+            cell(1, 1, "G", 3),
+            cell(2, 0, "2"),
+            cell(3, 0, "3"),
+        ),
     )
     assert shape(build_table_rows(table, 2, 4))[1] == [(2, 0, "2", 1), (2, 1, "G", 2)]
 
@@ -471,25 +608,38 @@ def test_carried_cell_lands_in_its_own_column() -> None:
 def test_header_cells_keep_their_spans() -> None:
     # Two header rows: TT merged down both, "Diện tích" across two columns.
     table = TableInfo(
-        n_rows=3, n_cols=3, n_header_rows=2,
+        n_rows=3,
+        n_cols=3,
+        n_header_rows=2,
         cells=(
-            cell(0, 0, "TT", 2), cell(0, 1, "Diện tích", 1, 2),
-            cell(1, 1, "Tối thiểu"), cell(1, 2, "Tối đa"),
-            cell(2, 0, "1"), cell(2, 1, "50"), cell(2, 2, "100"),
+            cell(0, 0, "TT", 2),
+            cell(0, 1, "Diện tích", 1, 2),
+            cell(1, 1, "Tối thiểu"),
+            cell(1, 2, "Tối đa"),
+            cell(2, 0, "1"),
+            cell(2, 1, "50"),
+            cell(2, 2, "100"),
         ),
     )
     rows = build_table_rows(table, 2, 3)
-    assert [(c.text(), c.row_span, c.col_span) for c in rows[0]] == [("TT", 2, 1), ("Diện tích", 1, 2)]
+    assert [(c.text(), c.row_span, c.col_span) for c in rows[0]] == [
+        ("TT", 2, 1),
+        ("Diện tích", 1, 2),
+    ]
     assert [c.text() for c in rows[1]] == ["Tối thiểu", "Tối đa"]
 
 
 def test_table_without_header_rows() -> None:
-    table = TableInfo(n_rows=2, n_cols=1, n_header_rows=0, cells=(cell(0, 0, "a"), cell(1, 0, "b")))
+    table = TableInfo(
+        n_rows=2, n_cols=1, n_header_rows=0, cells=(cell(0, 0, "a"), cell(1, 0, "b"))
+    )
     assert shape(build_table_rows(table, 1, 2)) == [[(1, 0, "b", 1)]]
 
 
 def test_empty_range_is_the_header_alone() -> None:
-    assert shape(build_table_rows(MERGED, 3, 3)) == [[(0, 0, "TT", 1), (0, 1, "Nội dung", 1)]]
+    assert shape(build_table_rows(MERGED, 3, 3)) == [
+        [(0, 0, "TT", 1), (0, 1, "Nội dung", 1)]
+    ]
 
 
 def test_cells_are_copies_and_the_table_is_unchanged() -> None:
@@ -502,7 +652,10 @@ def test_cells_are_copies_and_the_table_is_unchanged() -> None:
 
 def test_paragraphs_are_kept() -> None:
     table = TableInfo(
-        n_rows=2, n_cols=1, n_header_rows=1, cells=(cell(0, 0, "Nội dung"), cell(1, 0, "a. Một", 1, 1, "b. Hai"))
+        n_rows=2,
+        n_cols=1,
+        n_header_rows=1,
+        cells=(cell(0, 0, "Nội dung"), cell(1, 0, "a. Một", 1, 1, "b. Hai")),
     )
     assert build_table_rows(table, 1, 2)[1][0].paragraphs == ("a. Một", "b. Hai")
 
@@ -511,6 +664,11 @@ def test_paragraphs_are_kept() -> None:
 def test_same_placement_as_the_grid_layout(start: int, end: int) -> None:
     # The page and the embedded text put each cell's text on the same row and column.
     grid_lines = render_table_rows(MERGED, start, end, "grid").split("\n")
-    from_grid = [[(col, text) for col, text in enumerate(line.split(" | ")) if text] for line in grid_lines]
-    from_rows = [[(c.col, c.text()) for c in row] for row in build_table_rows(MERGED, start, end)]
+    from_grid = [
+        [(col, text) for col, text in enumerate(line.split(" | ")) if text]
+        for line in grid_lines
+    ]
+    from_rows = [
+        [(c.col, c.text()) for c in row] for row in build_table_rows(MERGED, start, end)
+    ]
     assert from_rows == from_grid

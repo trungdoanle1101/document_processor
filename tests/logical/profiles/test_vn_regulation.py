@@ -14,8 +14,26 @@ from document_processor.logical.levels import GlyphMarkerSpec, TemplateMarkerSpe
 from document_processor.logical.profiles.vn_regulation import VN_REGULATION
 from document_processor.logical.template_marker import TemplateMatch
 
-LEVEL_NAMES = ("chuong", "muc", "dieu", "khoan", "khoan_cap_2", "khoan_cap_3", "diem", "gach", "cong")
-TEMPLATE_LEVELS = ("chuong", "muc", "dieu", "khoan", "khoan_cap_2", "khoan_cap_3", "diem")
+LEVEL_NAMES = (
+    "chuong",
+    "muc",
+    "dieu",
+    "khoan",
+    "khoan_cap_2",
+    "khoan_cap_3",
+    "diem",
+    "gach",
+    "cong",
+)
+TEMPLATE_LEVELS = (
+    "chuong",
+    "muc",
+    "dieu",
+    "khoan",
+    "khoan_cap_2",
+    "khoan_cap_3",
+    "diem",
+)
 
 
 def levels_reading_text(text: str) -> list[str]:
@@ -51,7 +69,10 @@ def template_reading(level: str, text: str) -> TemplateMatch:
 
 def numbers_read(level: str, text: str) -> set[tuple[str, str, int]]:
     """(style, numeral as written, value) for every reading's first numeral."""
-    return {(r.numerals[0].style, r.numerals[0].text, r.numerals[0].value) for r in template_readings(level, text)}
+    return {
+        (r.numerals[0].style, r.numerals[0].text, r.numerals[0].value)
+        for r in template_readings(level, text)
+    }
 
 
 # ============================================================ structure
@@ -65,13 +86,19 @@ def test_identity() -> None:
 def test_chuong_muc_and_dieu_are_the_sections() -> None:
     # Units people cite; everything below an Điều is an item inside it.
     assert VN_REGULATION.levels is not None
-    assert [level.name for level in VN_REGULATION.levels if level.is_section] == ["chuong", "muc", "dieu"]
+    assert [level.name for level in VN_REGULATION.levels if level.is_section] == [
+        "chuong",
+        "muc",
+        "dieu",
+    ]
 
 
 def test_level_order_is_outermost_first() -> None:
     assert VN_REGULATION.levels is not None
     assert tuple(level.name for level in VN_REGULATION.levels) == LEVEL_NAMES
-    assert [VN_REGULATION.get_rank(n) for n in LEVEL_NAMES] == list(range(len(LEVEL_NAMES)))
+    assert [VN_REGULATION.get_rank(n) for n in LEVEL_NAMES] == list(
+        range(len(LEVEL_NAMES))
+    )
 
 
 @pytest.mark.parametrize(
@@ -99,7 +126,10 @@ def test_title_rules(level: str, title: str) -> None:
         ("muc", ()),  # Mục is optional, so nothing may require it
         ("dieu", ()),
         ("khoan", ("dieu",)),
-        ("khoan_cap_2", ("khoan",)),  # keeps "2.5 triệu đồng" out unless it starts a line inside a khoản
+        (
+            "khoan_cap_2",
+            ("khoan",),
+        ),  # keeps "2.5 triệu đồng" out unless it starts a line inside a khoản
         ("khoan_cap_3", ("khoan",)),
         ("diem", ("dieu",)),  # directly under Điều or under a khoản
         ("gach", ()),
@@ -120,7 +150,9 @@ def test_closes_on_plain_paragraph(level: str, closes: bool) -> None:
 
 def test_marker_kinds() -> None:
     for name in TEMPLATE_LEVELS:
-        assert isinstance(VN_REGULATION.get_level(name).marker, TemplateMarkerSpec), name
+        assert isinstance(VN_REGULATION.get_level(name).marker, TemplateMarkerSpec), (
+            name
+        )
     for name in ("gach", "cong"):
         assert isinstance(VN_REGULATION.get_level(name).marker, GlyphMarkerSpec), name
 
@@ -166,14 +198,23 @@ def test_default_registries() -> None:
         ("2.3. Tầng xử lý và lưu trữ dữ liệu", "khoan_cap_2"),
         ("2.3.1 Tầng xử lý dữ liệu", "khoan_cap_3"),
         ("2.3.1. Tầng xử lý dữ liệu", "khoan_cap_3"),
-        ("1.1. Mục tiêu", "khoan_cap_2"),  # also a typed table-of-contents entry; the builder handles it
-        ("2.5 triệu đồng", "khoan_cap_2"),  # syntax matches; `inside` and pass 2 must reject it
+        (
+            "1.1. Mục tiêu",
+            "khoan_cap_2",
+        ),  # also a typed table-of-contents entry; the builder handles it
+        (
+            "2.5 triệu đồng",
+            "khoan_cap_2",
+        ),  # syntax matches; `inside` and pass 2 must reject it
         ("5.000 đồng", "khoan_cap_2"),  # likewise
         ("a) Nội dung điểm", "diem"),
         ("b. Nội dung điểm", "diem"),
         ("đ) Nội dung điểm", "diem"),
         ("i) Nội dung điểm", "diem"),
-        ("f) Nội dung điểm", "diem"),  # Latin letters (Word's lowerLetter, internal regulations)
+        (
+            "f) Nội dung điểm",
+            "diem",
+        ),  # Latin letters (Word's lowerLetter, internal regulations)
         ("f. Vùng Dữ liệu chủ", "diem"),
         ("w. Nội dung", "diem"),
         ("- Nội dung gạch đầu dòng", "gach"),
@@ -211,7 +252,21 @@ def test_lines_without_a_marker(text: str) -> None:
 
 
 def test_every_line_is_read_by_at_most_one_level() -> None:
-    lines = ["Chương I", "Mục 1", "Điều 1. X", "1. X", "2.1 X", "2.1. X", "2.3.1 X", "a) X", "b. X", "- X", "+ X", "i) X", "v) X"]
+    lines = [
+        "Chương I",
+        "Mục 1",
+        "Điều 1. X",
+        "1. X",
+        "2.1 X",
+        "2.1. X",
+        "2.3.1 X",
+        "a) X",
+        "b. X",
+        "- X",
+        "+ X",
+        "i) X",
+        "v) X",
+    ]
     for text in lines:
         assert len(levels_reading_text(text)) <= 1, text
 
@@ -235,8 +290,14 @@ def test_numbers(level: str, text: str, number_text: str, value: int) -> None:
 
 
 def test_sub_clause_numbers() -> None:
-    assert [(n.text, n.value) for n in template_reading("khoan_cap_2", "2.3. X").numerals] == [("2", 2), ("3", 3)]
-    assert [n.value for n in template_reading("khoan_cap_3", "2.3.1 X").numerals] == [2, 3, 1]
+    assert [
+        (n.text, n.value) for n in template_reading("khoan_cap_2", "2.3. X").numerals
+    ] == [("2", 2), ("3", 3)]
+    assert [n.value for n in template_reading("khoan_cap_3", "2.3.1 X").numerals] == [
+        2,
+        3,
+        1,
+    ]
 
 
 @pytest.mark.parametrize(
@@ -255,7 +316,9 @@ def test_sub_clause_numbers() -> None:
         ("w. X", {("lower_latin", "w", 23)}),
     ],
 )
-def test_diem_letters_are_read_in_both_alphabets(text: str, readings: set[tuple[str, str, int]]) -> None:
+def test_diem_letters_are_read_in_both_alphabets(
+    text: str, readings: set[tuple[str, str, int]]
+) -> None:
     assert numbers_read("diem", text) == readings
 
 
@@ -272,8 +335,12 @@ def test_dieu_marker_end_splits_off_the_title() -> None:
 
 
 def test_diem_reports_which_template_matched() -> None:
-    assert {r.template for r in template_readings("diem", "a) X")} == {"{lower_latin|lower_vn})"}
-    assert {r.template for r in template_readings("diem", "b. X")} == {"{lower_latin|lower_vn}."}
+    assert {r.template for r in template_readings("diem", "a) X")} == {
+        "{lower_latin|lower_vn})"
+    }
+    assert {r.template for r in template_readings("diem", "b. X")} == {
+        "{lower_latin|lower_vn}."
+    }
 
 
 def test_glyph_levels_report_their_style() -> None:

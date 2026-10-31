@@ -61,19 +61,25 @@ VN_REGULATION = Profile(
             # of a line; `inside` and pass 2 are what keep that out.
             name="khoan_cap_2",
             is_section=False,
-            marker=TemplateMarkerSpec(templates=("{arabic}.{arabic}", "{arabic}.{arabic}.")),
+            marker=TemplateMarkerSpec(
+                templates=("{arabic}.{arabic}", "{arabic}.{arabic}.")
+            ),
             inside=("khoan",),
         ),
         LevelSpec(
             name="khoan_cap_3",
             is_section=False,
-            marker=TemplateMarkerSpec(templates=("{arabic}.{arabic}.{arabic}", "{arabic}.{arabic}.{arabic}.")),
+            marker=TemplateMarkerSpec(
+                templates=("{arabic}.{arabic}.{arabic}", "{arabic}.{arabic}.{arabic}.")
+            ),
             inside=("khoan",),
         ),
         LevelSpec(
             name="diem",
             is_section=False,
-            marker=TemplateMarkerSpec(templates=("{lower_latin|lower_vn})", "{lower_latin|lower_vn}.")),
+            marker=TemplateMarkerSpec(
+                templates=("{lower_latin|lower_vn})", "{lower_latin|lower_vn}.")
+            ),
             inside=("dieu",),
         ),
         LevelSpec(

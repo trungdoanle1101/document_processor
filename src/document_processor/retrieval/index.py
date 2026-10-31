@@ -1,60 +1,23 @@
-import math
-import re
 import threading
 from abc import ABC, abstractmethod
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass, field
-from datetime import date, datetime
 from types import MappingProxyType
 from typing import Literal, final
 
+from document_processor.retrieval.attributes import (
+    AttributeChanges,
+    Attributes,
+    Condition,
+    check_attribute_name,
+    check_attribute_value,
+)
 from document_processor.retrieval.embedding import (
     Embedding,
     VectorSpec,
     check_embedding,
 )
-
-type Scalar = str | int | float | bool | date
-type AttributeValue = Scalar | tuple[str, ...] | tuple[int, ...]
-type Attributes = Mapping[str, AttributeValue]
-
-# None removes the attribute
-type AttributeChanges = Mapping[str, AttributeValue | None]
-
-
-@dataclass(frozen=True, kw_only=True)
-class AnyOf:
-    """Equals one of the values; on a list attribute, contains one of them."""
-
-    values: tuple[str, ...] | tuple[int, ...] | tuple[bool, ...]
-
-    def __post_init__(self) -> None:
-        if not self.values:
-            raise ValueError("AnyOf needs at least one value")
-
-
-@dataclass(frozen=True, kw_only=True)
-class Range[T: (float, date)]:
-    """Every bound given must hold."""
-
-    above: T | None = None  # >
-    at_least: T | None = None  # >=
-    below: T | None = None  # <
-    at_most: T | None = None  # <=
-
-    def __post_init__(self) -> None:
-        bounds = [
-            bound
-            for bound in (self.above, self.at_least, self.below, self.at_most)
-            if bound is not None
-        ]
-        if not bounds:
-            raise ValueError("Range needs at least one bound")
-        for bound in bounds:
-            _check_attribute_value(bound)
-
-
-type Condition = AnyOf | Range[float] | Range[date]
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -80,7 +43,7 @@ class ChunkFilter:
         if self.reference_keys == ():
             raise ValueError("reference_keys must not be empty; use None for any")
         for name in self.attributes:
-            _check_attribute_name(name)
+            check_attribute_name(name)
         object.__setattr__(self, "attributes", MappingProxyType(dict(self.attributes)))
 
     @property
@@ -113,8 +76,8 @@ class IndexedChunk:
 
     def __post_init__(self) -> None:
         for name, value in self.attributes.items():
-            _check_attribute_name(name)
-            _check_attribute_value(value)
+            check_attribute_name(name)
+            check_attribute_value(value)
         object.__setattr__(self, "attributes", MappingProxyType(dict(self.attributes)))
 
     @property
@@ -183,6 +146,10 @@ class ChunkHit:
     found_through: tuple[GeneratedEntry, ...] = ()
 
 
+class UnsupportedConditionError(TypeError):
+    """The index can't filter with this kind of condition."""
+
+
 class ChunkIndex(ABC):
     """One vector space of chunks and generated entries, built by one embedder.
 
@@ -200,6 +167,14 @@ class ChunkIndex(ABC):
     @property
     @abstractmethod
     def vector_specs(self) -> Mapping[str, VectorSpec]: ...
+
+    @property
+    @abstractmethod
+    def supported_conditions(self) -> AbstractSet[type[Condition]] | None:
+        """The condition classes this index can filter with;
+        None: any, evaluated with Condition.match
+        """
+        ...
 
     @final
     def replace_document(
@@ -239,14 +214,13 @@ class ChunkIndex(ABC):
                 self.vector_specs,
                 document_chunks,
             )
-            self._replace_generated(
-                document_id, generator, entries, embeddings
-            )
+            self._replace_generated(document_id, generator, entries, embeddings)
 
     @final
     def delete_chunks(self, chunk_filter: ChunkFilter) -> None:
         """Remove the selected chunks; entries stop leading to them, and an entry left with none is removed."""
         _check_not_everything(chunk_filter, "delete")
+        _check_supported(chunk_filter, self.supported_conditions)
         with self._write_lock:
             self._delete_chunks(chunk_filter)
 
@@ -256,6 +230,7 @@ class ChunkIndex(ABC):
     ) -> None:
         """Set or remove attributes on the selected chunks; their entries follow."""
         _check_update(chunk_filter, changes)
+        _check_supported(chunk_filter, self.supported_conditions)
         with self._write_lock:
             self._update_attributes(chunk_filter, changes)
 
@@ -265,6 +240,7 @@ class ChunkIndex(ABC):
     ) -> list[IndexedChunk]:
         """The selected chunks in document order (document id, then position); never entries."""
         _check_limit(limit)
+        _check_supported(chunk_filter, self.supported_conditions)
         return self._list_chunks(chunk_filter, limit)
 
     @final
@@ -278,6 +254,7 @@ class ChunkIndex(ABC):
         limit chunks), so a chunk outside every vector's candidates isn't found.
         """
         _check_search(query, self.embedder_identity, self.vector_specs)
+        _check_supported(query.chunk_filter, self.supported_conditions)
         return self._search(query)
 
     # Hooks: implementations provide these, and receive only checked arguments.
@@ -318,27 +295,6 @@ class ChunkIndex(ABC):
 
 
 # Checks ----------------------------------------------------------------------------------
-
-_ATTRIBUTE_NAME = re.compile(
-    r"[a-z][a-z0-9_]*"
-)  # a dot would be a nested path in Qdrant
-
-
-def _check_attribute_name(name: str) -> None:
-    if not _ATTRIBUTE_NAME.fullmatch(name):
-        raise ValueError(
-            f"attribute name {name!r} must be lower-case letters, digits and underscores"
-        )
-
-
-def _check_attribute_value(value: AttributeValue) -> None:
-    match value:
-        case datetime():
-            raise TypeError(f"attribute values take dates, not datetimes: {value!r}")
-        case float() if not math.isfinite(value):
-            raise ValueError(f"attribute values must be finite numbers: {value!r}")
-        case _:
-            pass
 
 
 def _check_limit(limit: int) -> None:
@@ -410,9 +366,9 @@ def _check_update(chunk_filter: ChunkFilter, changes: AttributeChanges) -> None:
         raise ValueError("no attribute changes given")
     _check_not_everything(chunk_filter, "update")
     for name, value in changes.items():
-        _check_attribute_name(name)
+        check_attribute_name(name)
         if value is not None:
-            _check_attribute_value(value)
+            check_attribute_value(value)
 
 
 def _check_search(
@@ -441,3 +397,25 @@ def _check_embedding_of(
         check_embedding(embedding, embedder_identity, vector_specs)
     except (TypeError, ValueError) as error:
         raise type(error)(f"{owner}: {error}") from error
+
+
+def _check_supported(
+    chunk_filter: ChunkFilter, supported: AbstractSet[type[Condition]] | None
+) -> None:
+    if supported is None:
+        return
+
+    for attribute_name, condition in chunk_filter.attributes.items():
+        for part in _walk_condition(condition):
+            # Check for exact type: a subclass might mean something else
+            if type(part) not in supported:
+                raise UnsupportedConditionError(
+                    f"this index can't filter {attribute_name!r} with {type(part).__name__}"
+                )
+
+
+def _walk_condition(condition: Condition) -> Iterator[Condition]:
+    """The condition, then everything it's built from."""
+    yield condition
+    for subcondition in condition.subconditions:
+        yield from _walk_condition(subcondition)
