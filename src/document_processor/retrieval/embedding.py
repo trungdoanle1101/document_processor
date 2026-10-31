@@ -61,6 +61,7 @@ type VectorSpec = DenseVectorSpec | SparseVectorSpec
 @dataclass(frozen=True, kw_only=True)
 class Embedding:
     """One text's vectors, by name"""
+
     embedder_identity: str
     vectors: Mapping[str, Vector]
 
@@ -129,7 +130,9 @@ def check_embedding(
     and if dense, its dimensions.
     """
     if embedding.embedder_identity != embedder_identity:
-        raise ValueError(f"the embedding was made by {embedding.embedder_identity!r}, not {embedder_identity!r}")
+        raise ValueError(
+            f"the embedding was made by {embedding.embedder_identity!r}, not {embedder_identity!r}"
+        )
 
     if set(embedding.vectors) != set(vector_specs):
         raise ValueError(

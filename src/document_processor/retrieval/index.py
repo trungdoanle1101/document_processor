@@ -68,7 +68,7 @@ class ChunkFilter:
     """The chunks meeting every part given. ChunkFilter() selects every chunk; use None, not (), for any."""
 
     document_ids: tuple[str, ...] | None = None
-    chunk_keys: tuple[ChunkKey, ...] | None = None # one of these chunks
+    chunk_keys: tuple[ChunkKey, ...] | None = None  # one of these chunks
     reference_keys: tuple[str, ...] | None = None  # has any of them
     attributes: Mapping[str, Condition] = MappingProxyType({})  # meets all of them
 
@@ -240,7 +240,7 @@ class ChunkIndex(ABC):
                 document_chunks,
             )
             self._replace_generated(
-                document_id, generator, entries, embeddings, document_chunks
+                document_id, generator, entries, embeddings
             )
 
     @final
@@ -297,7 +297,6 @@ class ChunkIndex(ABC):
         generator: str,
         entries: Sequence[GeneratedEntry],
         embeddings: Sequence[Embedding],
-        document_chunks: Mapping[str, IndexedChunk],
     ) -> None: ...
 
     @abstractmethod
