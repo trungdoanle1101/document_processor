@@ -568,6 +568,20 @@ class ChunkIndexSearchContract(_ContractHelpers):
         assert hit_ids(index.search(SearchQuery(embedding=query, vector_names=("dense",))))[0] == "dense_best"
         assert hit_ids(index.search(SearchQuery(embedding=query, vector_names=("sparse",))))[0] == "sparse_best"
 
+    def test_fusion_reaches_down_to_the_fusion_depth_and_no_further(self) -> None:
+        """both is 6th on each vector: found as the best fused chunk with depth 6, beaten by s1 with depth 7."""
+        index = self.make_index(HYBRID)
+        dense_best = [chunk(f"d{i}", position=i) for i in range(1, 6)]
+        sparse_best = [chunk(f"s{i}", position=10 + i) for i in range(1, 6)]
+        embeddings = [hybrid(1, 0.01 * i, {100 + i: 1.0}) for i in range(1, 6)]  # dense ranks 1-5, no shared term
+        embeddings += [hybrid(-1, 0.1 * (6 - i), {7: 2.6 - 0.1 * i}) for i in range(1, 6)]  # sparse ranks 1-5
+        index.replace_document(
+            "law", [*dense_best, *sparse_best, chunk("both", position=20)], [*embeddings, hybrid(0.9, 0.436, {7: 1.0})]
+        )
+        query = hybrid(1, 0, {7: 1.0})
+        assert hit_ids(index.search(SearchQuery(embedding=query, limit=1, fusion_depth=6))) == ["both"]
+        assert hit_ids(index.search(SearchQuery(embedding=query, limit=1, fusion_depth=7))) == ["s1"]
+
     def test_fused_hits_list_entries_from_every_vector(self) -> None:
         index = self.make_index(HYBRID)
         index.replace_document("law", [chunk("a")], [hybrid(0, 1, {1: 0.1})])

@@ -19,16 +19,23 @@ class BestMatch:
     entry: GeneratedEntry | None
 
 
-def fuse(rankings: Sequence[Sequence[BestMatch]], limit: int) -> list[ChunkHit]:
-    if len(rankings) == 1:
+def fuse(
+    rankings: Sequence[Sequence[BestMatch]], *, limit: int, fusion_depth: int
+) -> list[ChunkHit]:
+    depth = max(limit, fusion_depth)
+    ordered = [
+        sorted(ranking, key=lambda match: match.score, reverse=True)[:depth]
+        for ranking in rankings
+    ]
+    if len(ordered) == 1:
         hits: list[ChunkHit] = [
-            _build_hit(match.chunk, match.score, [(1, match)]) for match in rankings[0]
+            _build_hit(match.chunk, match.score, [(1, match)]) for match in ordered[0]
         ]
     else:
         scores: dict[ChunkKey, float] = {}
         matches: dict[ChunkKey, list[tuple[int, BestMatch]]] = {}
 
-        for ranking in rankings:
+        for ranking in ordered:
             for rank, match in enumerate(ranking, start=1):
                 key = match.chunk.key
                 scores[key] = scores.get(key, 0.0) + 1 / (_RRF_OFFSET + rank)

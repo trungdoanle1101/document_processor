@@ -173,7 +173,7 @@ class InMemoryChunkIndex(ChunkIndex):
             )
             rankings.append(_rank_chunks(scorer, chunks, entries))
 
-        return fuse(rankings, query.limit)
+        return fuse(rankings, limit=query.limit, fusion_depth=query.fusion_depth)
 
 
 def _select_chunk(chunk: IndexedChunk, chunk_filter: ChunkFilter) -> bool:

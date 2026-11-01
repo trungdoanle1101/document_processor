@@ -121,6 +121,9 @@ class SearchQuery:
     vector_names: tuple[str, ...] | None = None  # None: all, fused
     generated_entries: GeneratedEntryChoice = "all"
     limit: int = 10
+    fusion_depth: int = (
+        50  # with several vector: how many chunks each one's ranking contributes
+    )
 
     def __post_init__(self) -> None:
         _check_limit(self.limit)
@@ -134,6 +137,8 @@ class SearchQuery:
             raise ValueError(
                 'generated_entries must name generators; use "none" for no entries'
             )
+        if self.fusion_depth <= 0:
+            raise ValueError(f"fusion_depth must be positive, got {self.fusion_depth}")
 
 
 @dataclass(frozen=True, kw_only=True)
