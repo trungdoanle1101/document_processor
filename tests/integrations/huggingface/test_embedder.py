@@ -30,28 +30,28 @@ import pytest
 
 pytest.importorskip("sentence_transformers")
 
-import torch  # noqa: E402
-from transformers import AutoModel, AutoTokenizer  # noqa: E402
+import torch
+from transformers import AutoModel, AutoTokenizer
 
-from document_processor.chunking import OutlineChunker  # noqa: E402
-from document_processor.chunking.tokenizer import Tokenizer  # noqa: E402
-from document_processor.integrations.huggingface.embedder import (  # noqa: E402
+from document_processor.chunking import OutlineChunker
+from document_processor.chunking.tokenizer import Tokenizer
+from document_processor.integrations.huggingface.embedder import (
     DENSE_VECTOR_NAME,
     EMBEDDER_VERSION,
     EmbedderSettings,
     HuggingFaceEmbedder,
     embedder_identity,
 )
-from document_processor.integrations.huggingface.model_specs import HuggingFaceModelSpec  # noqa: E402
-from document_processor.integrations.huggingface.reference import ModelReference  # noqa: E402
+from document_processor.integrations.huggingface.model_specs import HuggingFaceModelSpec
+from document_processor.integrations.huggingface.reference import ModelReference
 from document_processor.retrieval.embedding import (
     DenseVectorSpec,
     Embedder,
     Embedding,
     check_embedding,
-)  # noqa: E402
-from tests.chunking.test_outline_chunker import regulation  # noqa: E402
-from tests.integrations.huggingface.tiny_model import (  # noqa: E402
+)
+from tests.chunking.test_outline_chunker import regulation
+from tests.integrations.huggingface.tiny_model import (
     TINY_HIDDEN_SIZE,
     TINY_REFERENCE,
     TINY_TOKENIZER_LIMIT,

@@ -20,6 +20,7 @@ from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls, qn
 from lxml.etree import _Element
 
+from document_processor.adapters.docx.styles import Stylist
 from document_processor.adapters.docx.tables import (
     VMERGE_CONTINUE,
     VMERGE_RESTART,
@@ -33,7 +34,6 @@ from document_processor.adapters.docx.tables import (
     read_tblheader,
     read_vmerge,
 )
-from document_processor.adapters.docx.styles import Stylist
 from document_processor.core.models.physical import TableCell, TableInfo
 from document_processor.core.text_utils import is_invisible
 

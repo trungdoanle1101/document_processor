@@ -1,6 +1,6 @@
 """The logical package's public API: every name in __all__ is importable from the package."""
 
-import document_processor.logical as logical
+from document_processor import logical
 from document_processor.logical.build import build_logical_document
 from document_processor.logical.profile import Profile
 

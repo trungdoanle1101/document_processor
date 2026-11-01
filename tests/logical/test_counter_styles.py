@@ -227,7 +227,7 @@ def test_alphabet_style_rejects_an_empty_alphabet() -> None:
         "ab\tc",  # tab
         "ab\nc",  # line break
         "ab c",  # no-break space
-        "ab​c",  # zero-width space
+        "ab\u200bc",  # zero-width space
         "ab­c",  # soft hyphen
     ],
 )
@@ -309,7 +309,7 @@ def test_unknown_builtin_lists_the_known_names() -> None:
 
 def test_arabic() -> None:
     style = BUILTIN_COUNTER_STYLES.get("arabic")
-    for n in range(0, 1001):
+    for n in range(1001):
         text = style.to_text(n)
         assert fullmatches(style, text)
         assert style.to_number(text) == n

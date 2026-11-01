@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
+from tests.factories import make_block, make_declared_numbering, make_list_info
 
 from document_processor.core.models import BlockType
 from document_processor.logical.candidates import Candidate, find_candidates
@@ -31,7 +32,6 @@ from document_processor.logical.levels import LevelSpec, MarkerMatch, TemplateMa
 from document_processor.logical.profile import Profile
 from document_processor.logical.profiles.vn_regulation import VN_REGULATION
 from document_processor.logical.template_marker import TemplateMatch
-from tests.factories import make_block, make_declared_numbering, make_list_info
 
 _ALPHABET_TAG = {
     "lower_latin": "lat",

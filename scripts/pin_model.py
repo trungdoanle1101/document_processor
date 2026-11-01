@@ -1,5 +1,7 @@
 from pathlib import Path
-from huggingface_hub import HfApi, snapshot_download
+
+from huggingface_hub import HfApi
+
 # from document_processor.retrieval.huggingface_embedder import hash_model_files
 
 api = HfApi()

@@ -15,6 +15,16 @@ In the expected texts, "# …" is a heading segment.
 from typing import Any
 
 import pytest
+from tests.factories import (
+    make_block,
+    make_declared_numbering,
+    make_document,
+    make_image_info,
+    make_list_info,
+    make_table_block,
+    make_table_cell,
+    make_table_info,
+)
 
 from document_processor.core.identity import compute_hash
 from document_processor.core.models import (
@@ -34,16 +44,6 @@ from document_processor.logical.levels import (
 )
 from document_processor.logical.profile import Profile
 from document_processor.logical.profiles.vn_regulation import VN_REGULATION
-from tests.factories import (
-    make_block,
-    make_declared_numbering,
-    make_document,
-    make_image_info,
-    make_list_info,
-    make_table_block,
-    make_table_cell,
-    make_table_info,
-)
 
 
 def templates(*items: str) -> TemplateMarkerSpec:

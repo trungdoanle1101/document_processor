@@ -33,11 +33,11 @@ from document_processor.chunking.outline_chunker import (
 from document_processor.chunking.tokenizer import WordTokenizer
 from document_processor.core.models import (
     BlockType,
-    TableCell,
-    TableInfo,
     LogicalDocument,
     PhysicalBlock,
     Segment,
+    TableCell,
+    TableInfo,
     TableSegment,
     TextSegment,
 )

@@ -8,6 +8,7 @@ result = Pipeline(profile="vn_regulation", chunker=chunker).run(
 result.write_review_page("out/quy_dinh.review.html")
 
 from statistics import quantiles
+
 from document_processor.core.models import TextSegment
 
 doc = result.logical

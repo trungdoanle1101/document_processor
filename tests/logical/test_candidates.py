@@ -11,6 +11,15 @@ import dataclasses
 from typing import Any
 
 import pytest
+from tests.factories import (
+    make_block,
+    make_declared_numbering,
+    make_image_info,
+    make_list_info,
+    make_table_block,
+    make_table_cell,
+    make_table_info,
+)
 
 from document_processor.core.models import BlockType, Region
 from document_processor.logical.candidates import (
@@ -35,15 +44,6 @@ from document_processor.logical.markers import WORD_BULLET
 from document_processor.logical.profile import Profile
 from document_processor.logical.profiles.vn_regulation import VN_REGULATION
 from document_processor.logical.template_marker import TemplateMatch
-from tests.factories import (
-    make_block,
-    make_declared_numbering,
-    make_image_info,
-    make_list_info,
-    make_table_block,
-    make_table_cell,
-    make_table_info,
-)
 
 
 def templates(*items: str) -> TemplateMarkerSpec:

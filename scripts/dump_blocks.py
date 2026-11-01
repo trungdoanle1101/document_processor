@@ -1,12 +1,11 @@
 import json
-from pathlib import Path
 from dataclasses import asdict
+from pathlib import Path
 
 from document_processor.adapters.docx import DocxAdapter
-from document_processor.core.models import PhysicalDocument, LogicalDocument
 from document_processor.core.cleaning import clean_document
+from document_processor.core.models import LogicalDocument, PhysicalDocument
 from document_processor.core.serialization import (
-    save_physical_document,
     save_logical_document,
 )
 from document_processor.logical.build import build_logical_document

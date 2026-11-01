@@ -20,7 +20,6 @@ from document_processor.core.models import (
     TableCell,
     TableInfo,
 )
-
 from document_processor.core.models.logical import (
     HeadingSegment,
     ImageSegment,

@@ -115,7 +115,7 @@ def test_punctuation_and_symbols_are_glyphs(glyph: str) -> None:
         (" ", "no-break space"),
         ("\t", "tab"),
         ("\x01", "control"),
-        ("​", "zero-width space, category Cf"),
+        ("\u200b", "zero-width space, category Cf"),
         ("️", "variation selector, a combining mark"),
         ("́", "combining acute accent"),
         ("", "private use: an unmapped symbol-font byte"),

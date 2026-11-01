@@ -15,7 +15,6 @@ from document_processor.adapters.docx.images import (
     read_drawing_image,
 )
 from document_processor.core.identity import compute_hash
-
 from tests.drawing_xml import EMU_INCH, chart, drawing, pic
 
 PNG_BYTES = b"\x89PNG fake image bytes"

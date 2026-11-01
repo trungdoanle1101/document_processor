@@ -7,11 +7,23 @@ from document_processor.retrieval.index import ChunkHit, GeneratedEntry, Indexed
 
 
 def chunk(chunk_id: str) -> IndexedChunk:
-    return IndexedChunk(document_id="law", chunk_id=chunk_id, position=0, text=chunk_id, embedded_text=chunk_id)
+    return IndexedChunk(
+        document_id="law",
+        chunk_id=chunk_id,
+        position=0,
+        text=chunk_id,
+        embedded_text=chunk_id,
+    )
 
 
 def entry(entry_id: str, chunk_id: str) -> GeneratedEntry:
-    return GeneratedEntry(document_id="law", generator="g", entry_id=entry_id, chunk_ids=(chunk_id,), text="?")
+    return GeneratedEntry(
+        document_id="law",
+        generator="g",
+        entry_id=entry_id,
+        chunk_ids=(chunk_id,),
+        text="?",
+    )
 
 
 def own(chunk_id: str, score: float = 1.0) -> BestMatch:
@@ -19,7 +31,9 @@ def own(chunk_id: str, score: float = 1.0) -> BestMatch:
 
 
 def through(entry_id: str, chunk_id: str, score: float = 1.0) -> BestMatch:
-    return BestMatch(chunk=chunk(chunk_id), score=score, entry=entry(entry_id, chunk_id))
+    return BestMatch(
+        chunk=chunk(chunk_id), score=score, entry=entry(entry_id, chunk_id)
+    )
 
 
 def ids(hits: list[ChunkHit]) -> list[str]:
@@ -34,20 +48,30 @@ def rrf(*ranks: int) -> float:
 
 
 def test_one_ranking_keeps_its_scores_best_first() -> None:
-    hits = fuse([[own("b", 0.4), own("a", 0.9), own("c", 0.1)]], limit=10, fusion_depth=50)
+    hits = fuse(
+        [[own("b", 0.4), own("a", 0.9), own("c", 0.1)]], limit=10, fusion_depth=50
+    )
     assert ids(hits) == ["a", "b", "c"]
     assert [hit.score for hit in hits] == [0.9, 0.4, 0.1]
 
 
 def test_one_ranking_stops_at_the_limit_after_sorting() -> None:
-    assert ids(fuse([[own("low", 0.1), own("high", 0.9), own("mid", 0.5)]], limit=2, fusion_depth=50)) == [
+    assert ids(
+        fuse(
+            [[own("low", 0.1), own("high", 0.9), own("mid", 0.5)]],
+            limit=2,
+            fusion_depth=50,
+        )
+    ) == [
         "high",
         "mid",
     ]
 
 
 def test_one_ranking_names_the_entry_behind_a_match() -> None:
-    hit_a, hit_b = fuse([[through("q", "a", 0.9), own("b", 0.5)]], limit=10, fusion_depth=50)
+    hit_a, hit_b = fuse(
+        [[through("q", "a", 0.9), own("b", 0.5)]], limit=10, fusion_depth=50
+    )
     assert hit_a.found_through == (entry("q", "a"),)
     assert hit_b.found_through == ()
 
@@ -68,18 +92,28 @@ def test_several_rankings_score_by_reciprocal_rank() -> None:
 
 def test_fusion_ignores_the_scores_and_uses_the_ranks() -> None:
     """A sparse score of 50 must not drown a cosine of 0.9: only positions count."""
-    hits = fuse([[own("dense_best", 0.9), own("both", 0.8)], [own("both", 50.0)]], limit=10, fusion_depth=50)
+    hits = fuse(
+        [[own("dense_best", 0.9), own("both", 0.8)], [own("both", 50.0)]],
+        limit=10,
+        fusion_depth=50,
+    )
     assert ids(hits) == ["both", "dense_best"]
 
 
 def test_a_chunk_found_by_several_rankings_appears_once() -> None:
-    hits = fuse([[own("a"), own("b")], [own("a")], [own("a")]], limit=10, fusion_depth=50)
+    hits = fuse(
+        [[own("a"), own("b")], [own("a")], [own("a")]], limit=10, fusion_depth=50
+    )
     assert ids(hits) == ["a", "b"]
     assert hits[0].score == pytest.approx(rrf(1, 1, 1))
 
 
 def test_fused_hits_stop_at_the_limit_after_sorting() -> None:
-    hits = fuse([[own("a"), own("b"), own("c")], [own("c"), own("b"), own("a")], [own("b")]], limit=1, fusion_depth=50)
+    hits = fuse(
+        [[own("a"), own("b"), own("c")], [own("c"), own("b"), own("a")], [own("b")]],
+        limit=1,
+        fusion_depth=50,
+    )
     assert ids(hits) == ["b"]
 
 
@@ -89,7 +123,11 @@ def test_fused_hits_stop_at_the_limit_after_sorting() -> None:
 def test_found_through_lists_entries_from_every_ranking_best_rank_first() -> None:
     first = [own("x"), own("y"), through("by_first", "a")]  # a at rank 3
     second = [through("by_second", "a")]  # a at rank 1
-    (hit_a,) = [hit for hit in fuse([first, second], limit=10, fusion_depth=50) if hit.chunk.chunk_id == "a"]
+    (hit_a,) = [
+        hit
+        for hit in fuse([first, second], limit=10, fusion_depth=50)
+        if hit.chunk.chunk_id == "a"
+    ]
     assert [e.entry_id for e in hit_a.found_through] == ["by_second", "by_first"]
 
 
@@ -116,7 +154,9 @@ def test_unsorted_rankings_fuse_like_sorted_ones() -> None:
     second = [own("c", 0.1), own("b", 0.8)]
     unsorted = fuse([first, second], limit=10, fusion_depth=50)
     resorted = fuse(
-        [sorted(first, key=lambda m: -m.score), sorted(second, key=lambda m: -m.score)], limit=10, fusion_depth=50
+        [sorted(first, key=lambda m: -m.score), sorted(second, key=lambda m: -m.score)],
+        limit=10,
+        fusion_depth=50,
     )
     assert [(hit.chunk.chunk_id, hit.score) for hit in unsorted] == [
         (hit.chunk.chunk_id, hit.score) for hit in resorted
@@ -132,5 +172,9 @@ def test_fusion_only_sees_each_ranking_down_to_the_depth() -> None:
 
 
 def test_a_depth_below_the_limit_widens_to_the_limit() -> None:
-    hits = fuse([[own("a", 0.9), own("b", 0.5), own("c", 0.1)], [own("a", 0.9)]], limit=3, fusion_depth=1)
+    hits = fuse(
+        [[own("a", 0.9), own("b", 0.5), own("c", 0.1)], [own("a", 0.9)]],
+        limit=3,
+        fusion_depth=1,
+    )
     assert ids(hits) == ["a", "b", "c"]

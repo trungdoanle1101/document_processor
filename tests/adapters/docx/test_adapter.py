@@ -22,7 +22,6 @@ from document_processor.core.models.physical import (
     ParagraphAlignment,
     PhysicalDocument,
 )
-
 from tests.drawing_xml import R_NS, chart, drawing, pic
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"

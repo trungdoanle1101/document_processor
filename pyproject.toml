@@ -31,6 +31,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/document_processor"]
 
+[tool.ruff]
+src = ["src"]
+
 [dependency-groups]
 dev = [
     "mypy>=2.4.0",

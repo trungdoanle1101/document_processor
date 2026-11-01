@@ -17,7 +17,6 @@ from document_processor.core.serialization import (
     load_physical_document,
     save_physical_document,
 )
-
 from tests.factories import (
     make_block,
     make_document,
@@ -113,7 +112,7 @@ def test_cell_rejects_span_below_one(field: str, value: int) -> None:
 
 
 @pytest.mark.parametrize(
-    "bad", ["", " ", "\t", "​"], ids=["empty", "space", "tab", "zwsp"]
+    "bad", ["", " ", "\t", "\u200b"], ids=["empty", "space", "tab", "zwsp"]
 )
 def test_cell_rejects_invisible_paragraph(bad: str) -> None:
     # An empty cell has exactly one form: paragraphs=().

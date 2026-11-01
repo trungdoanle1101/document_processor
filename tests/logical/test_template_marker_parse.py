@@ -238,7 +238,7 @@ def test_leading_or_trailing_space(template: str) -> None:
         ("Điều\t{arabic}.", 5),  # tab
         ("Điều {arabic}.", 5),  # no-break space
         ("Điều {arabic}\n.", 14),  # line break
-        ("MỞ​ĐẦU", 3),  # zero-width space
+        ("MỞ\u200bĐẦU", 3),  # zero-width space
         ("MỞ ĐẦU", 3),  # em space
     ],
 )

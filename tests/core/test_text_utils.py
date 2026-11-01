@@ -59,14 +59,14 @@ def test_to_single_line_keeps_other_whitespace() -> None:
 
 @pytest.mark.parametrize(
     "text",
-    ["", " ", "\t\n\r", " ", "​", "﻿", "­", " ​\t‎"],
+    ["", " ", "\t\n\r", " ", "\u200b", "﻿", "­", " \u200b\t‎"],
     ids=["empty", "space", "separators", "nbsp", "zwsp", "bom", "soft-hyphen", "mixed"],
 )
 def test_is_invisible_true(text: str) -> None:
     assert is_invisible(text)
 
 
-@pytest.mark.parametrize("text", ["a", " a ", "​Đ", ".", "-"])
+@pytest.mark.parametrize("text", ["a", " a ", "\u200bĐ", ".", "-"])
 def test_is_invisible_false(text: str) -> None:
     assert not is_invisible(text)
 
@@ -77,9 +77,9 @@ def test_is_invisible_false(text: str) -> None:
         ("", ""),
         ("abc", "abc"),
         ("  abc  ", "abc"),
-        ("\t​\tĐiều 1.", "Điều 1."),
-        ("a ​ b", "a ​ b"),  # inner characters kept
-        (" ​\t ", ""),  # all blank
+        ("\t\u200b\tĐiều 1.", "Điều 1."),
+        ("a \u200b b", "a \u200b b"),  # inner characters kept
+        (" \u200b\t ", ""),  # all blank
         (" x ", "x"),
     ],
 )
@@ -88,7 +88,7 @@ def test_strip_edges(text: str, expected: str) -> None:
 
 
 def test_strip_edges_agrees_with_is_invisible() -> None:
-    for text in ["", " ", "​", "\t­﻿", " x "]:
+    for text in ["", " ", "\u200b", "\t­﻿", " x "]:
         assert (strip_edges(text) == "") == is_invisible(text)
 
 

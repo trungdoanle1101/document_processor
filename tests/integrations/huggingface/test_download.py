@@ -20,14 +20,14 @@ import pytest
 pytest.importorskip("huggingface_hub")
 
 # What snapshot_download itself uses to apply ignore_patterns.
-from huggingface_hub.utils._paths import filter_repo_objects  # noqa: E402
+from huggingface_hub.utils._paths import filter_repo_objects
 
-from document_processor.integrations.huggingface import download  # noqa: E402
+from document_processor.integrations.huggingface import download
 from document_processor.integrations.huggingface.download import (
     IGNORED_FILES,
     download_model,
-)  # noqa: E402
-from document_processor.integrations.huggingface.reference import (  # noqa: E402
+)
+from document_processor.integrations.huggingface.reference import (
     MODEL_REFERENCE_FILE,
     ModelReference,
     read_model_reference,

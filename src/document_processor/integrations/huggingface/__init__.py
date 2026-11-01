@@ -13,8 +13,8 @@ from document_processor.integrations.huggingface.reference import (
 __all__ = [
     "BGE_M3",
     "HUGGINGFACE_MODEL_SPECS",
-    "HuggingFaceModelSpec",
     "MODEL_REFERENCE_FILE",
+    "HuggingFaceModelSpec",
     "ModelReference",
     "read_model_reference",
     "write_model_reference",

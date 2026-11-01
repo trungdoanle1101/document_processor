@@ -52,7 +52,7 @@ class TestDefaultSteps:
             ("\tĐiều 1. Phạm vi điều chỉnh", "Điều 1. Phạm vi điều chỉnh"),
             ("Kiến trúc dữ liệu. ", "Kiến trúc dữ liệu."),
             ("  “Cloud native”: Là", "“Cloud native”: Là"),
-            ("\t​\tĐiều 2.", "Điều 2."),  # mixed whitespace and zero-width
+            ("\t\u200b\tĐiều 2.", "Điều 2."),  # mixed whitespace and zero-width
             (" Mục I ", "Mục I"),  # NBSP
             ("﻿Chương I", "Chương I"),  # BOM
             ("Điều 3.\r\n", "Điều 3."),
@@ -65,7 +65,7 @@ class TestDefaultSteps:
         assert changelog == ("clean:strip_edges",)
 
     def test_inner_whitespace_kept(self) -> None:
-        raw = "Lớp  tích hợp\tngoài​API"
+        raw = "Lớp  tích hợp\tngoài\u200bAPI"
         text, changelog = clean_one(raw)
         assert text == raw
         assert changelog == ()
