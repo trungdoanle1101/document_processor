@@ -680,7 +680,7 @@ class ChunkIndexSearchContract(_ContractHelpers):
 
     def test_entries_can_be_left_out_of_a_search(self) -> None:
         hit_a, hit_b = self.index_with_entries().search(
-            SearchQuery(embedding=dense(1, 0), generated_entries="none")
+            SearchQuery(embedding=dense(1, 0), generators="none")
         )
         assert hit_a.score == pytest.approx(0.0)
         assert hit_a.found_through == hit_b.found_through == ()
@@ -694,7 +694,7 @@ class ChunkIndexSearchContract(_ContractHelpers):
             [dense(1, 0)],
         )
         hits = index.search(
-            SearchQuery(embedding=dense(1, 0), generated_entries=("summaries-v1",))
+            SearchQuery(embedding=dense(1, 0), generators=("summaries-v1",))
         )
         assert hits[0].found_through == (entry("s", "b", generator="summaries-v1"),)
         assert hits[1].found_through == ()

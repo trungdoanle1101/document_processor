@@ -178,13 +178,13 @@ def test_a_query_refuses_a_vector_name_twice() -> None:
 
 def test_a_query_refuses_no_generators() -> None:
     with pytest.raises(ValueError, match='use "none" for no entries'):
-        SearchQuery(embedding=QUERY, generated_entries=())
+        SearchQuery(embedding=QUERY, generators=())
 
 
 def test_a_query_searches_everywhere_with_everything_by_default() -> None:
     query = SearchQuery(embedding=QUERY)
     assert query.chunk_filter.selects_everything
-    assert (query.vector_names, query.generated_entries, query.limit) == (
+    assert (query.vector_names, query.generators, query.limit) == (
         None,
         "all",
         10,

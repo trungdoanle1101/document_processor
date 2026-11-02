@@ -113,7 +113,7 @@ class GeneratedEntry:
 
 
 # choice for generators; a tuple names generators to use
-type GeneratedEntryChoice = Literal["all", "none"] | tuple[str, ...]
+type GeneratorChoice = Literal["all", "none"] | tuple[str, ...]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -121,7 +121,7 @@ class SearchQuery:
     embedding: Embedding  # from Embedder.encode_query
     chunk_filter: ChunkFilter = field(default_factory=ChunkFilter)
     vector_names: tuple[str, ...] | None = None  # None: all, fused
-    generated_entries: GeneratedEntryChoice = "all"
+    generators: GeneratorChoice = "all"
     limit: int = 10
     fusion_depth: int = (
         50  # with several vector: how many chunks each one's ranking contributes
@@ -135,9 +135,9 @@ class SearchQuery:
             self.vector_names
         ):
             raise ValueError(f"vector_names repeats a name: {self.vector_names}")
-        if self.generated_entries == ():
+        if self.generators == ():
             raise ValueError(
-                'generated_entries must name generators; use "none" for no entries'
+                'generators must not be empty; use "none" for no entries'
             )
         if self.fusion_depth <= 0:
             raise ValueError(f"fusion_depth must be positive, got {self.fusion_depth}")

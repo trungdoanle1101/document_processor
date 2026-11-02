@@ -24,7 +24,7 @@ from document_processor.retrieval.index import (
     ChunkIndex,
     ChunkKey,
     GeneratedEntry,
-    GeneratedEntryChoice,
+    GeneratorChoice,
     GeneratedEntryKey,
     IndexedChunk,
     SearchQuery,
@@ -153,7 +153,7 @@ class InMemoryChunkIndex(ChunkIndex):
         entries = {
             key: stored
             for key, stored in all_entries.items()
-            if _allow_entry(stored[0], query.generated_entries)
+            if _allow_entry(stored[0], query.generators)
         }
 
         all_embeddings = [embedding for _, embedding in all_chunks.values()] + [
@@ -208,7 +208,7 @@ def _update_chunk(chunk: IndexedChunk, changes: AttributeChanges) -> IndexedChun
     return replace(chunk, attributes=attributes)
 
 
-def _allow_entry(entry: GeneratedEntry, choice: GeneratedEntryChoice) -> bool:
+def _allow_entry(entry: GeneratedEntry, choice: GeneratorChoice) -> bool:
     if choice == "all":
         return True
 

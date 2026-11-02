@@ -355,11 +355,11 @@ class QdrantChunkIndex(ChunkIndex):
         must: list[models.Condition] = [
             translate_filter(
                 query.chunk_filter,
-                kind=CHUNK if query.generated_entries == "none" else None,
+                kind=CHUNK if query.generators == "none" else None,
             )
         ]
 
-        if type(query.generated_entries) is tuple:
+        if type(query.generators) is tuple:
             must.append(
                 models.Filter(
                     should=[
@@ -368,7 +368,7 @@ class QdrantChunkIndex(ChunkIndex):
                         ),
                         models.FieldCondition(
                             key=GENERATOR,
-                            match=models.MatchAny(any=list(query.generated_entries)),
+                            match=models.MatchAny(any=list(query.generators)),
                         ),
                     ]
                 )
