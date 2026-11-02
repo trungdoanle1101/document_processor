@@ -47,7 +47,7 @@ def open_embedder() -> HuggingFaceEmbedder:
         download_model(BGE_M3.reference, MODEL_FOLDER)
         print("Download completed")
 
-    return HuggingFaceEmbedder(spec=BGE_M3, folder=MODEL_FOLDER)
+    return HuggingFaceEmbedder(spec=BGE_M3, folder=MODEL_FOLDER, device="cpu")
 
 
 def open_reranker() -> HuggingFaceReranker:
@@ -56,7 +56,7 @@ def open_reranker() -> HuggingFaceReranker:
         download_model(BGE_RERANKER_V2_M3.reference, RERANKER_FOLDER)
         print("Reranker download completed")
 
-    return HuggingFaceReranker(spec=BGE_RERANKER_V2_M3, folder=RERANKER_FOLDER)
+    return HuggingFaceReranker(spec=BGE_RERANKER_V2_M3, folder=RERANKER_FOLDER, device="auto")
 
 
 def open_index(embedder: Embedder, *, recreate: bool) -> QdrantChunkIndex:
@@ -127,11 +127,16 @@ def ask_questions(
 
 def print_hits(hits: list[RetrievedChunk]) -> None:
     for pos, hit in enumerate(hits, start=1):
-        text = hit.chunk.text
+        lines = hit.chunk.text.splitlines()
         rerank = "" if hit.rerank_score is None else f" rerank {hit.rerank_score:.3f}"
         print(f"{pos} index {hit.index_score:.3f}{rerank} {hit.chunk.document_id}")
         print(f"  {' > '.join(hit.chunk.headings)}")
-        print(f"  Text: {' '.join(text.split())[:300]}")
+        for line in lines[:6]:
+            print(f"    {line[:160]}")
+        if len(lines) > 6:
+            print("    …")
+        print()
+    print("---------------------------------------------------")
 
 
 def run_evaluation(
