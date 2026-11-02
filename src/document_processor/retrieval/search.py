@@ -60,7 +60,7 @@ def search_chunks(
     ]
     if reranker is not None and chunk_hits:
         scores = reranker.score(
-            question, [_rerank_passage(hit.chunk) for hit in chunk_hits]
+            question, [hit.chunk.embedded_text for hit in chunk_hits]
         )
         if len(scores) != len(chunk_hits):
             raise ValueError(
@@ -79,10 +79,3 @@ def search_chunks(
         )
         for hit, rerank_score in rerank_scored[:limit]
     ]
-
-
-def _rerank_passage(chunk: IndexedChunk) -> str:
-    """The chunk as the reranker reads it: where it sits, then its words."""
-    if not chunk.headings:
-        return chunk.text
-    return "\n".join((*chunk.headings, chunk.text))

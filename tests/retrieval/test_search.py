@@ -228,13 +228,19 @@ def test_equal_rerank_scores_keep_the_index_order(embedder: StubEmbedder) -> Non
     assert [r.chunk.chunk_id for r in results] == ["d", "a", "b", "c", "e"]
 
 
-def test_the_reranker_reads_the_question_and_each_chunks_headings_then_text(
+def test_the_reranker_reads_the_question_and_each_chunks_embedded_text(
     embedder: StubEmbedder,
 ) -> None:
-    hits = [
-        ChunkHit(chunk=chunk("a", "Luật Đất đai", "Điều 118"), score=0.9),
-        ChunkHit(chunk=chunk("b"), score=0.8),
-    ]
+    """The text as embedded: the headings not already in the text, then the text."""
+    article = IndexedChunk(
+        document_id="law",
+        chunk_id="a",
+        position=0,
+        text="Điều 118. Giao đất không thu tiền sử dụng đất",
+        embedded_text="Luật Đất đai\nĐiều 118. Giao đất không thu tiền sử dụng đất",
+        headings=("Luật Đất đai", "Điều 118. Giao đất không thu tiền sử dụng đất"),
+    )
+    hits = [ChunkHit(chunk=article, score=0.9), ChunkHit(chunk=chunk("b"), score=0.8)]
     reranker = TableReranker({})
     search_chunks(
         "Ai được giao đất?",
@@ -243,7 +249,13 @@ def test_the_reranker_reads_the_question_and_each_chunks_headings_then_text(
         reranker=reranker,
     )
     assert reranker.calls == [
-        ("Ai được giao đất?", ["Luật Đất đai\nĐiều 118\ntext of a", "text of b"])
+        (
+            "Ai được giao đất?",
+            [
+                "Luật Đất đai\nĐiều 118. Giao đất không thu tiền sử dụng đất",
+                "text of b",
+            ],
+        )
     ]
 
 
