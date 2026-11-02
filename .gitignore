@@ -12,9 +12,9 @@ wheels/
 # Environment variables
 .env
 
-# Ruff
 .ruff_cache
 .mypy_cache
+.pytest_cache
 
 # Data
 /data/
