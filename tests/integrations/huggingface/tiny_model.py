@@ -11,6 +11,8 @@ seed, so two folders built alike are identical.
 - build_tiny_sentence_transformer: the folder in sentence-transformers'
   format, as the embedder loads it: CLS pooling, normalization, optional
   prompts.
+- build_tiny_cross_encoder: a plain transformers folder with a classification
+  head, laid out like bge-reranker-v2-m3, as the reranker loads it.
 """
 
 import shutil
@@ -59,11 +61,13 @@ SPECIAL_IDS = frozenset({0, 1, 2, 3})
 
 
 def tiny_tokenizer(model_max_length: int | None) -> PreTrainedTokenizerFast:
-    """Word-level, splitting on spaces, wrapping every text in <s> … </s>."""
+    """Word-level, splitting on spaces, wrapping every text in <s> … </s>; pairs as XLM-RoBERTa joins them."""
     backend = BackendTokenizer(models.WordLevel(vocab=VOCAB, unk_token="<unk>"))
     backend.pre_tokenizer = pre_tokenizers.WhitespaceSplit()
     backend.post_processor = processors.TemplateProcessing(
-        single="<s> $A </s>", special_tokens=[("<s>", 0), ("</s>", 2)]
+        single="<s> $A </s>",
+        pair="<s> $A </s> </s> $B </s>",
+        special_tokens=[("<s>", 0), ("</s>", 2)],
     )
     tokenizer = PreTrainedTokenizerFast(  # type: ignore[no-untyped-call]
         tokenizer_object=backend,
@@ -176,4 +180,47 @@ def build_tiny_sentence_transformer(
         model.save(str(folder), create_model_card=False)
     if reference is not None:
         write_model_reference(folder, reference)
+    return folder
+
+
+def build_tiny_cross_encoder(
+    folder: Path,
+    *,
+    num_labels: int = 1,
+    reference: ModelReference | None = TINY_REFERENCE,
+    nan_weights: bool = False,
+    seed: int = 0,
+) -> Path:
+    """A tiny reranker: XLM-RoBERTa with a classification head, as a plain transformers folder.
+
+    No modules.json, like bge-reranker-v2-m3: sentence-transformers' CrossEncoder
+    loads it with a sigmoid on top when num_labels is 1. Needs torch.
+    """
+    import torch
+    from transformers import XLMRobertaConfig, XLMRobertaForSequenceClassification
+
+    build_tiny_tokenizer_folder(folder, reference=reference)
+    torch.manual_seed(seed)
+    config = XLMRobertaConfig(
+        vocab_size=len(VOCAB),
+        hidden_size=TINY_HIDDEN_SIZE,
+        num_hidden_layers=2,
+        num_attention_heads=2,
+        intermediate_size=32,
+        max_position_embeddings=64,
+        pad_token_id=1,
+        bos_token_id=0,
+        eos_token_id=2,
+    )
+    config.num_labels = num_labels
+    model = XLMRobertaForSequenceClassification(config)  # type: ignore[no-untyped-call]
+    with torch.no_grad():
+        # the default init (std 0.02) puts every score within 1e-5 of 0.5; spread them out
+        for parameter in model.parameters():
+            parameter.normal_(std=0.5)
+    if nan_weights:
+        with torch.no_grad():
+            for parameter in model.parameters():
+                parameter.fill_(float("nan"))
+    model.save_pretrained(folder)
     return folder

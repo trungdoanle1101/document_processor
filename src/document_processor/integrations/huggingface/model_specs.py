@@ -26,6 +26,18 @@ class HuggingFaceModelSpec:
                 )
 
 
+@dataclass(frozen=True, kw_only=True)
+class HuggingFaceRerankerSpec:
+    """Which reranker, and how much of each (question, passage) pair it reads"""
+
+    reference: ModelReference
+    max_length: int
+
+    def __post_init__(self) -> None:
+        if self.max_length <= 0:
+            raise ValueError(f"max_length must be positive, got {self.max_length}")
+
+
 BGE_M3 = HuggingFaceModelSpec(
     reference=ModelReference(
         hub_model_id="BAAI/bge-m3",
@@ -34,6 +46,20 @@ BGE_M3 = HuggingFaceModelSpec(
 )
 
 
+BGE_RERANKER_V2_M3 = HuggingFaceRerankerSpec(
+    reference=ModelReference(
+        hub_model_id="BAAI/bge-reranker-v2-m3",
+        commit_hash="953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e",
+    ),
+    max_length=1024,
+)
+
+
 HUGGINGFACE_MODEL_SPECS = Registry[HuggingFaceModelSpec](
     kind="embedding model spec", items={"bge-m3": BGE_M3}
+)
+
+
+HUGGINGFACE_RERANKER_SPECS = Registry[HuggingFaceRerankerSpec](
+    kind="reranker spec", items={"bge-reranker-v2-m3": BGE_RERANKER_V2_M3}
 )

@@ -29,7 +29,7 @@ from document_processor.retrieval.search import RetrievedChunk, search_chunks
 MODEL_FOLDER = "huggingface/BAAI/bge_m3"
 QDRANT_URL = "http://localhost:6333"
 COLLECTION = "architecture-bge-m3"
-MAX_TOKENS = 256
+MAX_TOKENS = 512
 LIMIT = 5
 BODY_ONLY = ChunkFilter(attributes={"part": TextIn(values=("body",))})
 
@@ -56,7 +56,9 @@ def open_index(embedder: Embedder, *, recreate: bool) -> QdrantChunkIndex:
     )
 
 
-def index_folder(folder: Path, embedder: HuggingFaceEmbedder, index: ChunkIndex) -> None:
+def index_folder(
+    folder: Path, embedder: HuggingFaceEmbedder, index: ChunkIndex
+) -> None:
     chunker = OutlineChunker(
         tokenizer=embedder.tokenizer,
         max_tokens=MAX_TOKENS,
@@ -68,12 +70,18 @@ def index_folder(folder: Path, embedder: HuggingFaceEmbedder, index: ChunkIndex)
         if isinstance(outcome, PipelineResult):
             print(outcome.summarize().format())
             start = time.perf_counter()
-            index_document(outcome.chunks, document_id=outcome.source.stem, embedder=embedder, index=index)
+            index_document(
+                outcome.chunks,
+                document_id=outcome.source.stem,
+                embedder=embedder,
+                index=index,
+            )
             stop = time.perf_counter()
             execution_time = stop - start
             print(f"Indexing {outcome.source.stem!r} took {execution_time:.1f} seconds")
         else:
             print(f"{outcome.source}: {outcome.error}")
+
 
 def ask_questions(embedder: Embedder, index: ChunkIndex) -> None:
     while True:
@@ -83,17 +91,22 @@ def ask_questions(embedder: Embedder, index: ChunkIndex) -> None:
             return
         if not question:
             return
-        hits = search_chunks(question, embedder=embedder, index=index, limit=LIMIT,
-                             chunk_filter=BODY_ONLY)
+        hits = search_chunks(
+            question,
+            embedder=embedder,
+            index=index,
+            limit=LIMIT,
+            chunk_filter=BODY_ONLY,
+        )
         print_hits(hits)
-    
+
 
 def print_hits(hits: list[RetrievedChunk]) -> None:
     for pos, hit in enumerate(hits, start=1):
         text = hit.chunk.text
         print(f"{pos} {hit.index_score:.3f} {hit.chunk.document_id}")
-        print(f"  {" > ".join(hit.chunk.headings)}")
-        print(f"  Text: {" ".join(text.split())[:300]}")
+        print(f"  {' > '.join(hit.chunk.headings)}")
+        print(f"  Text: {' '.join(text.split())[:300]}")
 
 
 def run_evaluation(
@@ -105,7 +118,9 @@ def run_evaluation(
     misses_at: MatchLevel,
 ) -> None:
     questions = load_questions(questions_path)
-    search = partial(search_chunks, embedder=embedder, index=index, chunk_filter=BODY_ONLY)
+    search = partial(
+        search_chunks, embedder=embedder, index=index, chunk_filter=BODY_ONLY
+    )
     start = time.perf_counter()
     report = evaluate(questions, search, depth=depth)
     print(f"{len(questions)} questions in {time.perf_counter() - start:.1f} seconds\n")
@@ -116,13 +131,19 @@ def run_evaluation(
 
 def print_misses(report: EvaluationReport, level: MatchLevel) -> None:
     misses = report.misses(level=level)
-    print(f"\n{len(misses)} missed at the {level} level (nothing matched in the top {report.depth}):")
+    print(
+        f"\n{len(misses)} missed at the {level} level (nothing matched in the top {report.depth}):"
+    )
     for miss in misses:
         question = miss.question
         print(f"- {question.id} [{', '.join(question.tags)}] {question.question}")
-        print(f"  expected: {question.location or ', '.join(a.reference_key or a.document_id for a in question.answers)}")
+        print(
+            f"  expected: {question.location or ', '.join(a.reference_key or a.document_id for a in question.answers)}"
+        )
         for rank, hit in enumerate(miss.hits[:3], start=1):
-            print(f"  got {rank}: {' > '.join(hit.chunk.headings) or hit.chunk.document_id}")
+            print(
+                f"  got {rank}: {' > '.join(hit.chunk.headings) or hit.chunk.document_id}"
+            )
 
 
 def print_top_scores(report: EvaluationReport) -> None:
@@ -138,17 +159,32 @@ def print_top_scores(report: EvaluationReport) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Index files and ask questions about them.")
+    parser = argparse.ArgumentParser(
+        description="Index files and ask questions about them."
+    )
     commands = parser.add_subparsers(dest="command", required=True)
-    index_command = commands.add_parser("index", help="parse, chunk, embed, and store every .docx in a folder")
+    index_command = commands.add_parser(
+        "index", help="parse, chunk, embed, and store every .docx in a folder"
+    )
     index_command.add_argument("folder", type=Path)
-    index_command.add_argument("--recreate", action="store_true", help="delete the collection first")
+    index_command.add_argument(
+        "--recreate", action="store_true", help="delete the collection first"
+    )
     commands.add_parser("ask", help="ask questions; a blank line quits")
-    evaluate_command = commands.add_parser("evaluate", help="score search against a questions file")
-    evaluate_command.add_argument("questions", type=Path, help="a .jsonl questions file")
-    evaluate_command.add_argument("--depth", type=int, default=10, help="hits looked at per question")
+    evaluate_command = commands.add_parser(
+        "evaluate", help="score search against a questions file"
+    )
     evaluate_command.add_argument(
-        "--misses-at", choices=MATCH_LEVELS, default="section", help="which level's misses to list"
+        "questions", type=Path, help="a .jsonl questions file"
+    )
+    evaluate_command.add_argument(
+        "--depth", type=int, default=10, help="hits looked at per question"
+    )
+    evaluate_command.add_argument(
+        "--misses-at",
+        choices=MATCH_LEVELS,
+        default="section",
+        help="which level's misses to list",
     )
     args = parser.parse_args()
 
@@ -158,7 +194,9 @@ def main() -> None:
     if args.command == "index":
         index_folder(args.folder, embedder, index)
     elif args.command == "evaluate":
-        run_evaluation(args.questions, embedder, index, depth=args.depth, misses_at=args.misses_at)
+        run_evaluation(
+            args.questions, embedder, index, depth=args.depth, misses_at=args.misses_at
+        )
     else:
         ask_questions(embedder, index)
 

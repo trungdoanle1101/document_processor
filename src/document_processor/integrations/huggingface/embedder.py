@@ -5,13 +5,17 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from threading import Lock
 from types import MappingProxyType
-from typing import Literal, cast
+from typing import cast
 
 import torch
 from sentence_transformers import SentenceTransformer
 from transformers import PreTrainedTokenizerBase
 
 from document_processor.chunking import Tokenizer
+from document_processor.integrations.huggingface._device import (
+    Device,
+    resolve_device,
+)
 from document_processor.integrations.huggingface._folder import (
     check_has_modules_json,
     check_is_folder,
@@ -34,9 +38,6 @@ from document_processor.retrieval.embedding import (
 EMBEDDER_VERSION = 1
 
 DENSE_VECTOR_NAME = "dense"
-
-type Device = Literal["auto", "cuda", "mps", "cpu"]
-type ResolvedDevice = Literal["cuda", "mps", "cpu"]
 
 
 class _ModelTokenizer:
@@ -100,7 +101,7 @@ class HuggingFaceEmbedder:
             raise ValueError(f"batch_size must be positive, got {batch_size}")
 
         # Device
-        resolved_device = _resolve_device(device)
+        resolved_device = resolve_device(device)
 
         # Model, in float32 whatever precision the checkpoint was saved in
         model = SentenceTransformer(
@@ -237,28 +238,3 @@ def embedder_identity(reference: ModelReference, settings: EmbedderSettings) -> 
     )
     settings_hash = hashlib.sha256(settings_json.encode("utf-8")).hexdigest()[:12]
     return f"{reference.hub_model_id}@{reference.commit_hash}/{settings_hash}/v{EMBEDDER_VERSION}"
-
-
-def _resolve_device(device: Device) -> ResolvedDevice:
-    cuda_available = torch.cuda.is_available()
-    if device == "cuda":
-        if not cuda_available:
-            raise ValueError(
-                "device 'cuda' was asked for, but PyTorch found no CUDA-compatible GPU; use 'auto' or 'cpu'"
-            )
-        return "cuda"
-
-    mps_available = torch.backends.mps.is_available()
-    if device == "mps":
-        if not mps_available:
-            raise ValueError(
-                "device 'mps' was asked for, but PyTorch found no MPS-compatible GPU; use 'auto' or 'cpu'"
-            )
-        return "mps"
-
-    if device == "auto":
-        if cuda_available:
-            return "cuda"
-        if mps_available:
-            return "mps"
-    return "cpu"

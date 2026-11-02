@@ -187,8 +187,11 @@ def test_two_names_may_share_a_model_with_different_choices() -> None:
 def test_package_exports_the_reference_and_the_specs() -> None:
     assert sorted(huggingface.__all__) == [
         "BGE_M3",
+        "BGE_RERANKER_V2_M3",
         "HUGGINGFACE_MODEL_SPECS",
+        "HUGGINGFACE_RERANKER_SPECS",
         "HuggingFaceModelSpec",
+        "HuggingFaceRerankerSpec",
         "MODEL_REFERENCE_FILE",
         "ModelReference",
         "read_model_reference",
