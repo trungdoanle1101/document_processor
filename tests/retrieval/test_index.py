@@ -138,6 +138,17 @@ def test_an_entry_must_lead_to_a_chunk() -> None:
         )
 
 
+def test_an_entry_refuses_a_repeated_chunk() -> None:
+    with pytest.raises(ValueError, match="more than once"):
+        GeneratedEntry(
+            document_id="law",
+            generator="g",
+            entry_id="q",
+            chunk_ids=("a", "b", "a"),
+            text="Ai?",
+        )
+
+
 @pytest.mark.parametrize("text", ["", " \n"])
 def test_an_entry_refuses_blank_text(text: str) -> None:
     with pytest.raises(ValueError, match="no text"):

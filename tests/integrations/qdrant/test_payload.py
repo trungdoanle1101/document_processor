@@ -19,7 +19,12 @@ from document_processor.integrations.qdrant._payload import (
 )
 from document_processor.retrieval.attributes import Attributes
 from document_processor.retrieval.embedding import DenseVector, Embedding, SparseVector
-from document_processor.retrieval.index import ChunkKey, GeneratedEntry, GeneratedEntryKey, IndexedChunk
+from document_processor.retrieval.index import (
+    ChunkKey,
+    GeneratedEntry,
+    GeneratedEntryKey,
+    IndexedChunk,
+)
 
 EVERY_KIND: Attributes = {
     "title": "Luật Đất đai",
@@ -86,7 +91,10 @@ def test_attributes_come_back_as_stored_after_travelling_as_json() -> None:
 
 def test_each_value_is_stored_under_its_kind() -> None:
     stored = encode_attributes(EVERY_KIND)
-    assert stored["text"] == {"title": "Luật Đất đai", "knowledge_base_ids": ["kb-2", "kb-1"]}
+    assert stored["text"] == {
+        "title": "Luật Đất đai",
+        "knowledge_base_ids": ["kb-2", "kb-1"],
+    }
     assert stored["integer"] == {"year": 2024, "pages": [3, 1]}
     assert stored["float"] == {"weight": 2.0}
     assert stored["boolean"] == {"in_force": True, "repealed": False}
@@ -102,7 +110,14 @@ def test_booleans_are_never_stored_as_integers() -> None:
 
 def test_every_kind_group_is_always_present() -> None:
     """So a later set_payload can always write into attributes.<kind>."""
-    assert set(encode_attributes({})) == {"text", "integer", "float", "boolean", "date", "empty"}
+    assert set(encode_attributes({})) == {
+        "text",
+        "integer",
+        "float",
+        "boolean",
+        "date",
+        "empty",
+    }
 
 
 def test_text_is_never_split_into_characters() -> None:
@@ -133,24 +148,35 @@ def test_chunk_keys_that_look_alike_when_joined_stay_distinct() -> None:
 
 
 def test_a_chunk_key_keeps_vietnamese_readable() -> None:
-    assert encode_chunk_key(ChunkKey(document_id="luật", chunk_id="điều-14")) == '["luật", "điều-14"]'
+    assert (
+        encode_chunk_key(ChunkKey(document_id="luật", chunk_id="điều-14"))
+        == '["luật", "điều-14"]'
+    )
 
 
 def test_point_ids_are_uuids() -> None:
     uuid.UUID(chunk_point_id(ChunkKey(document_id="law", chunk_id="a")))
-    uuid.UUID(entry_point_id(GeneratedEntryKey(document_id="law", generator="g", entry_id="q"), "a"))
+    uuid.UUID(
+        entry_point_id(
+            GeneratedEntryKey(document_id="law", generator="g", entry_id="q"), "a"
+        )
+    )
 
 
 def test_the_same_key_always_gives_the_same_id() -> None:
     key = ChunkKey(document_id="law", chunk_id="a")
-    assert chunk_point_id(key) == chunk_point_id(ChunkKey(document_id="law", chunk_id="a"))
+    assert chunk_point_id(key) == chunk_point_id(
+        ChunkKey(document_id="law", chunk_id="a")
+    )
     entry = GeneratedEntryKey(document_id="law", generator="g", entry_id="q")
     assert entry_point_id(entry, "a") == entry_point_id(entry, "a")
 
 
 def test_a_chunk_and_an_entry_copy_never_share_an_id() -> None:
     chunk = chunk_point_id(ChunkKey(document_id="law", chunk_id="a"))
-    copy = entry_point_id(GeneratedEntryKey(document_id="law", generator="chunk", entry_id="a"), "a")
+    copy = entry_point_id(
+        GeneratedEntryKey(document_id="law", generator="chunk", entry_id="a"), "a"
+    )
     assert chunk != copy
 
 
@@ -170,7 +196,10 @@ def test_entry_copies_differing_in_any_part_have_different_ids(
     def copy_id(parts: tuple[str, str, str, str]) -> str:
         document_id, generator, entry_id, chunk_id = parts
         return entry_point_id(
-            GeneratedEntryKey(document_id=document_id, generator=generator, entry_id=entry_id), chunk_id
+            GeneratedEntryKey(
+                document_id=document_id, generator=generator, entry_id=entry_id
+            ),
+            chunk_id,
         )
 
     assert copy_id(first) != copy_id(second)
@@ -234,17 +263,28 @@ def test_a_chunk_comes_back_as_stored_from_qdrant() -> None:
     client = QdrantClient(":memory:")
     client.create_collection(
         "space",
-        vectors_config={"dense": models.VectorParams(size=2, distance=models.Distance.COSINE)},
+        vectors_config={
+            "dense": models.VectorParams(size=2, distance=models.Distance.COSINE)
+        },
         sparse_vectors_config={"sparse": models.SparseVectorParams()},
     )
     embedding = Embedding(
         embedder_identity="stub",
-        vectors={"dense": DenseVector(values=(1.0, 0.0)), "sparse": SparseVector(indices=(3,), values=(1.0,))},
+        vectors={
+            "dense": DenseVector(values=(1.0, 0.0)),
+            "sparse": SparseVector(indices=(3,), values=(1.0,)),
+        },
     )
     point_id = chunk_point_id(CHUNK.key)
     client.upsert(
         "space",
-        [models.PointStruct(id=point_id, vector=point_vectors(embedding), payload=chunk_payload(CHUNK))],
+        [
+            models.PointStruct(
+                id=point_id,
+                vector=point_vectors(embedding),
+                payload=chunk_payload(CHUNK),
+            )
+        ],
         wait=True,
     )
     (point,) = client.retrieve("space", ids=[point_id], with_payload=True)

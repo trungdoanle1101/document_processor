@@ -100,6 +100,8 @@ class GeneratedEntry:
             raise ValueError(f"entry {self.entry_id!r} must lead to at least one chunk")
         if not self.text.strip():
             raise ValueError(f"entry {self.entry_id!r} has no text")
+        if len(set(self.chunk_ids)) != len(self.chunk_ids):
+            raise ValueError(f"entry {self.entry_id!r} leads to a chunk more than once")
 
     @property
     def key(self) -> GeneratedEntryKey:

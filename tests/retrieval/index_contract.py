@@ -533,6 +533,30 @@ class ChunkIndexContract(_ContractHelpers):
             dict(c.attributes) for c in index.list_chunks(ChunkFilter(), limit=2)
         ] == [{"role": "main"}, {}]
 
+    def test_updating_the_attribute_the_filter_selects_on(self) -> None:
+        index = self.index_with(
+            chunk("a", position=0, status="draft"),
+            chunk("b", position=1, status="final"),
+        )
+        index.update_attributes(
+            where(status=TextIn(values=("draft",))), {"status": "final"}
+        )
+        assert self.all_chunks(index, where(status=TextIn(values=("final",)))) == [
+            "a",
+            "b",
+        ]
+
+    def test_an_update_can_change_an_attributes_kind(self) -> None:
+        index = self.index_with(chunk("a", code="5", tags=()))
+        index.update_attributes(
+            ChunkFilter(document_ids=("law",)), {"code": 5, "tags": (2, 3)}
+        )
+        assert index.list_chunks(ChunkFilter(), limit=1) == [
+            chunk("a", code=5, tags=(2, 3))
+        ]
+        assert self.all_chunks(index, where(code=TextIn(values=("5",)))) == []
+        assert self.all_chunks(index, where(code=IntegerIn(values=(5,)))) == ["a"]
+
     def test_updating_everything_is_refused(self) -> None:
         with pytest.raises(ValueError, match="every chunk"):
             self.index_with(chunk("a")).update_attributes(ChunkFilter(), {"title": "x"})
