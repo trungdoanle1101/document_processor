@@ -15,6 +15,9 @@ def to_indexed_chunks(
     attributes: Attributes = MappingProxyType({}),
 ) -> list[IndexedChunk]:
     """The chunker's chunks as the index stores them, in document order"""
+    if "part" in attributes:
+        raise ValueError('attribute name "part" is reserved: ingest sets it from each chunk; use a different name if needed')
+    
     return [
         IndexedChunk(
             document_id=document_id,
@@ -45,8 +48,4 @@ def index_document(
     embeddings = embedder.encode_passages(
         [chunk.embedded_text for chunk in indexed_chunks]
     )
-    if "part" in attributes:
-        raise ValueError(
-            'attributes must not set "part"; ingest sets it from each chunk'
-        )
     index.replace_document(document_id, indexed_chunks, embeddings)
