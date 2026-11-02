@@ -1,5 +1,7 @@
 import argparse
+import statistics
 import time
+from functools import partial
 from pathlib import Path
 
 from qdrant_client import QdrantClient
@@ -12,6 +14,14 @@ from document_processor.integrations.qdrant.index import QdrantChunkIndex
 from document_processor.pipeline.pipeline import Pipeline, PipelineResult
 from document_processor.retrieval.attributes import TextIn
 from document_processor.retrieval.embedding import Embedder
+from document_processor.retrieval.evaluation import (
+    MATCH_LEVELS,
+    EvaluationReport,
+    MatchLevel,
+    evaluate,
+    format_summary,
+    load_questions,
+)
 from document_processor.retrieval.index import ChunkFilter, ChunkIndex
 from document_processor.retrieval.ingest import index_document
 from document_processor.retrieval.search import RetrievedChunk, search_chunks
@@ -19,8 +29,9 @@ from document_processor.retrieval.search import RetrievedChunk, search_chunks
 MODEL_FOLDER = "huggingface/BAAI/bge_m3"
 QDRANT_URL = "http://localhost:6333"
 COLLECTION = "architecture-bge-m3"
-MAX_TOKENS = 512
+MAX_TOKENS = 256
 LIMIT = 5
+BODY_ONLY = ChunkFilter(attributes={"part": TextIn(values=("body",))})
 
 
 def open_embedder() -> HuggingFaceEmbedder:
@@ -73,7 +84,7 @@ def ask_questions(embedder: Embedder, index: ChunkIndex) -> None:
         if not question:
             return
         hits = search_chunks(question, embedder=embedder, index=index, limit=LIMIT,
-                             chunk_filter=ChunkFilter(attributes={"part": TextIn(values=("body",))}))
+                             chunk_filter=BODY_ONLY)
         print_hits(hits)
     
 
@@ -85,6 +96,47 @@ def print_hits(hits: list[RetrievedChunk]) -> None:
         print(f"  Text: {" ".join(text.split())[:300]}")
 
 
+def run_evaluation(
+    questions_path: Path,
+    embedder: Embedder,
+    index: ChunkIndex,
+    *,
+    depth: int,
+    misses_at: MatchLevel,
+) -> None:
+    questions = load_questions(questions_path)
+    search = partial(search_chunks, embedder=embedder, index=index, chunk_filter=BODY_ONLY)
+    start = time.perf_counter()
+    report = evaluate(questions, search, depth=depth)
+    print(f"{len(questions)} questions in {time.perf_counter() - start:.1f} seconds\n")
+    print(format_summary(report))
+    print_misses(report, misses_at)
+    print_top_scores(report)
+
+
+def print_misses(report: EvaluationReport, level: MatchLevel) -> None:
+    misses = report.misses(level=level)
+    print(f"\n{len(misses)} missed at the {level} level (nothing matched in the top {report.depth}):")
+    for miss in misses:
+        question = miss.question
+        print(f"- {question.id} [{', '.join(question.tags)}] {question.question}")
+        print(f"  expected: {question.location or ', '.join(a.reference_key or a.document_id for a in question.answers)}")
+        for rank, hit in enumerate(miss.hits[:3], start=1):
+            print(f"  got {rank}: {' > '.join(hit.chunk.headings) or hit.chunk.document_id}")
+
+
+def print_top_scores(report: EvaluationReport) -> None:
+    """If unanswerable questions score clearly lower, a threshold for "I don't know" is possible."""
+    print("\nbest score per question:")
+    for label, answerable in (("answerable", True), ("unanswerable", False)):
+        scores = report.top_scores(answerable=answerable)
+        if scores:
+            print(
+                f"  {label:12}  min {min(scores):.3f}  median {statistics.median(scores):.3f}"
+                f"  max {max(scores):.3f}  ({len(scores)} questions)"
+            )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Index files and ask questions about them.")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -92,6 +144,12 @@ def main() -> None:
     index_command.add_argument("folder", type=Path)
     index_command.add_argument("--recreate", action="store_true", help="delete the collection first")
     commands.add_parser("ask", help="ask questions; a blank line quits")
+    evaluate_command = commands.add_parser("evaluate", help="score search against a questions file")
+    evaluate_command.add_argument("questions", type=Path, help="a .jsonl questions file")
+    evaluate_command.add_argument("--depth", type=int, default=10, help="hits looked at per question")
+    evaluate_command.add_argument(
+        "--misses-at", choices=MATCH_LEVELS, default="section", help="which level's misses to list"
+    )
     args = parser.parse_args()
 
     embedder = open_embedder()
@@ -99,6 +157,8 @@ def main() -> None:
     index = open_index(embedder, recreate=args.command == "index" and args.recreate)
     if args.command == "index":
         index_folder(args.folder, embedder, index)
+    elif args.command == "evaluate":
+        run_evaluation(args.questions, embedder, index, depth=args.depth, misses_at=args.misses_at)
     else:
         ask_questions(embedder, index)
 
