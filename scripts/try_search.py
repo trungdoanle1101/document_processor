@@ -9,7 +9,11 @@ from qdrant_client import QdrantClient
 from document_processor.chunking.outline_chunker import OutlineChunker
 from document_processor.integrations.huggingface.download import download_model
 from document_processor.integrations.huggingface.embedder import HuggingFaceEmbedder
-from document_processor.integrations.huggingface.model_specs import BGE_M3
+from document_processor.integrations.huggingface.model_specs import (
+    BGE_M3,
+    BGE_RERANKER_V2_M3,
+)
+from document_processor.integrations.huggingface.reranker import HuggingFaceReranker
 from document_processor.integrations.qdrant.index import QdrantChunkIndex
 from document_processor.pipeline.pipeline import Pipeline, PipelineResult
 from document_processor.retrieval.attributes import TextIn
@@ -24,13 +28,16 @@ from document_processor.retrieval.evaluation import (
 )
 from document_processor.retrieval.index import ChunkFilter, ChunkIndex
 from document_processor.retrieval.ingest import index_document
+from document_processor.retrieval.reranker import Reranker
 from document_processor.retrieval.search import RetrievedChunk, search_chunks
 
 MODEL_FOLDER = "huggingface/BAAI/bge_m3"
+RERANKER_FOLDER = "huggingface/BAAI/bge_reranker_v2_m3"
 QDRANT_URL = "http://localhost:6333"
 COLLECTION = "architecture-bge-m3"
 MAX_TOKENS = 512
 LIMIT = 5
+RERANK_DEPTH = 20  # hits the reranker sees before the top LIMIT are kept
 BODY_ONLY = ChunkFilter(attributes={"part": TextIn(values=("body",))})
 
 
@@ -41,6 +48,15 @@ def open_embedder() -> HuggingFaceEmbedder:
         print("Download completed")
 
     return HuggingFaceEmbedder(spec=BGE_M3, folder=MODEL_FOLDER)
+
+
+def open_reranker() -> HuggingFaceReranker:
+    if not Path(RERANKER_FOLDER).exists():
+        print("Reranker download start...")
+        download_model(BGE_RERANKER_V2_M3.reference, RERANKER_FOLDER)
+        print("Reranker download completed")
+
+    return HuggingFaceReranker(spec=BGE_RERANKER_V2_M3, folder=RERANKER_FOLDER)
 
 
 def open_index(embedder: Embedder, *, recreate: bool) -> QdrantChunkIndex:
@@ -83,7 +99,13 @@ def index_folder(
             print(f"{outcome.source}: {outcome.error}")
 
 
-def ask_questions(embedder: Embedder, index: ChunkIndex) -> None:
+def ask_questions(
+    embedder: Embedder,
+    index: ChunkIndex,
+    *,
+    reranker: Reranker | None,
+    rerank_depth: int,
+) -> None:
     while True:
         try:
             question = input("? ").strip()
@@ -97,6 +119,8 @@ def ask_questions(embedder: Embedder, index: ChunkIndex) -> None:
             index=index,
             limit=LIMIT,
             chunk_filter=BODY_ONLY,
+            reranker=reranker,
+            rerank_depth=rerank_depth,
         )
         print_hits(hits)
 
@@ -104,7 +128,8 @@ def ask_questions(embedder: Embedder, index: ChunkIndex) -> None:
 def print_hits(hits: list[RetrievedChunk]) -> None:
     for pos, hit in enumerate(hits, start=1):
         text = hit.chunk.text
-        print(f"{pos} {hit.index_score:.3f} {hit.chunk.document_id}")
+        rerank = "" if hit.rerank_score is None else f" rerank {hit.rerank_score:.3f}"
+        print(f"{pos} index {hit.index_score:.3f}{rerank} {hit.chunk.document_id}")
         print(f"  {' > '.join(hit.chunk.headings)}")
         print(f"  Text: {' '.join(text.split())[:300]}")
 
@@ -116,11 +141,22 @@ def run_evaluation(
     *,
     depth: int,
     misses_at: MatchLevel,
+    reranker: Reranker | None,
+    rerank_depth: int,
 ) -> None:
     questions = load_questions(questions_path)
     search = partial(
-        search_chunks, embedder=embedder, index=index, chunk_filter=BODY_ONLY
+        search_chunks,
+        embedder=embedder,
+        index=index,
+        chunk_filter=BODY_ONLY,
+        reranker=reranker,
+        rerank_depth=rerank_depth,
     )
+    if reranker is None:
+        print("no reranker")
+    else:
+        print(f"reranker {reranker.identity}, over the top {max(depth, rerank_depth)}")
     start = time.perf_counter()
     report = evaluate(questions, search, depth=depth)
     print(f"{len(questions)} questions in {time.perf_counter() - start:.1f} seconds\n")
@@ -170,7 +206,7 @@ def main() -> None:
     index_command.add_argument(
         "--recreate", action="store_true", help="delete the collection first"
     )
-    commands.add_parser("ask", help="ask questions; a blank line quits")
+    ask_command = commands.add_parser("ask", help="ask questions; a blank line quits")
     evaluate_command = commands.add_parser(
         "evaluate", help="score search against a questions file"
     )
@@ -186,19 +222,42 @@ def main() -> None:
         default="section",
         help="which level's misses to list",
     )
+    for command in (ask_command, evaluate_command):
+        command.add_argument(
+            "--rerank",
+            action="store_true",
+            help="rerank the hits with the cross-encoder",
+        )
+        command.add_argument(
+            "--rerank-depth",
+            type=int,
+            default=RERANK_DEPTH,
+            help="how many hits the reranker sees",
+        )
     args = parser.parse_args()
 
     embedder = open_embedder()
     print("Embedder loaded")
     index = open_index(embedder, recreate=args.command == "index" and args.recreate)
+    reranker = open_reranker() if args.command != "index" and args.rerank else None
+    if reranker is not None:
+        print("Reranker loaded")
     if args.command == "index":
         index_folder(args.folder, embedder, index)
     elif args.command == "evaluate":
         run_evaluation(
-            args.questions, embedder, index, depth=args.depth, misses_at=args.misses_at
+            args.questions,
+            embedder,
+            index,
+            depth=args.depth,
+            misses_at=args.misses_at,
+            reranker=reranker,
+            rerank_depth=args.rerank_depth,
         )
     else:
-        ask_questions(embedder, index)
+        ask_questions(
+            embedder, index, reranker=reranker, rerank_depth=args.rerank_depth
+        )
 
 
 if __name__ == "__main__":

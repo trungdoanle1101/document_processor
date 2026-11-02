@@ -10,5 +10,5 @@ print("revision:", revision)
 for name in api.list_repo_files("BAAI/bge-m3", revision=revision):
     print(name)
 
-folder = Path("hf_models/BAAI/bge-m3")
+folder = Path("huggingface/BAAI/bge-m3")
 folder.mkdir(exist_ok=True, parents=True)
