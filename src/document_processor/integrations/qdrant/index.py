@@ -26,9 +26,11 @@ from document_processor.integrations.qdrant._payload import (
     chunk_point_id,
     encode_attributes,
     entry_copy_payload,
+    entry_from_payload,
     entry_point_id,
     point_vectors,
 )
+from document_processor.retrieval._fusion import BestMatch, fuse
 from document_processor.retrieval.attributes import (
     AllOf,
     AnyOf,
@@ -342,7 +344,99 @@ class QdrantChunkIndex(ChunkIndex):
         return chunks if limit is None else chunks[:limit]
 
     def _search(self, query: SearchQuery) -> list[ChunkHit]:
-        pass
+        vector_names = query.vector_names or tuple(self._vector_specs)
+        depth = (
+            query.limit
+            if len(vector_names) == 1
+            else max(query.limit, query.fusion_depth)
+        )
+        query_vectors = point_vectors(query.embedding)
+
+        must: list[models.Condition] = [
+            translate_filter(
+                query.chunk_filter,
+                kind=CHUNK if query.generated_entries == "none" else None,
+            )
+        ]
+
+        if type(query.generated_entries) is tuple:
+            must.append(
+                models.Filter(
+                    should=[
+                        models.FieldCondition(
+                            key=KIND, match=models.MatchValue(value=CHUNK)
+                        ),
+                        models.FieldCondition(
+                            key=GENERATOR,
+                            match=models.MatchAny(any=list(query.generated_entries)),
+                        ),
+                    ]
+                )
+            )
+        search_filter = models.Filter(
+            must=must,
+        )
+
+        # one grouped search per vector: each group is one chunk, its best point on this vector
+        raw_rankings = []
+        for name in vector_names:
+            response = self._client.query_points_groups(
+                collection_name=self._collection,
+                query=query_vectors[name],
+                using=name,
+                query_filter=search_filter,
+                group_by=CHUNK_KEY,
+                group_size=1,
+                limit=depth,
+                with_payload=True,
+            )
+            raw_rankings.append([group.hits[0] for group in response.groups])
+
+        missing = {
+            _chunk_key_of(hit.payload)
+            for hits in raw_rankings
+            for hit in hits
+            if hit.payload is not None and hit.payload[KIND] == ENTRY
+        }
+
+        records = self._client.retrieve(
+            collection_name=self._collection,
+            ids=[chunk_point_id(key) for key in missing],
+            with_payload=True,
+            with_vectors=False,
+        )
+
+        chunks_by_key: dict[ChunkKey, IndexedChunk] = {}
+        for record in records:
+            assert record.payload is not None
+            chunk = chunk_from_payload(record.payload)
+            chunks_by_key[chunk.key] = chunk
+
+        rankings = []
+        for hits in raw_rankings:
+            ranking = []
+            for hit in hits:
+                assert hit.payload is not None
+                if hit.payload[KIND] == CHUNK:
+                    ranking.append(
+                        BestMatch(
+                            chunk=chunk_from_payload(hit.payload),
+                            score=hit.score,
+                            entry=None,
+                        )
+                    )
+                else:
+                    entry = entry_from_payload(hit.payload)
+                    chunk = chunks_by_key[_chunk_key_of(hit.payload)]
+                    ranking.append(
+                        BestMatch(
+                            chunk=chunk,
+                            score=hit.score,
+                            entry=entry,
+                        )
+                    )
+            rankings.append(ranking)
+        return fuse(rankings, limit=query.limit, fusion_depth=query.fusion_depth)
 
 
 def _scroll_all(
@@ -365,6 +459,11 @@ def _scroll_all(
         records.extend(page)
         if offset is None:
             return records
+
+
+def _chunk_key_of(payload: Mapping[str, Any]) -> ChunkKey:
+    """The chunk a point belongs to: itself, or the chunk an entry copy sits on."""
+    return ChunkKey(document_id=payload[DOCUMENT_ID], chunk_id=payload[CHUNK_ID])
 
 
 def _dict_to_vector_spec(d: dict[str, Any]) -> VectorSpec:
