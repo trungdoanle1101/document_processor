@@ -136,9 +136,7 @@ class SearchQuery:
         ):
             raise ValueError(f"vector_names repeats a name: {self.vector_names}")
         if self.generators == ():
-            raise ValueError(
-                'generators must not be empty; use "none" for no entries'
-            )
+            raise ValueError('generators must not be empty; use "none" for no entries')
         if self.fusion_depth <= 0:
             raise ValueError(f"fusion_depth must be positive, got {self.fusion_depth}")
 

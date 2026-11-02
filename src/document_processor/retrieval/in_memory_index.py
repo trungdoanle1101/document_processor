@@ -24,8 +24,8 @@ from document_processor.retrieval.index import (
     ChunkIndex,
     ChunkKey,
     GeneratedEntry,
-    GeneratorChoice,
     GeneratedEntryKey,
+    GeneratorChoice,
     IndexedChunk,
     SearchQuery,
 )
