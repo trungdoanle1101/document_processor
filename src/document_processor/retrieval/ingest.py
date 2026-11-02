@@ -16,8 +16,10 @@ def to_indexed_chunks(
 ) -> list[IndexedChunk]:
     """The chunker's chunks as the index stores them, in document order"""
     if "part" in attributes:
-        raise ValueError('attribute name "part" is reserved: ingest sets it from each chunk; use a different name if needed')
-    
+        raise ValueError(
+            'attribute name "part" is reserved: ingest sets it from each chunk; use a different name if needed'
+        )
+
     return [
         IndexedChunk(
             document_id=document_id,
