@@ -1,0 +1,37 @@
+[project]
+name = "kb-server"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "trungdoanle1101", email = "trungdoanle1101@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.20.1",
+    "argon2-cffi>=25.1.0",
+    "boto3>=1.43.123",
+    "document-processor[huggingface,ollama,qdrant]",
+    "fastapi>=0.115",
+    "psycopg[binary]>=3.2",
+    "pydantic-settings>=2.16.2",
+    "python-multipart>=0.0.33",
+    "sqlalchemy>=2.0",
+    "uvicorn[standard]>=0.32",
+]
+
+[project.scripts]
+kb-server = "kb_server:main"
+
+[build-system]
+requires = ["uv_build>=0.12.12,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+document-processor = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "boto3-stubs[s3]>=1.43.123",
+    "testcontainers[postgres]>=4.15.0",
+]

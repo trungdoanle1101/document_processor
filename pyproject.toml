@@ -34,7 +34,13 @@ build-backend = "hatchling.build"
 packages = ["src/document_processor"]
 
 [tool.ruff]
-src = ["src"]
+src = ["src", "apps/server/src", "apps/cli/src"]
+
+[tool.uv.workspace]
+members = [
+    "apps/server",
+    "apps/cli",
+]
 
 [dependency-groups]
 dev = [
