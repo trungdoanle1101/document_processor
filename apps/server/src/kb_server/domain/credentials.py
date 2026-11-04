@@ -10,7 +10,10 @@ from kb_server.domain.users import User
 CredentialKind = Literal["session", "api_key"]
 CREDENTIAL_KINDS = get_args(CredentialKind)
 
-_MARKERS: dict[CredentialKind, str] = {"session": "kb_s_", "api_key": "kb_k_"}
+_CREDENTIAL_MARKERS: dict[CredentialKind, str] = {
+    "session": "kb_s_",
+    "api_key": "kb_k_",
+}
 _PREFIX_LENGTH = 12
 
 
@@ -34,7 +37,12 @@ class Principal:
 
     user: User
     credential_id: uuid.UUID
+    credential_kind: CredentialKind
     acting_for_others: bool  # True when an act_for_users key named another user
+
+    def __post_init__(self) -> None:
+        if self.acting_for_others and self.credential_kind != "api_key":
+            raise ValueError("only an API key can act for other users")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -52,8 +60,16 @@ class NewToken:
     token_hash: str  # what to store
 
 
+class NotAllowed(Exception):
+    """The principal may not do this."""
+
+
+class CredentialNotFound(Exception):
+    """No such credential, or not the caller's."""
+
+
 def new_token(kind: CredentialKind) -> NewToken:
-    token = _MARKERS[kind] + secrets.token_urlsafe(32)
+    token = _CREDENTIAL_MARKERS[kind] + secrets.token_urlsafe(32)
     return NewToken(
         token=token, prefix=token[:_PREFIX_LENGTH], token_hash=hash_token(token)
     )
@@ -61,3 +77,7 @@ def new_token(kind: CredentialKind) -> NewToken:
 
 def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+def looks_like_token(token: str) -> bool:
+    return token.startswith(tuple(_CREDENTIAL_MARKERS.values()))
