@@ -5,14 +5,13 @@ from datetime import datetime, timedelta
 from kb_server.domain.credentials import (
     Credential,
     CredentialKind,
-    CredentialNotFound,
     IssuedToken,
-    NotAllowed,
     Principal,
     hash_token,
     looks_like_token,
     new_token,
 )
+from kb_server.domain.errors import CredentialNotFound, InvalidRequest, NotAllowed
 from kb_server.domain.users import User
 from kb_server.services.passwords import Passwords
 from kb_server.storage.repositories.credentials import CredentialRepository
@@ -130,7 +129,7 @@ class AuthService:
             )
 
         if expires_at is not None and expires_at <= self._now():
-            raise ValueError("expires_at must be in the future")
+            raise InvalidRequest("expires_at must be in the future")
 
         if owner.credential_kind != "session":
             raise NotAllowed("API keys can only be created after logging in")
@@ -158,10 +157,10 @@ class AuthService:
             raise NotAllowed("API keys can only be created after logging in")
 
         if expires_at is not None and expires_at <= self._now():
-            raise ValueError("expires_at must be in the future")
+            raise InvalidRequest("expires_at must be in the future")
 
         if self._users.get(service_user_id) is None:
-            raise ValueError("unknown service_user_id")
+            raise InvalidRequest("unknown service_user_id")
 
         return self._issue(
             user_id=service_user_id,

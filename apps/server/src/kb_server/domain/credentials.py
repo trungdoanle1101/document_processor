@@ -60,14 +60,6 @@ class NewToken:
     token_hash: str  # what to store
 
 
-class NotAllowed(Exception):
-    """The principal may not do this."""
-
-
-class CredentialNotFound(Exception):
-    """No such credential, or not the caller's."""
-
-
 def new_token(kind: CredentialKind) -> NewToken:
     token = _CREDENTIAL_MARKERS[kind] + secrets.token_urlsafe(32)
     return NewToken(

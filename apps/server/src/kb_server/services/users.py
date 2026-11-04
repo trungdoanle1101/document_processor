@@ -18,4 +18,3 @@ class UserService:
             role=role,
             password_hash=self._passwords.hash(password),
         )
-

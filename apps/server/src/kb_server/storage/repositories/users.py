@@ -4,7 +4,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from kb_server.domain.users import EmailTaken, User, UserRole, normalize_email
+from kb_server.domain.errors import EmailTaken
+from kb_server.domain.users import User, UserRole, normalize_email
 from kb_server.storage.models import UserRow
 
 

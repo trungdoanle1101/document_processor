@@ -6,3 +6,5 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="KB_", env_file=".env", extra="ignore")
     database_url: str
+    session_ttl_hours: int
+    act_for_headers: tuple[str, ...] = ("x-act-for-user",)

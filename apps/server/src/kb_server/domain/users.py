@@ -17,9 +17,5 @@ class User:
     created_at: datetime
 
 
-class EmailTaken(Exception):
-    """A user with this email already exists"""
-
-
 def normalize_email(email: str) -> str:
     return email.strip().lower()
