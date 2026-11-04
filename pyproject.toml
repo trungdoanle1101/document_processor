@@ -36,6 +36,9 @@ packages = ["src/document_processor"]
 [tool.ruff]
 src = ["src", "apps/server/src", "apps/cli/src"]
 
+[tool.mypy]
+plugins = ["pydantic.mypy"]
+
 [tool.uv.workspace]
 members = [
     "apps/server",
