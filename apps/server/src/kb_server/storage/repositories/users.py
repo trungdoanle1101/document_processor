@@ -36,22 +36,22 @@ class UserRepository:
             if self.get_by_email(email) is not None:
                 raise EmailTaken(email) from error
             raise
-        return _to_user(row)
+        return to_user(row)
 
     def get(self, user_id: uuid.UUID) -> User | None:
         row = self._session.get(UserRow, user_id)
-        return _to_user(row) if row is not None else None
+        return to_user(row) if row is not None else None
 
     def get_by_email(self, email: str) -> User | None:
         row = self._row_by_email(email)
-        return _to_user(row) if row is not None else None
+        return to_user(row) if row is not None else None
 
     def get_credentials_by_email(self, email: str) -> tuple[User, str] | None:
         """Returns User and the password hash."""
         row = self._row_by_email(email)
         if row is None:
             return None
-        return _to_user(row), row.password_hash
+        return to_user(row), row.password_hash
 
     def _row_by_email(self, email: str) -> UserRow | None:
         return self._session.scalar(
@@ -59,7 +59,7 @@ class UserRepository:
         )
 
 
-def _to_user(row: UserRow) -> User:
+def to_user(row: UserRow) -> User:
     return User(
         id=row.id,
         email=row.email,
