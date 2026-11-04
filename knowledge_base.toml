@@ -1,0 +1,46 @@
+# Knowledge base settings. Copy to knowledge_base.toml and adjust.
+# Anything left out keeps its default; unknown keys are refused, so typos show up.
+
+registry = "data/knowledge_base.sqlite3"  # which documents are indexed, and their history
+qdrant_url = "http://localhost:6333"
+collection = "knowledge-base"
+profile = "vn_regulation"                 # how documents are structured (a name in PROFILES)
+chunk_tokens = 512
+default_groups = ["public"]               # what readers not listed under [users] may read
+# Lets a running server add and remove documents (add/remove --server URL).
+# Leave it out to allow that only through the CLI. Use a long random value, e.g.
+#   python -c "import secrets; print(secrets.token_urlsafe(32))"
+admin_token = "ZJ8gULheM84i4c4QOLgPWtOq8zGcuDp3hO7WGoua4oo"
+
+[embedder]
+spec = "bge-m3"                           # a name in HUGGINGFACE_MODEL_SPECS
+folder = "huggingface/BAAI/bge_m3"        # downloaded here on first start
+device = "cpu"                           # auto, cuda, mps or cpu
+
+[reranker]
+enabled = true                            # false: rank by the index alone
+spec = "bge-reranker-v2-m3"
+folder = "huggingface/BAAI/bge_reranker_v2_m3"
+device = "cpu"
+depth = 20                                # hits the reranker sees per question
+
+[chat]
+model = "qwen3:4b-instruct"                        # an Ollama model tag; fits in 6 GB of GPU memory
+url = "http://localhost:11434"
+context_size = 8192
+temperature = 0.0
+think = false                             # qwen3 thinks by default; slower, rarely better here
+max_tokens = 1024
+
+[answer]
+template = "vn_regulation"                # a name in ANSWER_STYLES (vn_regulation, general_en)
+passages = 8                              # passages shown to the model
+min_score = 0.3                           # best passage below this: answer "not found" without the model
+min_passage_score = 0.05                  # passages below this are left out
+section_chars = 10000                     # hits sharing a section bring the rest of it, up to this
+
+# Who may read what. A reader is named by the X-Reader header, or by the email
+# Open WebUI forwards (ENABLE_FORWARD_USER_INFO_HEADERS=true). Readers not listed
+# get default_groups (top of the file). These are placeholders: use your own.
+[users]
+"trung@example.com" = ["public", "it", "hr"]

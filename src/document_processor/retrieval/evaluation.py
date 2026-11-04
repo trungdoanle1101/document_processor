@@ -12,10 +12,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Literal, Protocol
+from typing import Any, Literal
 
 from document_processor.retrieval.index import IndexedChunk
-from document_processor.retrieval.search import RetrievedChunk
+from document_processor.retrieval.search import RetrievedChunk, Search
 
 type MatchLevel = Literal["document", "section", "passage"]
 MATCH_LEVELS: tuple[MatchLevel, ...] = ("document", "section", "passage")
@@ -98,10 +98,6 @@ class EvaluationQuestion:
             for level in MATCH_LEVELS
             if all(answer.can_match(level) for answer in self.answers)
         )
-
-
-class Search(Protocol):
-    def __call__(self, question: str, *, limit: int) -> list[RetrievedChunk]: ...
 
 
 @dataclass(frozen=True, kw_only=True)

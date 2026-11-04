@@ -1,5 +1,6 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Protocol
 
 from document_processor.retrieval.embedding import Embedder
 from document_processor.retrieval.index import (
@@ -22,6 +23,15 @@ class RetrievedChunk:
     index_score: float
     rerank_score: float | None
     found_through: tuple[GeneratedEntry, ...] = ()
+    # the section this chunk was added to complete (see sections.py); None: found by search
+    completed_section: str | None = None
+
+
+class Search(Protocol):
+    """A search with everything but the question and the limit already chosen,
+    e.g. functools.partial(search_chunks, embedder=..., index=...)."""
+
+    def __call__(self, question: str, *, limit: int) -> list[RetrievedChunk]: ...
 
 
 def search_chunks(

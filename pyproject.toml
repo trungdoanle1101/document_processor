@@ -24,6 +24,14 @@ embedding = [
 qdrant = [
     "qdrant-client>=1.20.0",
 ]
+app = [
+    "fastapi>=0.115",
+    "httpx>=0.28",
+    "uvicorn>=0.32",
+]
+ollama = [
+    "httpx>=0.28",
+]
 
 
 [build-system]
@@ -31,7 +39,7 @@ requires=["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/document_processor"]
+packages = ["src/document_processor", "src/knowledge_base"]
 
 [tool.ruff]
 src = ["src"]
