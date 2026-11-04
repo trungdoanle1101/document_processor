@@ -18,7 +18,7 @@ class Passwords:
             )
         except VerificationError:
             return False
-        return password_hash is None
+        return password_hash is not None
 
     def needs_rehash(self, password_hash: str) -> bool:
         return self._hasher.check_needs_rehash(password_hash)

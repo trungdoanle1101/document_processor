@@ -1,7 +1,7 @@
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import Connection, create_engine, pool
 
 from kb_server.settings import Settings
 from kb_server.storage import models  # noqa: F401
@@ -11,7 +11,6 @@ from kb_server.storage.database import Base
 # access to the values within the .ini file in use.
 config = context.config
 
-config.set_main_option("sqlalchemy.url", Settings().database_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -61,17 +60,19 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    connection = config.attributes.get("connection")
+    if connection is not None:
+        _run_migrations(connection)
+        return
+    engine = create_engine(Settings().database_url, poolclass=pool.NullPool)
+    with engine.connect() as connection:
+        _run_migrations(connection)
 
-    with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
 
-        with context.begin_transaction():
-            context.run_migrations()
+def _run_migrations(connection: Connection) -> None:
+    context.configure(connection=connection, target_metadata=target_metadata)
+    with context.begin_transaction():
+        context.run_migrations()
 
 
 if context.is_offline_mode():

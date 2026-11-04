@@ -1,4 +1,4 @@
-from http.client import OK, SERVICE_UNAVAILABLE
+from http import HTTPStatus
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -17,13 +17,13 @@ def health() -> dict[str, str]:
 
 @router.get("/ready")
 def ready(services: ServicesDep) -> JSONResponse:
-    with services.engine.connect() as connection:
-        try:
+    try:
+        with services.engine.connect() as connection:
             connection.execute(text("SELECT 1"))
-        except OperationalError:
-            return JSONResponse(
-                status_code=SERVICE_UNAVAILABLE,
-                content="database unreachable",
-            )
+    except OperationalError:
+        return JSONResponse(
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+            content={"status": "database unreachable"},
+        )
 
-    return JSONResponse(status_code=OK, content="ready")
+    return JSONResponse(status_code=HTTPStatus.OK, content={"status": "ready"})

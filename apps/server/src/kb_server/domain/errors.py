@@ -7,7 +7,7 @@ class NotAllowed(Exception):
 
 
 class EmailTaken(Exception):
-    """A user with this email already exists"""
+    """A user with this email already exists."""
 
 
 class CredentialNotFound(Exception):
@@ -15,4 +15,4 @@ class CredentialNotFound(Exception):
 
 
 class NotAuthenticated(Exception):
-    """No credential, or one that isn't usable"""
+    """No credential, or one that isn't usable."""

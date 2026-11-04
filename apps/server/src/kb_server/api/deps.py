@@ -1,13 +1,13 @@
 from collections.abc import Callable, Iterator, Sequence
-from datetime import UTC, datetime, timedelta
-from http.client import FORBIDDEN
+from datetime import timedelta
 from typing import Annotated, cast
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from kb_server.domain.credentials import NotAuthenticated, Principal
+from kb_server.domain.credentials import Principal
+from kb_server.domain.errors import NotAllowed, NotAuthenticated
 from kb_server.domain.users import UserRole
 from kb_server.services.auth import AuthService
 from kb_server.storage.repositories.credentials import CredentialRepository
@@ -36,7 +36,7 @@ def get_auth_service(session: SessionDep, services: ServicesDep) -> AuthService:
         credentials=CredentialRepository(session),
         passwords=services.passwords,
         session_ttl=timedelta(hours=services.settings.session_ttl_hours),
-        now=lambda: datetime.now(UTC),
+        now=services.clock,
     )
 
 
@@ -68,7 +68,7 @@ CurrentPrincipal = Annotated[Principal, Depends(get_principal)]
 def require_role(*roles: UserRole) -> Callable[[Principal], Principal]:
     def check(principal: CurrentPrincipal) -> Principal:
         if principal.user.role not in roles:
-            raise HTTPException(status_code=FORBIDDEN, detail="Not allowed.")
+            raise NotAllowed()
         return principal
 
     return check

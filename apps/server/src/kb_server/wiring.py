@@ -1,4 +1,6 @@
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from argon2 import PasswordHasher
 from sqlalchemy import Engine, create_engine
@@ -8,12 +10,17 @@ from kb_server.services.passwords import Passwords
 from kb_server.settings import Settings
 
 
+def utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
 @dataclass(frozen=True, kw_only=True)
 class Services:
     settings: Settings
     engine: Engine
     session_factory: sessionmaker[Session]
     passwords: Passwords
+    clock: Callable[[], datetime] = utc_now
 
 
 def build_services(settings: Settings) -> Services:
