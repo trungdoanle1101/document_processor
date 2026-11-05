@@ -7,7 +7,10 @@ from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from kb_server.services.passwords import Passwords
+from kb_server.services.users import UserService
 from kb_server.settings import Settings
+from kb_server.storage.repositories.credentials import CredentialRepository
+from kb_server.storage.repositories.users import UserRepository
 
 
 def utc_now() -> datetime:
@@ -35,3 +38,12 @@ def build_services(settings: Settings) -> Services:
 
 def close_services(services: Services) -> None:
     services.engine.dispose()
+
+
+def build_user_service(services: Services, session: Session) -> UserService:
+    return UserService(
+        users=UserRepository(session),
+        credentials=CredentialRepository(session),
+        passwords=services.passwords,
+        now=services.clock,
+    )
