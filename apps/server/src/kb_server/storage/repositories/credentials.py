@@ -100,6 +100,24 @@ class CredentialRepository:
         )
         return result.rowcount
 
+    def revoke_other_sessions(
+        self, user_id: uuid.UUID, *, keep: uuid.UUID, now: datetime
+    ) -> int:
+        result = cast(
+            CursorResult[Any],
+            self._session.execute(
+                update(CredentialRow)
+                .where(
+                    CredentialRow.user_id == user_id,
+                    CredentialRow.revoked_at.is_(None),
+                    CredentialRow.id != keep,
+                    CredentialRow.kind == "session",
+                )
+                .values(revoked_at=now)
+            ),
+        )
+        return result.rowcount
+
     def list_for_user(
         self, user_id: uuid.UUID, *, kind: CredentialKind
     ) -> list[Credential]:

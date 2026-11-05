@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -53,6 +53,42 @@ class UserRepository:
         if row is None:
             return None
         return to_user(row), row.password_hash
+
+    def list_all(self) -> list[User]:
+        rows = self._session.scalars(select(UserRow).order_by(UserRow.email)).all()
+        return [to_user(row) for row in rows]
+
+    def has_admin(self) -> bool:
+        rows = self._session.scalars(
+            select(UserRow.id).where(UserRow.role == "admin").limit(1)
+        ).all()
+        return bool(rows)
+
+    def update(
+        self,
+        user_id: uuid.UUID,
+        *,
+        display_name: str,
+        role: UserRole,
+        is_active: bool,
+    ) -> None:
+        payload = {
+            "display_name": display_name,
+            "role": role,
+            "is_active": is_active,
+        }
+        self._session.execute(
+            update(UserRow).where(UserRow.id == user_id).values(**payload)
+        )
+
+    def set_password_hash(self, user_id: uuid.UUID, password_hash: str) -> None:
+        (
+            self._session.execute(
+                update(UserRow)
+                .where(UserRow.id == user_id)
+                .values(password_hash=password_hash)
+            ),
+        )
 
     def _row_by_email(self, email: str) -> UserRow | None:
         return self._session.scalar(

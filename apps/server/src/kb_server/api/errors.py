@@ -6,11 +6,13 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from kb_server.domain.errors import (
+    AdminExists,
     CredentialNotFound,
     EmailTaken,
     InvalidRequest,
     NotAllowed,
     NotAuthenticated,
+    UserNotFound,
 )
 
 _CODES = {
@@ -22,6 +24,7 @@ _CODES = {
 
 
 def register_error_handlers(app: FastAPI) -> None:
+    app.add_exception_handler(AdminExists, _admin_exists)
     app.add_exception_handler(CredentialNotFound, _credential_not_found)
     app.add_exception_handler(EmailTaken, _email_taken)
     app.add_exception_handler(InvalidRequest, _invalid_request)
@@ -29,6 +32,15 @@ def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(NotAuthenticated, _not_authenticated)
     app.add_exception_handler(RequestValidationError, _request_validation_error)
     app.add_exception_handler(StarletteHTTPException, _starlette_http_exception)
+    app.add_exception_handler(UserNotFound, _user_not_found)
+
+
+def _admin_exists(request: Request, error: Exception) -> JSONResponse:
+    return _error(
+        HTTPStatus.CONFLICT,
+        "admin_exists",
+        str(error) or "admin alreay exists: can't create a new one",
+    )
 
 
 def _email_taken(request: Request, error: Exception) -> JSONResponse:
@@ -101,6 +113,12 @@ def _starlette_http_exception(request: Request, error: Exception) -> JSONRespons
         code,
         message,
         headers=dict(error.headers) if error.headers is not None else None,
+    )
+
+
+def _user_not_found(request: Request, error: Exception) -> JSONResponse:
+    return _error(
+        HTTPStatus.NOT_FOUND, "user_not_found", str(error) or "user not found"
     )
 
 

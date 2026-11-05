@@ -117,7 +117,7 @@ def make_user(users: UserRepository, passwords: Passwords) -> Callable[..., User
     """make_user("an@example.com", role="admin") -> a saved user whose password is PASSWORD."""
 
     def make(email: str, *, role: UserRole = "reader") -> User:
-        return UserService(users, passwords).create(
+        return UserService(users, passwords)._create(
             email=email, display_name=email.split("@")[0], role=role, password=PASSWORD
         )
 

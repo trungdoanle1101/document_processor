@@ -10,7 +10,7 @@ from tests.support import PASSWORD
 def test_a_new_users_password_is_stored_hashed(
     session: Session, users: UserRepository, passwords: Passwords
 ) -> None:
-    user = UserService(users, passwords).create(
+    user = UserService(users, passwords)._create(
         email="an@example.com", display_name="An", role="reader", password=PASSWORD
     )
 

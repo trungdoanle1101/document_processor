@@ -18,6 +18,12 @@ DisplayName = Annotated[
 ]
 
 
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: Annotated[str, Field(min_length=12, max_length=128)]
+    model_config = ConfigDict(extra="forbid")
+
+
 class UserCreate(BaseModel):
     email: EmailStr
     display_name: DisplayName
@@ -30,6 +36,13 @@ class UserCreate(BaseModel):
     @classmethod
     def _normalize_email(cls, value: str) -> str:
         return normalize_email(value)
+
+
+class UserUpdate(BaseModel):
+    display_name: DisplayName | None = None
+    role: UserRole | None = None
+    is_active: bool | None = None
+    model_config = ConfigDict(extra="forbid")
 
 
 class UserOut(BaseModel):
