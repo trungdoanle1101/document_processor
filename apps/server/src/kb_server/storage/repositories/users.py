@@ -59,10 +59,12 @@ class UserRepository:
         return [to_user(row) for row in rows]
 
     def has_admin(self) -> bool:
-        rows = self._session.scalars(
-            select(UserRow.id).where(UserRow.role == "admin").limit(1)
-        ).all()
-        return bool(rows)
+        return (
+            self._session.scalars(
+                select(UserRow.id).where(UserRow.role == "admin").limit(1)
+            ).first()
+            is not None
+        )
 
     def update(
         self,
@@ -72,22 +74,17 @@ class UserRepository:
         role: UserRole,
         is_active: bool,
     ) -> None:
-        payload = {
-            "display_name": display_name,
-            "role": role,
-            "is_active": is_active,
-        }
         self._session.execute(
-            update(UserRow).where(UserRow.id == user_id).values(**payload)
+            update(UserRow)
+            .where(UserRow.id == user_id)
+            .values(display_name=display_name, role=role, is_active=is_active)
         )
 
     def set_password_hash(self, user_id: uuid.UUID, password_hash: str) -> None:
-        (
-            self._session.execute(
-                update(UserRow)
-                .where(UserRow.id == user_id)
-                .values(password_hash=password_hash)
-            ),
+        self._session.execute(
+            update(UserRow)
+            .where(UserRow.id == user_id)
+            .values(password_hash=password_hash)
         )
 
     def _row_by_email(self, email: str) -> UserRow | None:

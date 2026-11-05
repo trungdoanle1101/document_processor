@@ -39,7 +39,7 @@ def _admin_exists(request: Request, error: Exception) -> JSONResponse:
     return _error(
         HTTPStatus.CONFLICT,
         "admin_exists",
-        str(error) or "admin alreay exists: can't create a new one",
+        str(error) or "admin already exists: can't create a new one",
     )
 
 

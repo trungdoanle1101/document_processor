@@ -19,6 +19,7 @@ from kb_server.storage.repositories.users import UserRepository
 class UserService:
     def __init__(
         self,
+        *,
         users: UserRepository,
         credentials: CredentialRepository,
         passwords: Passwords,
@@ -76,17 +77,11 @@ class UserService:
     ) -> User:
         self._require_admin(admin)
         user = self.get_user(admin, user_id)
-        if user_id == admin.user.id and (role is not None or is_active is not None):
+        if user_id == admin.user.id and (
+            role not in (None, user.role) or is_active not in (None, user.is_active)
+        ):
             raise NotAllowed("an admin can't change their own role or is_active status")
 
-        self._users.update(
-            user_id=user_id,
-            display_name=display_name
-            if display_name is not None
-            else user.display_name,
-            role=role if role is not None else user.role,
-            is_active=is_active if is_active is not None else user.is_active,
-        )
         new = replace(
             user,
             display_name=display_name
@@ -95,16 +90,24 @@ class UserService:
             role=role if role is not None else user.role,
             is_active=is_active if is_active is not None else user.is_active,
         )
+        self._users.update(
+            user_id=user_id,
+            display_name=new.display_name,
+            role=new.role,
+            is_active=new.is_active,
+        )
 
         # Revoke all credentials belonging to this user if they become inactive
-        if not new.is_active:
+        if user.is_active and not new.is_active:
             self._credentials.revoke_all(user_id, now=self._now())
 
         return new
 
     def change_password(self, principal: Principal, *, current: str, new: str) -> None:
+        if current == new:
+            raise NotAllowed("current and new passwords must be different")
         if principal.acting_for_others:
-            raise NotAllowed("a front-end key can't chaange a user's password")
+            raise NotAllowed("a front-end key can't change a user's password")
         if principal.credential_kind != "session":
             raise NotAllowed("log in to change your password")
 

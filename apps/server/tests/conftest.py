@@ -113,12 +113,27 @@ def auth(
 
 
 @pytest.fixture
+def user_service(
+    users: UserRepository,
+    credentials: CredentialRepository,
+    passwords: Passwords,
+    clock: FakeClock,
+) -> UserService:
+    return UserService(
+        users=users, credentials=credentials, passwords=passwords, now=clock
+    )
+
+
+@pytest.fixture
 def make_user(users: UserRepository, passwords: Passwords) -> Callable[..., User]:
     """make_user("an@example.com", role="admin") -> a saved user whose password is PASSWORD."""
 
     def make(email: str, *, role: UserRole = "reader") -> User:
-        return UserService(users, passwords)._create(
-            email=email, display_name=email.split("@")[0], role=role, password=PASSWORD
+        return users.add(
+            email=email,
+            display_name=email.split("@")[0],
+            role=role,
+            password_hash=passwords.hash(PASSWORD),
         )
 
     return make
