@@ -79,17 +79,22 @@ class UserService:
         if user_id == admin.user.id and (role is not None or is_active is not None):
             raise NotAllowed("an admin can't change their own role or is_active status")
 
-        payload = {
-            "display_name": display_name,
-            "role": role,
-            "is_active": is_active,
-        }
-
-        update_fields = {
-            key: value for key, value in payload.items() if value is not None
-        }
-        self._users.update(user_id, display_name=display_name, **update_fields)
-        new = replace(user, **update_fields)
+        self._users.update(
+            user_id=user_id,
+            display_name=display_name
+            if display_name is not None
+            else user.display_name,
+            role=role if role is not None else user.role,
+            is_active=is_active if is_active is not None else user.is_active,
+        )
+        new = replace(
+            user,
+            display_name=display_name
+            if display_name is not None
+            else user.display_name,
+            role=role if role is not None else user.role,
+            is_active=is_active if is_active is not None else user.is_active,
+        )
 
         # Revoke all credentials belonging to this user if they become inactive
         if not new.is_active:
@@ -125,7 +130,7 @@ class UserService:
             password_hash=self._passwords.hash(password),
         )
 
-    def _require_admin(principal: Principal) -> None:
+    def _require_admin(self, principal: Principal) -> None:
         if principal.acting_for_others:
             raise NotAllowed("a front-end key can't manage users")
         if principal.user.role != "admin":
