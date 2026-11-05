@@ -74,6 +74,16 @@ def require_role(*roles: UserRole) -> Callable[[Principal], Principal]:
     return check
 
 
+def require_admin(principal: CurrentPrincipal) -> Principal:
+    """An admin acting as themselves; a front end acting for an admin doesn't count."""
+    if not principal.is_admin:
+        raise NotAllowed()
+    return principal
+
+
+AdminPrincipal = Annotated[Principal, Depends(require_admin)]
+
+
 def _acting_for(request: Request, header_names: Sequence[str]) -> str | None:
     """The user a front end says it's acting for, from the first configured header present."""
     values = {request.headers[name] for name in header_names if name in request.headers}

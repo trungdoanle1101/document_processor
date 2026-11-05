@@ -40,6 +40,10 @@ class CredentialRepository:
         self._session.flush()
         return to_credential(row)
 
+    def get(self, credential_id: uuid.UUID) -> Credential | None:
+        row = self._session.get(CredentialRow, credential_id)
+        return to_credential(row) if row is not None else None
+
     def find_usable(
         self, token_hash: str, *, now: datetime
     ) -> tuple[Credential, User] | None:
@@ -72,6 +76,7 @@ class CredentialRepository:
     def revoke(
         self, credential_id: uuid.UUID, *, owner_id: uuid.UUID, now: datetime
     ) -> bool:
+        """Revoke a credential belonging to an owner."""
         result = cast(
             CursorResult[Any],
             self._session.execute(
@@ -79,6 +84,22 @@ class CredentialRepository:
                 .where(
                     CredentialRow.id == credential_id,
                     CredentialRow.user_id == owner_id,
+                    CredentialRow.revoked_at.is_(None),
+                )
+                .values(revoked_at=now)
+            ),
+        )
+        return result.rowcount == 1
+
+    def revoke_api_key(self, credential_id: uuid.UUID, *, now: datetime) -> bool:
+        """Revoke an API key whoever owns it."""
+        result = cast(
+            CursorResult[Any],
+            self._session.execute(
+                update(CredentialRow)
+                .where(
+                    CredentialRow.id == credential_id,
+                    CredentialRow.kind == "api_key",
                     CredentialRow.revoked_at.is_(None),
                 )
                 .values(revoked_at=now)

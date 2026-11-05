@@ -6,6 +6,8 @@ from typing import Literal, get_args
 UserRole = Literal["reader", "manager", "admin"]
 USER_ROLES = get_args(UserRole)
 
+MIN_PASSWORD_LEN = 12
+
 
 @dataclass(frozen=True, kw_only=True)
 class User:

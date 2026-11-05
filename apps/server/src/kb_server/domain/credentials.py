@@ -44,6 +44,11 @@ class Principal:
         if self.acting_for_others and self.credential_kind != "api_key":
             raise ValueError("only an API key can act for other users")
 
+    @property
+    def is_admin(self) -> bool:
+        """An admin acting as themselves; not a front-end key acting for one."""
+        return self.user.role == "admin" and not self.acting_for_others
+
 
 @dataclass(frozen=True, kw_only=True)
 class IssuedToken:

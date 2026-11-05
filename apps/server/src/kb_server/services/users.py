@@ -134,7 +134,5 @@ class UserService:
         )
 
     def _require_admin(self, principal: Principal) -> None:
-        if principal.acting_for_others:
-            raise NotAllowed("a front-end key can't manage users")
-        if principal.user.role != "admin":
+        if not principal.is_admin:
             raise NotAllowed("only an admin can manage users")

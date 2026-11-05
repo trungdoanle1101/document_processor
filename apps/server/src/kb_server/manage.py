@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from sqlalchemy.exc import OperationalError
 
 from kb_server.domain.errors import AdminExists, EmailTaken
+from kb_server.domain.users import MIN_PASSWORD_LEN
 from kb_server.settings import Settings
 from kb_server.wiring import (
     Services,
@@ -64,13 +65,15 @@ def create_admin(
 ) -> None:
     """Ask for a password, then create the first admin."""
     password = read_password("Password: ")
+    if len(password) < MIN_PASSWORD_LEN:
+        sys.exit("Password must be at least 12 characters.")
     password_verify = read_password("Repeat password: ")
     if password != password_verify:
         sys.exit("The passwords don't match.")
 
     try:
         with services.session_factory.begin() as session:
-            user_service_ = build_user_service(services, session)
+            user_service_ = build_user_service(session, services)
             user = user_service_.create_first_admin(
                 email=email, display_name=display_name, password=password
             )

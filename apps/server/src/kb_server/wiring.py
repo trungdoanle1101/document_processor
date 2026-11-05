@@ -41,7 +41,7 @@ def close_services(services: Services) -> None:
     services.engine.dispose()
 
 
-def build_user_service(services: Services, session: Session) -> UserService:
+def build_user_service(session: Session, services: Services) -> UserService:
     return UserService(
         users=UserRepository(session),
         credentials=CredentialRepository(session),

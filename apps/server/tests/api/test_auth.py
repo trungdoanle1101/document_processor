@@ -49,7 +49,7 @@ def test_the_token_from_login_works(client: TestClient, an: User) -> None:
     token = log_in(client)
 
     # logging out needs a usable session, so it's the simplest proof for now
-    assert client.post(LOGOUT, headers=bearer(token)).status_code == 204
+    assert client.get("/api/v1/me", headers=bearer(token)).status_code == 200
 
 
 def test_login_ignores_the_case_of_the_email(client: TestClient, an: User) -> None:

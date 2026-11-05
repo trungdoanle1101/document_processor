@@ -74,6 +74,7 @@ class AuthService:
         )
 
     def resolve(self, token: str, *, acting_for: str | None = None) -> Principal | None:
+        """Resolving the Principal represented by the token."""
         # Check potential junk key
         if not looks_like_token(token):
             return None
@@ -122,7 +123,7 @@ class AuthService:
     def create_key(
         self, owner: Principal, *, name: str, expires_at: datetime | None = None
     ) -> IssuedToken:
-
+        """Create a new key."""
         if owner.acting_for_others:
             raise NotAllowed(
                 "a front-end key can't create keys for the users it acts for"
@@ -150,6 +151,7 @@ class AuthService:
         name: str,
         expires_at: datetime | None = None,
     ) -> IssuedToken:
+        """Create a front-end key. Only admin allowed to do this."""
         if admin.user.role != "admin":
             raise NotAllowed("front-end keys can only be created by admins")
 
@@ -171,11 +173,13 @@ class AuthService:
         )
 
     def list_keys(self, owner: Principal) -> list[Credential]:
+        """List keys owned by oneself."""
         if owner.acting_for_others:
             raise NotAllowed("not allowed to list other users' keys")
         return self._credentials.list_for_user(owner.user.id, kind="api_key")
 
     def revoke_key(self, owner: Principal, key_id: uuid.UUID) -> None:
+        """Revoke a key owned by oneself."""
         if owner.acting_for_others:
             raise NotAllowed("not allowed to revoke other users' keys")
         revoked = self._credentials.revoke(
@@ -185,6 +189,20 @@ class AuthService:
         )
         if not revoked:
             raise CredentialNotFound("key not found for the owner")
+
+    def list_user_keys(self, admin: Principal, user_id: uuid.UUID) -> list[Credential]:
+        """List keys that belong to another user. Only admin allowed to do this."""
+        if not admin.is_admin:
+            raise NotAllowed("only an admin can list other users' keys")
+        return self._credentials.list_for_user(user_id, kind="api_key")
+
+    def revoke_user_key(self, admin: Principal, key_id: uuid.UUID) -> None:
+        """Revoke any key. Only admin allowed to do this."""
+        if not admin.is_admin:
+            raise NotAllowed("only an admin can revoke other users' keys")
+        revoked = self._credentials.revoke_api_key(key_id, now=self._now())
+        if not revoked:
+            raise CredentialNotFound("no such API key")
 
     def _issue(
         self,
