@@ -9,7 +9,7 @@ from kb_server.domain.credentials import (
     looks_like_token,
     new_token,
 )
-from kb_server.domain.users import User, normalize_email
+from kb_server.domain.users import User, UserRole, normalize_email
 
 
 def test_a_session_token_and_a_key_are_marked_differently() -> None:
@@ -63,3 +63,32 @@ def test_only_an_api_key_can_act_for_others() -> None:
 
 def test_emails_are_compared_trimmed_and_in_lower_case() -> None:
     assert normalize_email("  An@Example.COM ") == "an@example.com"
+
+
+def principal_for(role: UserRole, *, acting_for_others: bool) -> Principal:
+    return Principal(
+        user=User(
+            id=uuid.uuid4(),
+            email="someone@example.com",
+            display_name="Someone",
+            role=role,
+            is_active=True,
+            created_at=datetime(2026, 11, 5, tzinfo=UTC),
+        ),
+        credential_id=uuid.uuid4(),
+        credential_kind="api_key",
+        acting_for_others=acting_for_others,
+    )
+
+
+def test_an_admin_acting_as_themselves_is_an_admin() -> None:
+    assert principal_for("admin", acting_for_others=False).is_admin
+
+
+def test_a_front_end_acting_for_an_admin_is_not_an_admin() -> None:
+    assert not principal_for("admin", acting_for_others=True).is_admin
+
+
+@pytest.mark.parametrize("role", ["reader", "manager"])
+def test_other_roles_are_not_admins(role: UserRole) -> None:
+    assert not principal_for(role, acting_for_others=False).is_admin

@@ -20,19 +20,19 @@ DisplayName = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
 ]
 
-Password = Field(min_length=MIN_PASSWORD_LEN, max_length=128)
+Password = Annotated[str, Field(min_length=MIN_PASSWORD_LEN, max_length=128)]
 
 
 class PasswordChange(BaseModel):
     current_password: str
-    new_password: Annotated[str, Password]
+    new_password: Password
     model_config = ConfigDict(extra="forbid")
 
 
 class UserCreate(BaseModel):
     email: EmailStr
     display_name: DisplayName
-    password: Annotated[str, Password]
+    password: Password
     role: UserRole
 
     model_config = ConfigDict(extra="forbid")

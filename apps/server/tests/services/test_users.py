@@ -373,3 +373,27 @@ def test_a_front_end_key_cannot_change_the_password(
         user_service.change_password(
             as_admin_through_front_end, current=PASSWORD, new=NEW_PASSWORD
         )
+
+
+def test_the_new_password_must_differ_from_the_current_one(
+    user_service: UserService, reader: Principal
+) -> None:
+    with pytest.raises(InvalidRequest):
+        user_service.change_password(reader, current=PASSWORD, new=PASSWORD)
+
+
+def test_a_wrong_current_password_is_reported_even_if_both_match(
+    user_service: UserService, reader: Principal
+) -> None:
+    # the current password is checked first, so this isn't "must be different"
+    with pytest.raises(InvalidRequest, match="current password is wrong"):
+        user_service.change_password(reader, current=NEW_PASSWORD, new=NEW_PASSWORD)
+
+
+def test_a_front_end_key_is_refused_before_the_passwords_are_compared(
+    user_service: UserService, as_admin_through_front_end: Principal
+) -> None:
+    with pytest.raises(NotAllowed):
+        user_service.change_password(
+            as_admin_through_front_end, current=PASSWORD, new=PASSWORD
+        )

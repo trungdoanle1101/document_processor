@@ -31,7 +31,7 @@ class KeyOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class FrontEndkeyCreate(BaseModel):
+class FrontEndKeyCreate(BaseModel):
     service_user_id: uuid.UUID
     name: KeyName
     expires_at: AwareDatetime | None = None
@@ -76,7 +76,7 @@ def revoke_key(
 
 @admin_router.post("", status_code=HTTPStatus.CREATED)
 def create_front_end_key(
-    body: FrontEndkeyCreate, admin: AdminPrincipal, auth_service: AuthServiceDep
+    body: FrontEndKeyCreate, admin: AdminPrincipal, auth_service: AuthServiceDep
 ) -> KeyCreated:
     issued = auth_service.create_front_end_key(
         admin,

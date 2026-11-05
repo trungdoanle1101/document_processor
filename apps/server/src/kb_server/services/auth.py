@@ -11,7 +11,12 @@ from kb_server.domain.credentials import (
     looks_like_token,
     new_token,
 )
-from kb_server.domain.errors import CredentialNotFound, InvalidRequest, NotAllowed
+from kb_server.domain.errors import (
+    CredentialNotFound,
+    InvalidRequest,
+    NotAllowed,
+    UserNotFound,
+)
 from kb_server.domain.users import User
 from kb_server.services.passwords import Passwords
 from kb_server.storage.repositories.credentials import CredentialRepository
@@ -152,7 +157,7 @@ class AuthService:
         expires_at: datetime | None = None,
     ) -> IssuedToken:
         """Create a front-end key. Only admin allowed to do this."""
-        if admin.user.role != "admin":
+        if not admin.is_admin:
             raise NotAllowed("front-end keys can only be created by admins")
 
         if admin.credential_kind != "session":
@@ -194,6 +199,8 @@ class AuthService:
         """List keys that belong to another user. Only admin allowed to do this."""
         if not admin.is_admin:
             raise NotAllowed("only an admin can list other users' keys")
+        if self._users.get(user_id) is None:
+            raise UserNotFound("can't find user with this id")
         return self._credentials.list_for_user(user_id, kind="api_key")
 
     def revoke_user_key(self, admin: Principal, key_id: uuid.UUID) -> None:

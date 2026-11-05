@@ -104,8 +104,6 @@ class UserService:
         return new
 
     def change_password(self, principal: Principal, *, current: str, new: str) -> None:
-        if current == new:
-            raise NotAllowed("current and new passwords must be different")
         if principal.acting_for_others:
             raise NotAllowed("a front-end key can't change a user's password")
         if principal.credential_kind != "session":
@@ -117,6 +115,10 @@ class UserService:
 
         if not self._passwords.verify(password_hash, current):
             raise InvalidRequest("the current password is wrong")
+        if current == new:
+            raise InvalidRequest(
+                "the new password must be different from the current one"
+            )
         self._users.set_password_hash(principal.user.id, self._passwords.hash(new))
         self._credentials.revoke_other_sessions(
             principal.user.id, keep=principal.credential_id, now=self._now()

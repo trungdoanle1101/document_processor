@@ -33,6 +33,9 @@ def main(argv: Sequence[str] | None = None) -> None:
     serve_parser = commands.add_parser("serve", help="run the server")
     serve_parser.add_argument("--host", default="127.0.0.1")
     serve_parser.add_argument("--port", type=int, default=8000)
+    serve_parser.add_argument(
+        "--reload", action="store_true", help="restart server when files change"
+    )
 
     args = parser.parse_args(argv)
 
@@ -51,7 +54,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 finally:
                     close_services(services)
             case "serve":
-                serve(args.host, args.port)
+                serve(args.host, args.port, args.reload)
     except KeyboardInterrupt:
         sys.exit(130)
 
@@ -66,7 +69,7 @@ def create_admin(
     """Ask for a password, then create the first admin."""
     password = read_password("Password: ")
     if len(password) < MIN_PASSWORD_LEN:
-        sys.exit("Password must be at least 12 characters.")
+        sys.exit(f"Password must be at least {MIN_PASSWORD_LEN} characters.")
     password_verify = read_password("Repeat password: ")
     if password != password_verify:
         sys.exit("The passwords don't match.")
@@ -88,9 +91,9 @@ def create_admin(
     print(f"Created admin {user.email}.")
 
 
-def serve(host: str, port: int) -> None:
+def serve(host: str, port: int, reload: bool = False) -> None:
     """Run the api with uvicorn."""
-    uvicorn.run("kb_server.app:app", host=host, port=port, reload=True)
+    uvicorn.run("kb_server.app:app", host=host, port=port, reload=reload)
 
 
 if __name__ == "__main__":

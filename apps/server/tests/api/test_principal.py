@@ -10,7 +10,7 @@ import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from kb_server.api.deps import CurrentPrincipal, require_role
+from kb_server.api.deps import AdminPrincipal, CurrentPrincipal, require_role
 from kb_server.app import create_app
 from kb_server.domain.users import User
 from kb_server.services.auth import AuthService
@@ -31,8 +31,14 @@ def probe_app(services: Services) -> FastAPI:
             "acting_for_others": principal.acting_for_others,
         }
 
-    @app.get("/probe/admin", dependencies=[Depends(require_role("admin"))])
-    def admin_only() -> dict[str, str]:
+    @app.get("/probe/admin")
+    def admin_only(principal: AdminPrincipal) -> dict[str, str]:
+        return {"status": "ok"}
+
+    @app.get(
+        "/probe/managers", dependencies=[Depends(require_role("manager", "admin"))]
+    )
+    def managers_only() -> dict[str, str]:
         return {"status": "ok"}
 
     return app
@@ -190,3 +196,38 @@ def test_a_route_for_admins_lets_an_admin_in(
     token, _ = sign_in(auth, "admin@example.com")
 
     assert client.get("/probe/admin", headers=bearer(token)).status_code == 200
+
+
+def test_a_front_end_acting_for_an_admin_is_not_an_admin(
+    client: TestClient, front_end_token: str
+) -> None:
+    response = client.get(
+        "/probe/admin",
+        headers={**bearer(front_end_token), "x-act-for-user": "admin@example.com"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_a_role_route_lets_in_the_listed_roles(
+    client: TestClient, auth: AuthService, make_user: Callable[..., User]
+) -> None:
+    make_user("manager@example.com", role="manager")
+    token, _ = sign_in(auth, "manager@example.com")
+
+    assert client.get("/probe/managers", headers=bearer(token)).status_code == 200
+
+
+def test_a_role_route_refuses_other_roles(client: TestClient, an_token: str) -> None:
+    assert client.get("/probe/managers", headers=bearer(an_token)).status_code == 403
+
+
+def test_a_front_end_gets_the_role_of_the_user_it_acts_for(
+    client: TestClient, front_end_token: str
+) -> None:
+    # chatting through Open WebUI keeps your role, just not admin powers
+    as_admin = {**bearer(front_end_token), "x-act-for-user": "admin@example.com"}
+    as_reader = {**bearer(front_end_token), "x-act-for-user": "binh@example.com"}
+
+    assert client.get("/probe/managers", headers=as_admin).status_code == 200
+    assert client.get("/probe/managers", headers=as_reader).status_code == 403

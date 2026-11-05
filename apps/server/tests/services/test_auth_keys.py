@@ -7,8 +7,13 @@ from datetime import timedelta
 import pytest
 from sqlalchemy.orm import Session
 
-from kb_server.domain.credentials import Principal
-from kb_server.domain.errors import CredentialNotFound, InvalidRequest, NotAllowed
+from kb_server.domain.credentials import IssuedToken, Principal
+from kb_server.domain.errors import (
+    CredentialNotFound,
+    InvalidRequest,
+    NotAllowed,
+    UserNotFound,
+)
 from kb_server.domain.users import User
 from kb_server.services.auth import AuthService
 from tests.support import FakeClock, deactivate, sign_in
@@ -271,3 +276,110 @@ def test_revoking_an_unknown_or_revoked_key_is_not_found(
         auth.revoke_key(an, issued.credential.id)
     with pytest.raises(CredentialNotFound):
         auth.revoke_key(an, uuid.uuid4())
+
+
+# admins managing other users' keys
+
+
+@pytest.fixture
+def front_end_key(
+    auth: AuthService, admin: Principal, service_user: User
+) -> IssuedToken:
+    return auth.create_front_end_key(
+        admin, service_user_id=service_user.id, name="open webui"
+    )
+
+
+def test_an_admin_lists_a_users_api_keys(
+    auth: AuthService, an: Principal, admin: Principal
+) -> None:
+    mine = auth.create_key(an, name="script")
+
+    listed = auth.list_user_keys(admin, an.user.id)
+
+    # API keys only: an's login session isn't listed
+    assert [key.id for key in listed] == [mine.credential.id]
+
+
+def test_an_admin_sees_the_service_users_front_end_key(
+    auth: AuthService, admin: Principal, service_user: User, front_end_key: IssuedToken
+) -> None:
+    (listed,) = auth.list_user_keys(admin, service_user.id)
+
+    assert listed.id == front_end_key.credential.id
+    assert listed.act_for_users
+
+
+def test_listing_the_keys_of_an_unknown_user_is_not_found(
+    auth: AuthService, admin: Principal
+) -> None:
+    with pytest.raises(UserNotFound):
+        auth.list_user_keys(admin, uuid.uuid4())
+
+
+def test_an_admin_revokes_a_front_end_key(
+    auth: AuthService,
+    make_user: Callable[..., User],
+    admin: Principal,
+    front_end_key: IssuedToken,
+) -> None:
+    make_user("binh@example.com")
+
+    auth.revoke_user_key(admin, front_end_key.credential.id)
+
+    assert auth.resolve(front_end_key.token, acting_for="binh@example.com") is None
+
+
+def test_an_admin_revokes_another_users_key(
+    auth: AuthService, an: Principal, admin: Principal
+) -> None:
+    issued = auth.create_key(an, name="script")
+
+    auth.revoke_user_key(admin, issued.credential.id)
+
+    assert auth.resolve(issued.token) is None
+
+
+def test_revoking_an_unknown_or_revoked_key_as_admin_is_not_found(
+    auth: AuthService, admin: Principal, front_end_key: IssuedToken
+) -> None:
+    auth.revoke_user_key(admin, front_end_key.credential.id)
+
+    with pytest.raises(CredentialNotFound):
+        auth.revoke_user_key(admin, front_end_key.credential.id)
+    with pytest.raises(CredentialNotFound):
+        auth.revoke_user_key(admin, uuid.uuid4())
+
+
+def test_a_session_cannot_be_revoked_as_a_key(
+    auth: AuthService, an: Principal, admin: Principal
+) -> None:
+    with pytest.raises(CredentialNotFound):
+        auth.revoke_user_key(admin, an.credential_id)
+    assert auth.list_user_keys(admin, an.user.id) == []  # nothing else touched
+
+
+def test_only_an_admin_manages_other_users_keys(
+    auth: AuthService, make_user: Callable[..., User], an: Principal
+) -> None:
+    make_user("binh@example.com")
+    _, binh = sign_in(auth, "binh@example.com")
+    issued = auth.create_key(binh, name="script")
+
+    with pytest.raises(NotAllowed):
+        auth.list_user_keys(an, binh.user.id)
+    with pytest.raises(NotAllowed):
+        auth.revoke_user_key(an, issued.credential.id)
+    assert auth.resolve(issued.token) is not None
+
+
+def test_a_front_end_acting_for_an_admin_cannot_manage_keys(
+    auth: AuthService, admin: Principal, front_end_key: IssuedToken
+) -> None:
+    as_admin = auth.resolve(front_end_key.token, acting_for="admin@example.com")
+    assert as_admin is not None
+
+    with pytest.raises(NotAllowed):
+        auth.list_user_keys(as_admin, admin.user.id)
+    with pytest.raises(NotAllowed):
+        auth.revoke_user_key(as_admin, front_end_key.credential.id)
