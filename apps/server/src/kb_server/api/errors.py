@@ -10,6 +10,7 @@ from kb_server.domain.errors import (
     CredentialNotFound,
     EmailTaken,
     InvalidRequest,
+    LoginFailed,
     NotAllowed,
     NotAuthenticated,
     UserNotFound,
@@ -33,6 +34,7 @@ def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(RequestValidationError, _request_validation_error)
     app.add_exception_handler(StarletteHTTPException, _starlette_http_exception)
     app.add_exception_handler(UserNotFound, _user_not_found)
+    app.add_exception_handler(LoginFailed, _login_failed)
 
 
 def _admin_exists(request: Request, error: Exception) -> JSONResponse:
@@ -119,6 +121,15 @@ def _starlette_http_exception(request: Request, error: Exception) -> JSONRespons
 def _user_not_found(request: Request, error: Exception) -> JSONResponse:
     return _error(
         HTTPStatus.NOT_FOUND, "user_not_found", str(error) or "user not found"
+    )
+
+
+def _login_failed(request: Request, error: Exception) -> JSONResponse:
+    return _error(
+        HTTPStatus.UNAUTHORIZED,
+        "login_failed",
+        "wrong email or password",
+        headers={"WWW-Authenticate": "Bearer"},
     )
 
 

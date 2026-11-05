@@ -1,11 +1,12 @@
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from argon2 import PasswordHasher
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from kb_server.services.auth import AuthService
 from kb_server.services.passwords import Passwords
 from kb_server.services.users import UserService
 from kb_server.settings import Settings
@@ -45,5 +46,15 @@ def build_user_service(services: Services, session: Session) -> UserService:
         users=UserRepository(session),
         credentials=CredentialRepository(session),
         passwords=services.passwords,
+        now=services.clock,
+    )
+
+
+def build_auth_service(session: Session, services: Services) -> AuthService:
+    return AuthService(
+        users=UserRepository(session),
+        credentials=CredentialRepository(session),
+        passwords=services.passwords,
+        session_ttl=timedelta(hours=services.settings.session_ttl_hours),
         now=services.clock,
     )

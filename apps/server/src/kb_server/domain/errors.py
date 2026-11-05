@@ -24,3 +24,7 @@ class NotAuthenticated(Exception):
 
 class UserNotFound(Exception):
     """No user found for the given information."""
+
+
+class LoginFailed(Exception):
+    """The email and password don't match an active user."""

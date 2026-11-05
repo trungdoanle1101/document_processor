@@ -1,5 +1,4 @@
 from collections.abc import Callable, Iterator, Sequence
-from datetime import timedelta
 from typing import Annotated, cast
 
 from fastapi import Depends, Request
@@ -11,9 +10,7 @@ from kb_server.domain.errors import NotAllowed, NotAuthenticated
 from kb_server.domain.users import UserRole
 from kb_server.services.auth import AuthService
 from kb_server.services.users import UserService
-from kb_server.storage.repositories.credentials import CredentialRepository
-from kb_server.storage.repositories.users import UserRepository
-from kb_server.wiring import Services, build_user_service
+from kb_server.wiring import Services, build_auth_service, build_user_service
 
 
 def get_services(request: Request) -> Services:
@@ -32,13 +29,7 @@ SessionDep = Annotated[Session, Depends(get_session)]
 
 
 def get_auth_service(session: SessionDep, services: ServicesDep) -> AuthService:
-    return AuthService(
-        users=UserRepository(session),
-        credentials=CredentialRepository(session),
-        passwords=services.passwords,
-        session_ttl=timedelta(hours=services.settings.session_ttl_hours),
-        now=services.clock,
-    )
+    return build_auth_service(session, services)
 
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
