@@ -6,6 +6,14 @@ class EmailTaken(Exception):
     """A user with this email already exists."""
 
 
+class GroupNameTaken(Exception):
+    """A group with this name already exists."""
+
+
+class GroupNotFound(Exception):
+    """No such group."""
+
+
 class InvalidRequest(ValueError):
     """The request breaks a rule the service checks."""
 

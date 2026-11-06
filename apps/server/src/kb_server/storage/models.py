@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from tkinter import CASCADE
 
 from sqlalchemy import DateTime, Enum, ForeignKey, String, Uuid, false, func, true
 from sqlalchemy.orm import Mapped, mapped_column
@@ -57,3 +58,23 @@ class CredentialRow(Base):
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class GroupRow(Base):
+    __tablename__ = "groups"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(100), unique=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class UserGroupRow(Base):
+    __tablename__ = "user_groups"
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete=CASCADE), primary_key=True
+    )
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete=CASCADE), primary_key=True
+    )

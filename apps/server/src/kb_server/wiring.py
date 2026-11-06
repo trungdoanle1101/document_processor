@@ -7,10 +7,12 @@ from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from kb_server.services.auth import AuthService
+from kb_server.services.groups import GroupService
 from kb_server.services.passwords import Passwords
 from kb_server.services.users import UserService
 from kb_server.settings import Settings
 from kb_server.storage.repositories.credentials import CredentialRepository
+from kb_server.storage.repositories.groups import GroupRepository
 from kb_server.storage.repositories.users import UserRepository
 
 
@@ -58,3 +60,7 @@ def build_auth_service(session: Session, services: Services) -> AuthService:
         session_ttl=timedelta(hours=services.settings.session_ttl_hours),
         now=services.clock,
     )
+
+
+def build_group_service(session: Session) -> GroupService:
+    return GroupService(groups=GroupRepository(session), users=UserRepository(session))

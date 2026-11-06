@@ -9,6 +9,8 @@ from kb_server.domain.errors import (
     AdminExists,
     CredentialNotFound,
     EmailTaken,
+    GroupNameTaken,
+    GroupNotFound,
     InvalidRequest,
     LoginFailed,
     NotAllowed,
@@ -26,7 +28,9 @@ _CODES = {
 
 def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(AdminExists, _admin_exists)
+    app.add_exception_handler(GroupNameTaken, _group_name_taken)
     app.add_exception_handler(CredentialNotFound, _credential_not_found)
+    app.add_exception_handler(GroupNotFound, _group_not_found)
     app.add_exception_handler(EmailTaken, _email_taken)
     app.add_exception_handler(InvalidRequest, _invalid_request)
     app.add_exception_handler(NotAllowed, _not_allowed)
@@ -51,11 +55,25 @@ def _email_taken(request: Request, error: Exception) -> JSONResponse:
     )
 
 
+def _group_name_taken(request: Request, error: Exception) -> JSONResponse:
+    return _error(
+        HTTPStatus.CONFLICT,
+        "group_name_taken",
+        str(error) or "a group with this name already exists",
+    )
+
+
 def _credential_not_found(request: Request, error: Exception) -> JSONResponse:
     return _error(
         HTTPStatus.NOT_FOUND,
         "credential_not_found",
         str(error) or "credential not found",
+    )
+
+
+def _group_not_found(request: Request, error: Exception) -> JSONResponse:
+    return _error(
+        HTTPStatus.NOT_FOUND, "group_not_found", str(error) or "group not found"
     )
 
 
