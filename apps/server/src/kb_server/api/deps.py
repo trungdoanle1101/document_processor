@@ -9,8 +9,14 @@ from kb_server.domain.credentials import Principal
 from kb_server.domain.errors import NotAllowed, NotAuthenticated
 from kb_server.domain.users import UserRole
 from kb_server.services.auth import AuthService
+from kb_server.services.groups import GroupService
 from kb_server.services.users import UserService
-from kb_server.wiring import Services, build_auth_service, build_user_service
+from kb_server.wiring import (
+    Services,
+    build_auth_service,
+    build_group_service,
+    build_user_service,
+)
 
 
 def get_services(request: Request) -> Services:
@@ -40,6 +46,13 @@ def get_user_service(session: SessionDep, services: ServicesDep) -> UserService:
 
 
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
+
+
+def get_group_service(session: SessionDep) -> GroupService:
+    return build_group_service(session)
+
+
+GroupServiceDep = Annotated[GroupService, Depends(get_group_service)]
 
 
 bearer = HTTPBearer(auto_error=False)

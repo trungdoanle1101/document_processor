@@ -28,7 +28,7 @@ class GroupService:
             raise GroupNotFound()
         self._groups.delete(group_id)
 
-    def list_group_members(self, admin: Principal, group_id: uuid.UUID) -> list[User]:
+    def list_members(self, admin: Principal, group_id: uuid.UUID) -> list[User]:
         self._require_admin(admin)
         group = self._groups.get(group_id)
         if group is None:
