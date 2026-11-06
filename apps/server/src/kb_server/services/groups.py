@@ -1,7 +1,7 @@
 import uuid
 
 from kb_server.domain.credentials import Principal
-from kb_server.domain.errors import GroupNotFound, NotAllowed, UserNotFound
+from kb_server.domain.errors import GroupInUse, GroupNotFound, NotAllowed, UserNotFound
 from kb_server.domain.groups import EVERYONE, Group
 from kb_server.domain.users import User
 from kb_server.storage.repositories.groups import GroupRepository
@@ -26,6 +26,8 @@ class GroupService:
         group = self._get_group(group_id)
         if group.name == EVERYONE:
             raise NotAllowed(f"group {EVERYONE!r} can't be deleted")
+        if self._groups.is_in_use(group_id):
+            raise GroupInUse(f"group {group.name!r} is a default group of a collection")
         self._groups.delete(group_id)
 
     def list_members(self, admin: Principal, group_id: uuid.UUID) -> list[User]:

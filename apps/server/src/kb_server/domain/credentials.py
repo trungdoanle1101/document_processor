@@ -78,3 +78,11 @@ def hash_token(token: str) -> str:
 
 def looks_like_token(token: str) -> bool:
     return token.startswith(tuple(_CREDENTIAL_MARKERS.values()))
+
+
+def can_manage(principal: Principal, manager_ids: set[uuid.UUID]) -> bool:
+    if principal.acting_for_others:
+        return False
+    return principal.is_admin or (
+        principal.user.role == "manager" and principal.user.id in manager_ids
+    )

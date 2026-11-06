@@ -10,8 +10,20 @@ class GroupNameTaken(Exception):
     """A group with this name already exists."""
 
 
+class CollectionSlugTaken(Exception):
+    """A collection of this slug already exists."""
+
+
 class GroupNotFound(Exception):
     """No such group."""
+
+
+class CollectionNotFound(Exception):
+    """No such collection."""
+
+
+class GroupInUse(Exception):
+    """Group is use by at least one collection."""
 
 
 class InvalidRequest(ValueError):

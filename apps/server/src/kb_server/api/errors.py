@@ -7,8 +7,11 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from kb_server.domain.errors import (
     AdminExists,
+    CollectionNotFound,
+    CollectionSlugTaken,
     CredentialNotFound,
     EmailTaken,
+    GroupInUse,
     GroupNameTaken,
     GroupNotFound,
     InvalidRequest,
@@ -28,10 +31,13 @@ _CODES = {
 
 def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(AdminExists, _admin_exists)
-    app.add_exception_handler(GroupNameTaken, _group_name_taken)
-    app.add_exception_handler(CredentialNotFound, _credential_not_found)
-    app.add_exception_handler(GroupNotFound, _group_not_found)
     app.add_exception_handler(EmailTaken, _email_taken)
+    app.add_exception_handler(GroupNameTaken, _group_name_taken)
+    app.add_exception_handler(CollectionSlugTaken, _collection_slug_taken)
+    app.add_exception_handler(GroupInUse, _group_in_use)
+    app.add_exception_handler(CredentialNotFound, _credential_not_found)
+    app.add_exception_handler(CollectionNotFound, _collection_not_found)
+    app.add_exception_handler(GroupNotFound, _group_not_found)
     app.add_exception_handler(InvalidRequest, _invalid_request)
     app.add_exception_handler(NotAllowed, _not_allowed)
     app.add_exception_handler(NotAuthenticated, _not_authenticated)
@@ -63,6 +69,14 @@ def _group_name_taken(request: Request, error: Exception) -> JSONResponse:
     )
 
 
+def _collection_slug_taken(request: Request, error: Exception) -> JSONResponse:
+    return _error(
+        HTTPStatus.CONFLICT,
+        "collection_slug_taken",
+        str(error) or "a collection with this slug already exists",
+    )
+
+
 def _credential_not_found(request: Request, error: Exception) -> JSONResponse:
     return _error(
         HTTPStatus.NOT_FOUND,
@@ -74,6 +88,22 @@ def _credential_not_found(request: Request, error: Exception) -> JSONResponse:
 def _group_not_found(request: Request, error: Exception) -> JSONResponse:
     return _error(
         HTTPStatus.NOT_FOUND, "group_not_found", str(error) or "group not found"
+    )
+
+
+def _collection_not_found(request: Request, error: Exception) -> JSONResponse:
+    return _error(
+        HTTPStatus.NOT_FOUND,
+        "collection_not_found",
+        str(error) or "collection not found",
+    )
+
+
+def _group_in_use(request: Request, error: Exception) -> JSONResponse:
+    return _error(
+        HTTPStatus.CONFLICT,
+        "group_in_use",
+        str(error) or "group in use by a collection",
     )
 
 

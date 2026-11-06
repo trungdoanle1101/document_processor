@@ -1,14 +1,18 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, Uuid, false, func, true
+from sqlalchemy import DateTime, Enum, ForeignKey, String, Text, Uuid, false, func, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from kb_server.domain.credentials import CREDENTIAL_KINDS, CredentialKind
 from kb_server.domain.users import USER_ROLES, UserRole
 from kb_server.storage.database import Base
 
+_CASCADE = "CASCADE"
+_RESTRICT = "RESTRICT"
 
+
+# --- users
 class UserRow(Base):
     __tablename__ = "users"
 
@@ -31,12 +35,13 @@ class UserRow(Base):
     )
 
 
+# --- credentials
 class CredentialRow(Base):
     __tablename__ = "credentials"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True
+        ForeignKey("users.id", ondelete=_CASCADE), index=True
     )
     kind: Mapped[CredentialKind] = mapped_column(
         Enum(
@@ -59,6 +64,7 @@ class CredentialRow(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+# --- groups
 class GroupRow(Base):
     __tablename__ = "groups"
 
@@ -69,11 +75,50 @@ class GroupRow(Base):
     )
 
 
+# --- user_groups
 class UserGroupRow(Base):
     __tablename__ = "user_groups"
+
     user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+        ForeignKey("users.id", ondelete=_CASCADE), primary_key=True
     )
     group_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True
+        ForeignKey("groups.id", ondelete=_CASCADE), primary_key=True
+    )
+
+
+# --- collections
+class CollectionRow(Base):
+    __tablename__ = "collections"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    slug: Mapped[str] = mapped_column(String(50), unique=True)
+    title: Mapped[str] = mapped_column(String(100))
+    description: Mapped[str] = mapped_column(Text, server_default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+# --- collection_groups
+class CollectionGroupRow(Base):
+    __tablename__ = "collection_groups"
+
+    collection_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("collections.id", ondelete=_CASCADE), primary_key=True
+    )
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete=_RESTRICT), primary_key=True
+    )
+
+
+# --- collection_managers
+class CollectionManagerRow(Base):
+    __tablename__ = "collection_managers"
+
+    collection_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("collections.id", ondelete=_CASCADE), primary_key=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete=_CASCADE), primary_key=True
     )

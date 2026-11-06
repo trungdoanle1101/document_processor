@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import Iterable
 
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
@@ -7,7 +8,7 @@ from sqlalchemy.orm import Session
 from kb_server.domain.errors import GroupNameTaken
 from kb_server.domain.groups import Group, normalize_group_name
 from kb_server.domain.users import User
-from kb_server.storage.models import GroupRow, UserGroupRow, UserRow
+from kb_server.storage.models import CollectionGroupRow, GroupRow, UserGroupRow, UserRow
 from kb_server.storage.repositories.users import to_user
 
 
@@ -70,6 +71,20 @@ class GroupRepository:
                 UserGroupRow.user_id == user_id, UserGroupRow.group_id == group_id
             )
         )
+
+    def get_many(self, group_ids: Iterable[uuid.UUID]) -> list[Group]:
+        rows = self._session.scalars(
+            select(GroupRow)
+            .where(GroupRow.id.in_(set(group_ids)))
+            .order_by(GroupRow.name)
+        ).all()
+        return [to_group(row) for row in rows]
+
+    def is_in_use(self, group_id: uuid.UUID) -> bool:
+        subquery = select(CollectionGroupRow.collection_id).where(
+            CollectionGroupRow.group_id == group_id
+        )
+        return bool(self._session.scalar(select(subquery.exists())))
 
 
 def to_group(row: GroupRow) -> Group:
