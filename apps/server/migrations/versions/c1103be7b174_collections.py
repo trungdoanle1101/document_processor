@@ -25,7 +25,7 @@ def upgrade() -> None:
         "collections",
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("slug", sa.String(length=50), nullable=False),
-        sa.Column("title", sa.String(length=100), nullable=False),
+        sa.Column("title", sa.String(length=200), nullable=False),
         sa.Column("description", sa.Text(), server_default="", nullable=False),
         sa.Column(
             "created_at",

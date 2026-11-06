@@ -33,8 +33,8 @@ Description = Annotated[str, StringConstraints(strip_whitespace=True, max_length
 class CollectionCreate(BaseModel):
     slug: Slug
     title: Title
-    description: Description
-    group_ids: list[uuid.UUID] = []
+    description: Description = ""
+    group_ids: list[uuid.UUID]
 
     model_config = ConfigDict(extra="forbid")
 
