@@ -40,15 +40,17 @@ class CollectionCreate(BaseModel):
 
 
 class CollectionUpdate(BaseModel):
-    slug: Slug
-    title: Title
-    description: Description
+    slug: Slug | None = None
+    title: Title | None = None
+    description: Description | None = None
 
     model_config = ConfigDict(extra="forbid")
 
 
 class CollectionGroupSet(BaseModel):
     group_ids: list[uuid.UUID]
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class CollectionOut(BaseModel):
@@ -115,7 +117,7 @@ def get_collection(
 def update_collection(
     collection_id: uuid.UUID,
     body: CollectionUpdate,
-    principal: CurrentPrincipal,
+    principal: AdminPrincipal,
     collection_service: CollectionServiceDep,
 ) -> CollectionOut:
     details = collection_service.update_collection(
@@ -128,10 +130,10 @@ def update_collection(
     return CollectionOut.from_details(details)
 
 
-@router.delete("/{collection_id}")
+@router.delete("/{collection_id}", status_code=HTTPStatus.NO_CONTENT)
 def delete_collection(
     collection_id: uuid.UUID,
-    principal: CurrentPrincipal,
+    principal: AdminPrincipal,
     collection_service: CollectionServiceDep,
 ) -> None:
     collection_service.delete_collection(principal, collection_id)
@@ -160,7 +162,7 @@ def list_managers(
     ]
 
 
-@router.put("/{collection_id}/managers/{user_id}")
+@router.put("/{collection_id}/managers/{user_id}", status_code=HTTPStatus.NO_CONTENT)
 def add_manager(
     collection_id: uuid.UUID,
     user_id: uuid.UUID,
@@ -172,7 +174,7 @@ def add_manager(
     )
 
 
-@router.delete("/{collection_id}/managers/{user_id}")
+@router.delete("/{collection_id}/managers/{user_id}", status_code=HTTPStatus.NO_CONTENT)
 def remove_manager(
     collection_id: uuid.UUID,
     user_id: uuid.UUID,

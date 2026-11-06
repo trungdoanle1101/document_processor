@@ -51,11 +51,17 @@ class CollectionRepository:
     def update(
         self, collection_id: uuid.UUID, *, slug: str, title: str, description: str
     ) -> None:
-        self._session.execute(
-            update(CollectionRow)
-            .where(CollectionRow.id == collection_id)
-            .values(slug=slug, title=title, description=description)
-        )
+        try:
+            with self._session.begin_nested():
+                self._session.execute(
+                    update(CollectionRow)
+                    .where(CollectionRow.id == collection_id)
+                    .values(slug=slug, title=title, description=description)
+                )
+        except IntegrityError:
+            raise CollectionSlugTaken(
+                f"a collection with slug {slug!r} already exists"
+            ) from None
 
     def delete(self, collection_id: uuid.UUID) -> None:
         self._session.execute(
@@ -77,6 +83,7 @@ class CollectionRepository:
             select(GroupRow)
             .join(CollectionGroupRow, CollectionGroupRow.group_id == GroupRow.id)
             .where(CollectionGroupRow.collection_id == collection_id)
+            .order_by(GroupRow.name)
         ).all()
         return [to_group(row) for row in rows]
 
@@ -108,7 +115,7 @@ class CollectionRepository:
         found: dict[uuid.UUID, list[Group]] = defaultdict(list)
         for collection_id, group_row in rows:
             found[collection_id].append(to_group(group_row))
-        return found
+        return dict(found)
 
     def is_visible_to(self, collection_id: uuid.UUID, user_id: uuid.UUID) -> bool:
         shared_group = (

@@ -23,7 +23,7 @@ class CollectionNotFound(Exception):
 
 
 class GroupInUse(Exception):
-    """Group is use by at least one collection."""
+    """Group in use by at least one collection."""
 
 
 class InvalidRequest(ValueError):

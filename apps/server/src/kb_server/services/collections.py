@@ -74,9 +74,9 @@ class CollectionService:
         title: str | None = None,
         description: str | None = None,
     ) -> CollectionDetails:
-        slug = normalize_slug(slug) if slug is not None else None
         if not principal.is_admin:
             raise NotAllowed("only an admin can update collections")
+        slug = normalize_slug(slug) if slug is not None else None
         details = self.get_collection(principal, collection_id)
         c = details.collection
         new = replace(
@@ -96,6 +96,8 @@ class CollectionService:
     def delete_collection(self, admin: Principal, collection_id: uuid.UUID) -> None:
         if not admin.is_admin:
             raise NotAllowed("only an admin can delete collections")
+        if self._collections.get(collection_id) is None:
+            raise CollectionNotFound()
         self._collections.delete(collection_id)
 
     def set_groups(
@@ -127,10 +129,10 @@ class CollectionService:
     ) -> None:
         if not principal.is_admin:
             raise NotAllowed("only an admin can add a manager to a collection")
-        if not self._collections.get(collection_id):
+        if self._collections.get(collection_id) is None:
             raise CollectionNotFound()
         user = self._users.get(user_id)
-        if not user:
+        if user is None:
             raise UserNotFound()
         if user.role not in ("manager", "admin"):
             raise InvalidRequest("only managers and admins can manage a collection")
@@ -140,11 +142,11 @@ class CollectionService:
         self, principal: Principal, *, collection_id: uuid.UUID, user_id: uuid.UUID
     ) -> None:
         if not principal.is_admin:
-            raise NotAllowed("only an admin can add a manager to a collection")
-        if not self._collections.get(collection_id):
+            raise NotAllowed("only an admin can remove a manager from a collection")
+        if self._collections.get(collection_id) is None:
             raise CollectionNotFound()
         user = self._users.get(user_id)
-        if not user:
+        if user is None:
             raise UserNotFound()
         self._collections.remove_manager(collection_id=collection_id, user_id=user_id)
 
