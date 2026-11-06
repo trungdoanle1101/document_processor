@@ -13,11 +13,13 @@ from kb_server.domain.errors import (
     NotAllowed,
     UserNotFound,
 )
+from kb_server.domain.groups import EVERYONE
 from kb_server.domain.users import User
 from kb_server.services.auth import AuthService
 from kb_server.services.passwords import Passwords
 from kb_server.services.users import UserService
 from kb_server.storage.models import UserRow
+from kb_server.storage.repositories.groups import GroupRepository
 from kb_server.storage.repositories.users import UserRepository
 from tests.support import PASSWORD, deactivate, sign_in
 
@@ -397,3 +399,42 @@ def test_a_front_end_key_is_refused_before_the_passwords_are_compared(
         user_service.change_password(
             as_admin_through_front_end, current=PASSWORD, new=PASSWORD
         )
+
+
+# everyone
+
+
+def members_of_everyone(groups: GroupRepository) -> list[str]:
+    everyone = groups.get_by_name(EVERYONE)
+    assert everyone is not None
+    return [user.email for user in groups.list_members(everyone.id)]
+
+
+def test_a_new_user_joins_everyone(
+    user_service: UserService, groups: GroupRepository, admin: Principal
+) -> None:
+    create(user_service, admin, "binh@example.com")
+
+    assert "binh@example.com" in members_of_everyone(groups)
+
+
+def test_the_first_admin_joins_everyone(
+    user_service: UserService, groups: GroupRepository
+) -> None:
+    user_service.create_first_admin(
+        email="admin@example.com", display_name="Admin", password=PASSWORD
+    )
+
+    assert members_of_everyone(groups) == ["admin@example.com"]
+
+
+def test_a_user_cant_be_created_without_everyone(
+    user_service: UserService, groups: GroupRepository, admin: Principal
+) -> None:
+    # a database that wasn't migrated properly: a server error, not a client one
+    everyone = groups.get_by_name(EVERYONE)
+    assert everyone is not None
+    groups.delete(everyone.id)
+
+    with pytest.raises(RuntimeError, match="run the migrations"):
+        create(user_service, admin, "binh@example.com")

@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from kb_server.app import create_app
 from kb_server.domain.users import User, UserRole
 from kb_server.services.auth import AuthService
+from kb_server.services.groups import GroupService
 from kb_server.services.passwords import Passwords
 from kb_server.services.users import UserService
 from kb_server.settings import Settings
@@ -133,6 +134,11 @@ def user_service(
         passwords=passwords,
         now=clock,
     )
+
+
+@pytest.fixture
+def group_service(groups: GroupRepository, users: UserRepository) -> GroupService:
+    return GroupService(groups=groups, users=users)
 
 
 @pytest.fixture
