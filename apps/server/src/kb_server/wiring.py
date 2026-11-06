@@ -46,6 +46,7 @@ def close_services(services: Services) -> None:
 def build_user_service(session: Session, services: Services) -> UserService:
     return UserService(
         users=UserRepository(session),
+        groups=GroupRepository(session),
         credentials=CredentialRepository(session),
         passwords=services.passwords,
         now=services.clock,

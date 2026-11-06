@@ -1,19 +1,26 @@
 import uuid
 from datetime import datetime
 from http import HTTPStatus
+from typing import Annotated
 
 from fastapi import APIRouter
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, StringConstraints
 
 from kb_server.api.deps import AdminPrincipal, GroupServiceDep
-
-from .users import DisplayName, UserOut
+from kb_server.api.users import UserOut
 
 router = APIRouter(prefix="/groups", tags=["groups"])
 
+GroupName = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True, to_lower=True, pattern=r"^[a-z0-9][a-z0-0_-]{0,49}$"
+    ),
+]
+
 
 class GroupCreate(BaseModel):
-    name: DisplayName
+    name: GroupName
 
     model_config = ConfigDict(extra="forbid")
 

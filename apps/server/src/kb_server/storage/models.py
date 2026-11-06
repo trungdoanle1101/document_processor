@@ -1,6 +1,5 @@
 import uuid
 from datetime import datetime
-from tkinter import CASCADE
 
 from sqlalchemy import DateTime, Enum, ForeignKey, String, Uuid, false, func, true
 from sqlalchemy.orm import Mapped, mapped_column
@@ -73,8 +72,8 @@ class GroupRow(Base):
 class UserGroupRow(Base):
     __tablename__ = "user_groups"
     user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete=CASCADE), primary_key=True
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
     group_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("groups.id", ondelete=CASCADE), primary_key=True
+        ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True
     )

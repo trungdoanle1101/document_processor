@@ -6,13 +6,16 @@ from datetime import datetime
 from kb_server.domain.credentials import Principal
 from kb_server.domain.errors import (
     AdminExists,
+    GroupNotFound,
     InvalidRequest,
     NotAllowed,
     UserNotFound,
 )
+from kb_server.domain.groups import EVERYONE
 from kb_server.domain.users import User, UserRole
 from kb_server.services.passwords import Passwords
 from kb_server.storage.repositories.credentials import CredentialRepository
+from kb_server.storage.repositories.groups import GroupRepository
 from kb_server.storage.repositories.users import UserRepository
 
 
@@ -21,11 +24,13 @@ class UserService:
         self,
         *,
         users: UserRepository,
+        groups: GroupRepository,
         credentials: CredentialRepository,
         passwords: Passwords,
         now: Callable[[], datetime],
     ) -> None:
         self._users = users
+        self._groups = groups
         self._credentials = credentials
         self._passwords = passwords
         self._now = now
@@ -127,13 +132,19 @@ class UserService:
     def _create(
         self, *, email: str, display_name: str, role: UserRole, password: str
     ) -> User:
-        """Create a new user."""
-        return self._users.add(
+        """Create a new user and add them to the default 'everyone' access group."""
+
+        user = self._users.add(
             email=email,
             display_name=display_name,
             role=role,
             password_hash=self._passwords.hash(password),
         )
+        everyone_group = self._groups.get_by_name(EVERYONE)
+        if everyone_group is None:
+            raise GroupNotFound(f"cannot find group {EVERYONE!r}")
+        self._groups.add_member(user_id=user.id, group_id=everyone_group.id)
+        return user
 
     def _require_admin(self, principal: Principal) -> None:
         if not principal.is_admin:

@@ -1,7 +1,6 @@
 import uuid
-from typing import Any, cast
 
-from sqlalchemy import CursorResult, delete, select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -32,28 +31,33 @@ class GroupRepository:
             return None
         return to_group(row)
 
+    def get_by_name(self, name: str) -> Group | None:
+        return self._session.scalar(select(GroupRow).where(GroupRow.name == name))
+
     def list_all(self) -> list[Group]:
         rows = self._session.scalars(select(GroupRow).order_by(GroupRow.name)).all()
         return [to_group(row) for row in rows]
 
-    def delete(self, group_id: uuid.UUID) -> bool:
-        result = cast(
-            CursorResult[Any],
-            self._session.execute(delete(GroupRow).where(GroupRow.id == group_id)),
-        )
-        return result.rowcount == 1
+    def delete(self, group_id: uuid.UUID) -> None:
+        self._session.execute(delete(GroupRow).where(GroupRow.id == group_id))
 
     def list_members(self, group_id: uuid.UUID) -> list[User]:
         user_rows = self._session.scalars(
             select(UserRow)
             .join(UserGroupRow, UserRow.id == UserGroupRow.user_id)
             .where(UserGroupRow.group_id == group_id)
+            .order_by(UserRow.email)
         ).all()
         return [to_user(row) for row in user_rows]
 
     def add_member(self, *, user_id: uuid.UUID, group_id: uuid.UUID) -> None:
-        row = UserGroupRow(user_id=user_id, group_id=group_id)
-        self._session.add(row)
+        try:
+            with self._session.begin_nested():
+                row = UserGroupRow(user_id=user_id, group_id=group_id)
+                self._session.add(row)
+                self._session.flush()
+        except IntegrityError:
+            pass
 
     def remove_member(self, *, user_id: uuid.UUID, group_id: uuid.UUID) -> None:
         self._session.execute(

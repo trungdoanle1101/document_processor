@@ -9,7 +9,7 @@ from kb_server.storage.repositories.users import UserRepository
 
 
 class GroupService:
-    def __init__(self, groups: GroupRepository, users: UserRepository) -> None:
+    def __init__(self, *, groups: GroupRepository, users: UserRepository) -> None:
         self._groups = groups
         self._users = users
 
@@ -23,16 +23,14 @@ class GroupService:
 
     def delete_group(self, admin: Principal, group_id: uuid.UUID) -> None:
         self._require_admin(admin)
-        group = self._groups.get(group_id)
-        if group is None:
-            raise GroupNotFound()
+        group = self._get_group(group_id)
+        if group.name == EVERYONE:
+            raise NotAllowed(f"group {EVERYONE!r} can't be deleted")
         self._groups.delete(group_id)
 
     def list_members(self, admin: Principal, group_id: uuid.UUID) -> list[User]:
         self._require_admin(admin)
-        group = self._groups.get(group_id)
-        if group is None:
-            raise GroupNotFound()
+        self._get_group(group_id)
         return self._groups.list_members(group_id)
 
     def add_member(

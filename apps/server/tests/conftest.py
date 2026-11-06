@@ -24,6 +24,7 @@ from kb_server.services.passwords import Passwords
 from kb_server.services.users import UserService
 from kb_server.settings import Settings
 from kb_server.storage.repositories.credentials import CredentialRepository
+from kb_server.storage.repositories.groups import GroupRepository
 from kb_server.storage.repositories.users import UserRepository
 from kb_server.wiring import Services
 from tests.support import PASSWORD, FakeClock
@@ -95,6 +96,10 @@ def users(session: Session) -> UserRepository:
 def credentials(session: Session) -> CredentialRepository:
     return CredentialRepository(session)
 
+@pytest.fixture
+def groups(session: Session) -> GroupRepository:
+    return GroupRepository(session)
+
 
 @pytest.fixture
 def auth(
@@ -115,12 +120,13 @@ def auth(
 @pytest.fixture
 def user_service(
     users: UserRepository,
+    groups: GroupRepository,
     credentials: CredentialRepository,
     passwords: Passwords,
     clock: FakeClock,
 ) -> UserService:
     return UserService(
-        users=users, credentials=credentials, passwords=passwords, now=clock
+        users=users, groups=groups, credentials=credentials, passwords=passwords, now=clock
     )
 
 
