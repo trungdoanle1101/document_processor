@@ -10,3 +10,7 @@ class Group:
     id: uuid.UUID
     name: str
     created_at: datetime
+
+
+def normalize_group_name(name: str) -> str:
+    return name.strip().lower()

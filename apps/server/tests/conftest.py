@@ -96,6 +96,7 @@ def users(session: Session) -> UserRepository:
 def credentials(session: Session) -> CredentialRepository:
     return CredentialRepository(session)
 
+
 @pytest.fixture
 def groups(session: Session) -> GroupRepository:
     return GroupRepository(session)
@@ -126,7 +127,11 @@ def user_service(
     clock: FakeClock,
 ) -> UserService:
     return UserService(
-        users=users, groups=groups, credentials=credentials, passwords=passwords, now=clock
+        users=users,
+        groups=groups,
+        credentials=credentials,
+        passwords=passwords,
+        now=clock,
     )
 
 

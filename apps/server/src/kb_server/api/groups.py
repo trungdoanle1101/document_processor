@@ -4,7 +4,7 @@ from http import HTTPStatus
 from typing import Annotated
 
 from fastapi import APIRouter
-from pydantic import BaseModel, ConfigDict, StringConstraints
+from pydantic import AfterValidator, BaseModel, ConfigDict, StringConstraints
 
 from kb_server.api.deps import AdminPrincipal, GroupServiceDep
 from kb_server.api.users import UserOut
@@ -14,8 +14,9 @@ router = APIRouter(prefix="/groups", tags=["groups"])
 GroupName = Annotated[
     str,
     StringConstraints(
-        strip_whitespace=True, to_lower=True, pattern=r"^[a-z0-9][a-z0-0_-]{0,49}$"
+        strip_whitespace=True, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,49}$"
     ),
+    AfterValidator(str.lower),
 ]
 
 

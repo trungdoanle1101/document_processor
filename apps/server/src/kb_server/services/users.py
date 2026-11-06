@@ -6,7 +6,6 @@ from datetime import datetime
 from kb_server.domain.credentials import Principal
 from kb_server.domain.errors import (
     AdminExists,
-    GroupNotFound,
     InvalidRequest,
     NotAllowed,
     UserNotFound,
@@ -142,7 +141,7 @@ class UserService:
         )
         everyone_group = self._groups.get_by_name(EVERYONE)
         if everyone_group is None:
-            raise GroupNotFound(f"cannot find group {EVERYONE!r}")
+            raise RuntimeError(f"group {EVERYONE!r} is missing; run the migrations")
         self._groups.add_member(user_id=user.id, group_id=everyone_group.id)
         return user
 

@@ -5,7 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from kb_server.domain.errors import GroupNameTaken
-from kb_server.domain.groups import Group
+from kb_server.domain.groups import Group, normalize_group_name
 from kb_server.domain.users import User
 from kb_server.storage.models import GroupRow, UserGroupRow, UserRow
 from kb_server.storage.repositories.users import to_user
@@ -16,6 +16,7 @@ class GroupRepository:
         self._session = session
 
     def add(self, name: str) -> Group:
+        name = normalize_group_name(name)
         row = GroupRow(name=name)
         try:
             with self._session.begin_nested():
@@ -32,7 +33,11 @@ class GroupRepository:
         return to_group(row)
 
     def get_by_name(self, name: str) -> Group | None:
-        return self._session.scalar(select(GroupRow).where(GroupRow.name == name))
+        name = normalize_group_name(name)
+        row = self._session.scalar(select(GroupRow).where(GroupRow.name == name))
+        if row is None:
+            return None
+        return to_group(row)
 
     def list_all(self) -> list[Group]:
         rows = self._session.scalars(select(GroupRow).order_by(GroupRow.name)).all()
