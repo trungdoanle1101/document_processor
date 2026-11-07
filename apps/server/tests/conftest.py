@@ -20,10 +20,12 @@ from sqlalchemy.orm import Session, sessionmaker
 from kb_server.app import create_app
 from kb_server.domain.users import User, UserRole
 from kb_server.services.auth import AuthService
+from kb_server.services.collections import CollectionService
 from kb_server.services.groups import GroupService
 from kb_server.services.passwords import Passwords
 from kb_server.services.users import UserService
 from kb_server.settings import Settings
+from kb_server.storage.repositories.collections import CollectionRepository
 from kb_server.storage.repositories.credentials import CredentialRepository
 from kb_server.storage.repositories.groups import GroupRepository
 from kb_server.storage.repositories.users import UserRepository
@@ -104,6 +106,11 @@ def groups(session: Session) -> GroupRepository:
 
 
 @pytest.fixture
+def collections(session: Session) -> CollectionRepository:
+    return CollectionRepository(session)
+
+
+@pytest.fixture
 def auth(
     users: UserRepository,
     credentials: CredentialRepository,
@@ -139,6 +146,13 @@ def user_service(
 @pytest.fixture
 def group_service(groups: GroupRepository, users: UserRepository) -> GroupService:
     return GroupService(groups=groups, users=users)
+
+
+@pytest.fixture
+def collection_service(
+    collections: CollectionRepository, groups: GroupRepository, users: UserRepository
+) -> CollectionService:
+    return CollectionService(collections=collections, groups=groups, users=users)
 
 
 @pytest.fixture
