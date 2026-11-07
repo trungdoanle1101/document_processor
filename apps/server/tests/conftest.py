@@ -27,6 +27,7 @@ from kb_server.services.users import UserService
 from kb_server.settings import Settings
 from kb_server.storage.repositories.collections import CollectionRepository
 from kb_server.storage.repositories.credentials import CredentialRepository
+from kb_server.storage.repositories.documents import DocumentRepository
 from kb_server.storage.repositories.groups import GroupRepository
 from kb_server.storage.repositories.users import UserRepository
 from kb_server.wiring import Services
@@ -108,6 +109,11 @@ def groups(session: Session) -> GroupRepository:
 @pytest.fixture
 def collections(session: Session) -> CollectionRepository:
     return CollectionRepository(session)
+
+
+@pytest.fixture
+def documents(session: Session) -> DocumentRepository:
+    return DocumentRepository(session)
 
 
 @pytest.fixture

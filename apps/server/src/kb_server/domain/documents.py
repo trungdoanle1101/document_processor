@@ -11,16 +11,6 @@ DOCUMENT_STATUSES = get_args(DocumentStatus)
 
 
 @dataclass(frozen=True, kw_only=True)
-class StoredFile:
-    id: uuid.UUID
-    sha256: str
-    size: int
-    media_type: str
-    storage_key: str
-    created_at: datetime
-
-
-@dataclass(frozen=True, kw_only=True)
 class Document:
     id: uuid.UUID
     collection_id: uuid.UUID

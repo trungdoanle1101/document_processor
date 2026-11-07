@@ -1,0 +1,13 @@
+import uuid
+from dataclasses import dataclass
+from datetime import datetime
+
+
+@dataclass(frozen=True, kw_only=True)
+class StoredFile:
+    id: uuid.UUID
+    sha256: str
+    size: int
+    media_type: str
+    storage_key: str
+    created_at: datetime
