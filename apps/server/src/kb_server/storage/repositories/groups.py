@@ -1,15 +1,23 @@
 import uuid
 from collections.abc import Iterable
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from kb_server.domain.errors import GroupNameTaken
 from kb_server.domain.groups import Group, normalize_group_name
 from kb_server.domain.users import User
-from kb_server.storage.models import CollectionGroupRow, GroupRow, UserGroupRow, UserRow
+from kb_server.storage.models import (
+    CollectionGroupRow,
+    DocumentGroupRow,
+    GroupRow,
+    UserGroupRow,
+    UserRow,
+)
 from kb_server.storage.repositories.users import to_user
+
+_GROUP_REFERENCES = (CollectionGroupRow.group_id, DocumentGroupRow.group_id)
 
 
 class GroupRepository:
@@ -81,10 +89,12 @@ class GroupRepository:
         return [to_group(row) for row in rows]
 
     def is_in_use(self, group_id: uuid.UUID) -> bool:
-        subquery = select(CollectionGroupRow.collection_id).where(
-            CollectionGroupRow.group_id == group_id
-        )
-        return bool(self._session.scalar(select(subquery.exists())))
+        """Whether any collection or document still uses the group."""
+        uses = [
+            select(column).where(column == group_id).exists()
+            for column in _GROUP_REFERENCES
+        ]
+        return bool(self._session.scalar(select(or_(*uses))))
 
 
 def to_group(row: GroupRow) -> Group:

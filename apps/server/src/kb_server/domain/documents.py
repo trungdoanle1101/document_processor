@@ -1,7 +1,8 @@
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal, get_args
+from typing import Any, Literal, get_args
 
 DocumentStatus = Literal["draft", "active"]
 
@@ -37,5 +38,6 @@ class DocumentVersion:
     version: int
     file_id: uuid.UUID
     original_filename: str
+    provenance: Mapping[str, Any] | None
     uploaded_by: uuid.UUID
     created_at: uuid.UUID

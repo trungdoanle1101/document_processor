@@ -1,7 +1,9 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     DateTime,
     Enum,
@@ -200,6 +202,7 @@ class DocumentVersionRow(Base):
         Uuid, ForeignKey("stored_files.id", ondelete=_RESTRICT)
     )
     original_filename: Mapped[uuid.UUID] = mapped_column(String(255))
+    provenance: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     uploaded_by: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete=_RESTRICT)
     )
@@ -221,12 +224,14 @@ class DocumentGroupRow(Base):
 
 
 # --- indexing_jobs
-class IndexingJobRow:
+class IndexingJobRow(Base):
     __tablename__ = "indexing_jobs"
-    __table_args__ = ForeignKeyConstraint(
-        ["document_id", "version"],
-        ["document_versions.document_id", "document_versions.version"],
-        ondelete=_CASCADE,
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["document_id", "version"],
+            ["document_versions.document_id", "document_versions.version"],
+            ondelete=_CASCADE,
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
