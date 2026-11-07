@@ -9,6 +9,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     String,
     Text,
@@ -20,12 +21,12 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from kb_server.domain.credentials import CREDENTIAL_KINDS, CredentialKind
-from kb_server.domain.documents import (
-    DOCUMENT_STATUSES,
-)
+from kb_server.domain.documents import DOCUMENT_STATUSES, DocumentStatus
 from kb_server.domain.jobs import (
     JOB_KINDS,
     JOB_STATUSES,
+    JobKind,
+    JobStatus,
 )
 from kb_server.domain.users import USER_ROLES, UserRole
 from kb_server.storage.database import Base
@@ -169,7 +170,7 @@ class DocumentRow(Base):
         ForeignKey("collections.id", ondelete=_RESTRICT), index=True
     )
     title: Mapped[str] = mapped_column(String(500))
-    status: Mapped[str] = mapped_column(
+    status: Mapped[DocumentStatus] = mapped_column(
         Enum(
             *DOCUMENT_STATUSES,
             name="document_status",
@@ -178,7 +179,7 @@ class DocumentRow(Base):
             length=20,
         )
     )
-    current_version: Mapped[int] = mapped_column(Integer, default=1)
+    current_version: Mapped[int] = mapped_column(Integer)
     created_by: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete=_RESTRICT)
     )
@@ -197,11 +198,11 @@ class DocumentVersionRow(Base):
     document_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("documents.id", ondelete=_CASCADE), primary_key=True
     )
-    version: Mapped[uuid.UUID] = mapped_column(Integer, primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, primary_key=True)
     file_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("stored_files.id", ondelete=_RESTRICT)
     )
-    original_filename: Mapped[uuid.UUID] = mapped_column(String(255))
+    original_filename: Mapped[str] = mapped_column(String(255))
     provenance: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     uploaded_by: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete=_RESTRICT)
@@ -232,10 +233,11 @@ class IndexingJobRow(Base):
             ["document_versions.document_id", "document_versions.version"],
             ondelete=_CASCADE,
         ),
+        Index("ix_indexing_jobs_status_created_at", "status", "created_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    kind: Mapped[str] = mapped_column(
+    kind: Mapped[JobKind] = mapped_column(
         Enum(
             *JOB_KINDS,
             name="job_kind",
@@ -248,7 +250,7 @@ class IndexingJobRow(Base):
         ForeignKey("documents.id", ondelete=_CASCADE), index=True
     )
     version: Mapped[int | None] = mapped_column(Integer)
-    status: Mapped[str] = mapped_column(
+    status: Mapped[JobStatus] = mapped_column(
         Enum(
             *JOB_STATUSES,
             name="job_status",
@@ -265,9 +267,5 @@ class IndexingJobRow(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
-    started_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-    finished_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

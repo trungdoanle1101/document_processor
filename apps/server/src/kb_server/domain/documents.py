@@ -40,4 +40,4 @@ class DocumentVersion:
     original_filename: str
     provenance: Mapping[str, Any] | None
     uploaded_by: uuid.UUID
-    created_at: uuid.UUID
+    created_at: datetime
