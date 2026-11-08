@@ -107,7 +107,7 @@ class DocumentService:
             # Clean filename
             file_path = PureWindowsPath(filename)
             filename = file_path.stem[: 255 - len(file_path.suffix)] + file_path.suffix
-            title = title or file_path.stem
+            title = title or PureWindowsPath(filename).stem
 
             document, version = self._documents.add(
                 collection_id=collection_id,
