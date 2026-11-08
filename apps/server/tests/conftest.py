@@ -21,11 +21,12 @@ from kb_server.app import create_app
 from kb_server.domain.users import User, UserRole
 from kb_server.services.auth import AuthService
 from kb_server.services.collections import CollectionService
+from kb_server.services.documents import DocumentService
 from kb_server.services.groups import GroupService
 from kb_server.services.passwords import Passwords
 from kb_server.services.users import UserService
 from kb_server.settings import Settings
-from kb_server.storage.files import LocalFileStore
+from kb_server.storage.files import FileStore, LocalFileStore
 from kb_server.storage.repositories.collections import CollectionRepository
 from kb_server.storage.repositories.credentials import CredentialRepository
 from kb_server.storage.repositories.documents import DocumentRepository
@@ -34,7 +35,7 @@ from kb_server.storage.repositories.groups import GroupRepository
 from kb_server.storage.repositories.jobs import JobRepository
 from kb_server.storage.repositories.users import UserRepository
 from kb_server.wiring import Services
-from tests.support import PASSWORD, FakeClock
+from tests.support import MAX_UPLOAD_MB, PASSWORD, FakeClock
 
 SERVER_DIR = Path(__file__).parents[1]
 
@@ -190,20 +191,56 @@ def make_user(users: UserRepository, passwords: Passwords) -> Callable[..., User
 
 
 @pytest.fixture
+def file_store_root(tmp_path: Path) -> Path:
+    root = tmp_path / "files"
+    root.mkdir()
+    return root
+
+
+@pytest.fixture
+def file_store(file_store_root: Path) -> FileStore:
+    return LocalFileStore(file_store_root)
+
+
+@pytest.fixture
+def document_service(
+    documents: DocumentRepository,
+    collections: CollectionRepository,
+    groups: GroupRepository,
+    stored_files: StoredFileRepository,
+    jobs: JobRepository,
+    file_store: FileStore,
+) -> DocumentService:
+    return DocumentService(
+        documents=documents,
+        collections=collections,
+        groups=groups,
+        stored_files=stored_files,
+        jobs=jobs,
+        files=file_store,
+        max_upload_bytes=MAX_UPLOAD_MB * 1024 * 1024,
+    )
+
+
+@pytest.fixture
 def services(
     engine: Engine,
     session_factory: sessionmaker[Session],
     passwords: Passwords,
     clock: FakeClock,
     database_url: str,
-    tmp_path: Path,
+    file_store_root: Path,
+    file_store: FileStore,
 ) -> Services:
     return Services(
-        settings=Settings(
-            _env_file=None, database_url=database_url, storage_path=tmp_path
-        ),  # ignore .env
+        settings=Settings(  # _env_file=None: ignore .env
+            _env_file=None,
+            database_url=database_url,
+            storage_path=file_store_root,
+            max_upload_mb=MAX_UPLOAD_MB,
+        ),
         engine=engine,
-        files=LocalFileStore(tmp_path),
+        files=file_store,
         session_factory=session_factory,
         passwords=passwords,
         clock=clock,

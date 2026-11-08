@@ -11,6 +11,7 @@ from kb_server.services.auth import AuthService
 from kb_server.storage.models import UserRow
 
 PASSWORD = "correct horse battery"
+MAX_UPLOAD_MB = 1  # small, so the size limit is cheap to test
 
 
 class FakeClock:
