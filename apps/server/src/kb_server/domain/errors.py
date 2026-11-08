@@ -48,3 +48,11 @@ class UserNotFound(Exception):
 
 class LoginFailed(Exception):
     """The email and password don't match an active user."""
+
+
+class FileTooLarge(Exception):
+    """The uploaded file's size is larger than the allowed limit."""
+
+
+class UnsupportedFileType(Exception):
+    """The uploaded file's type is not supported."""

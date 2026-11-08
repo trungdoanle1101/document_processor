@@ -11,6 +11,7 @@ from kb_server.domain.errors import (
     CollectionSlugTaken,
     CredentialNotFound,
     EmailTaken,
+    FileTooLarge,
     GroupInUse,
     GroupNameTaken,
     GroupNotFound,
@@ -18,6 +19,7 @@ from kb_server.domain.errors import (
     LoginFailed,
     NotAllowed,
     NotAuthenticated,
+    UnsupportedFileType,
     UserNotFound,
 )
 
@@ -45,6 +47,8 @@ def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(StarletteHTTPException, _starlette_http_exception)
     app.add_exception_handler(UserNotFound, _user_not_found)
     app.add_exception_handler(LoginFailed, _login_failed)
+    app.add_exception_handler(FileTooLarge, _file_too_large)
+    app.add_exception_handler(UnsupportedFileType, _unsupported_file_type)
 
 
 def _admin_exists(request: Request, error: Exception) -> JSONResponse:
@@ -178,6 +182,22 @@ def _login_failed(request: Request, error: Exception) -> JSONResponse:
         "login_failed",
         "wrong email or password",
         headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def _file_too_large(request: Request, error: Exception) -> JSONResponse:
+    return _error(
+        HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+        "file_too_large",
+        str(error) or "the file is too large",
+    )
+
+
+def _unsupported_file_type(request: Request, error: Exception) -> JSONResponse:
+    return _error(
+        HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+        "unsupported_file_type",
+        str(error) or "file type is not supported",
     )
 
 
