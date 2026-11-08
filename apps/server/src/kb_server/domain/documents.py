@@ -4,6 +4,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal, get_args
 
+from kb_server.domain.files import StoredFile
+from kb_server.domain.groups import Group
+from kb_server.domain.jobs import IndexingJob
+
 DocumentStatus = Literal["draft", "active"]
 
 
@@ -31,3 +35,12 @@ class DocumentVersion:
     provenance: Mapping[str, Any] | None
     uploaded_by: uuid.UUID
     created_at: datetime
+
+
+@dataclass(frozen=True, kw_only=True)
+class DocumentDetails:
+    document: Document
+    version: DocumentVersion  # current version
+    file: StoredFile  # size, type, and hash
+    groups: list[Group]
+    job: IndexingJob | None  # lastest job for the current version

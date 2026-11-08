@@ -10,12 +10,14 @@ from kb_server.domain.errors import NotAllowed, NotAuthenticated
 from kb_server.domain.users import UserRole
 from kb_server.services.auth import AuthService
 from kb_server.services.collections import CollectionService
+from kb_server.services.documents import DocumentService
 from kb_server.services.groups import GroupService
 from kb_server.services.users import UserService
 from kb_server.wiring import (
     Services,
     build_auth_service,
     build_collection_service,
+    build_document_service,
     build_group_service,
     build_user_service,
 )
@@ -63,6 +65,12 @@ def get_collection_service(session: SessionDep) -> CollectionService:
 
 CollectionServiceDep = Annotated[CollectionService, Depends(get_collection_service)]
 
+
+def get_document_service(session: SessionDep, services: ServicesDep) -> DocumentService:
+    return build_document_service(session, services)
+
+
+DocumentServiceDep = Annotated[DocumentService, Depends(get_document_service)]
 
 bearer = HTTPBearer(auto_error=False)
 

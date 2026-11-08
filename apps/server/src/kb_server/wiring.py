@@ -8,13 +8,18 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from kb_server.services.auth import AuthService
 from kb_server.services.collections import CollectionService
+from kb_server.services.documents import DocumentService
 from kb_server.services.groups import GroupService
 from kb_server.services.passwords import Passwords
 from kb_server.services.users import UserService
 from kb_server.settings import Settings
+from kb_server.storage.files import FileStore, LocalFileStore
 from kb_server.storage.repositories.collections import CollectionRepository
 from kb_server.storage.repositories.credentials import CredentialRepository
+from kb_server.storage.repositories.documents import DocumentRepository
+from kb_server.storage.repositories.files import StoredFileRepository
 from kb_server.storage.repositories.groups import GroupRepository
+from kb_server.storage.repositories.jobs import JobRepository
 from kb_server.storage.repositories.users import UserRepository
 
 
@@ -75,3 +80,24 @@ def build_collection_service(session: Session) -> CollectionService:
         groups=GroupRepository(session),
         users=UserRepository(session),
     )
+
+
+def build_document_service(session: Session, services: Services) -> DocumentService:
+    return DocumentService(
+        documents=DocumentRepository(session),
+        collections=CollectionRepository(session),
+        groups=GroupRepository(session),
+        stored_files=StoredFileRepository(session),
+        jobs=JobRepository(session),
+        max_upload_bytes=services.settings.max_upload_mb * 1024 * 1024,
+        files=build_file_store(services.settings),
+    )
+
+
+def build_file_store(settings: Settings) -> FileStore:
+    match settings.storage_kind:
+        case "local":
+            assert settings.storage_path is not None
+            return LocalFileStore(settings.storage_path)
+        case "s3":
+            raise NotImplementedError("s3 storage not yet implemented")

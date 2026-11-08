@@ -1,3 +1,6 @@
+from pathlib import Path
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -8,3 +11,8 @@ class Settings(BaseSettings):
     database_url: str
     session_ttl_hours: int = 12
     act_for_headers: tuple[str, ...] = ("x-act-for-user",)
+    max_upload_mb: int = 50
+
+    storage_kind: Literal["local", "s3"] = "local"
+    # local storage
+    storage_path: Path

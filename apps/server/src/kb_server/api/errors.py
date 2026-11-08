@@ -1,4 +1,5 @@
 from http import HTTPStatus
+from typing import cast
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -10,6 +11,8 @@ from kb_server.domain.errors import (
     CollectionNotFound,
     CollectionSlugTaken,
     CredentialNotFound,
+    DocumentNotFound,
+    DuplicateFile,
     EmailTaken,
     FileTooLarge,
     GroupInUse,
@@ -49,6 +52,8 @@ def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(LoginFailed, _login_failed)
     app.add_exception_handler(FileTooLarge, _file_too_large)
     app.add_exception_handler(UnsupportedFileType, _unsupported_file_type)
+    app.add_exception_handler(DuplicateFile, _duplicate_file)
+    app.add_exception_handler(DocumentNotFound, _document_not_found)
 
 
 def _admin_exists(request: Request, error: Exception) -> JSONResponse:
@@ -198,6 +203,21 @@ def _unsupported_file_type(request: Request, error: Exception) -> JSONResponse:
         HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
         "unsupported_file_type",
         str(error) or "file type is not supported",
+    )
+
+
+def _duplicate_file(request: Request, error: Exception) -> JSONResponse:
+    return _error(
+        HTTPStatus.UNPROCESSABLE_ENTITY,
+        "duplicate_file",
+        "the uploaded file is already registered in the collection",
+        details=[{"document_id": str(cast(DuplicateFile, error).document_id)}],
+    )
+
+
+def _document_not_found(request: Request, error: Exception) -> JSONResponse:
+    return _error(
+        HTTPStatus.NOT_FOUND, "document_not_found", str(error) or "document not found"
     )
 
 

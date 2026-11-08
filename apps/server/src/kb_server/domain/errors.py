@@ -1,3 +1,6 @@
+import uuid
+
+
 class AdminExists(Exception):
     """The system already has an admin, so the first one can't be created."""
 
@@ -56,3 +59,15 @@ class FileTooLarge(Exception):
 
 class UnsupportedFileType(Exception):
     """The uploaded file's type is not supported."""
+
+
+class DuplicateFile(Exception):
+    """The uploaded file is already registered in the collection."""
+
+    def __init__(self, document_id: uuid.UUID) -> None:
+        super().__init__("this file is already a document in the collection")
+        self.document_id = document_id
+
+
+class DocumentNotFound(Exception):
+    """No such document, or not readable by the caller."""
