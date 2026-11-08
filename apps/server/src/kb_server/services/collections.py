@@ -10,8 +10,8 @@ from kb_server.domain.errors import (
     NotAllowed,
     UserNotFound,
 )
-from kb_server.domain.groups import Group
 from kb_server.domain.users import User
+from kb_server.services.groups import get_groups
 from kb_server.storage.repositories.collections import CollectionRepository
 from kb_server.storage.repositories.groups import GroupRepository
 from kb_server.storage.repositories.users import UserRepository
@@ -40,7 +40,7 @@ class CollectionService:
     ) -> CollectionDetails:
         if not admin.is_admin:
             raise NotAllowed("only an admin can create collections")
-        groups = self._get_groups(group_ids)
+        groups = get_groups(self._groups, group_ids)
         collection = self._collections.add(
             slug=normalize_slug(slug), title=title, description=description
         )
@@ -112,7 +112,7 @@ class CollectionService:
             raise NotAllowed(
                 "only an admin or a manager of this collection can change its groups"
             )
-        groups = self._get_groups(group_ids)
+        groups = get_groups(self._groups, group_ids)
         self._collections.set_groups(collection_id, [group.id for group in groups])
         return CollectionDetails(collection=collection, groups=groups)
 
@@ -154,21 +154,18 @@ class CollectionService:
         self, principal: Principal, collection_id: uuid.UUID
     ) -> Collection:
         collection = self._collections.get(collection_id)
-        if collection is None or not self._can_see(principal, collection.id):
+        if collection is None or not can_see_collection(
+            self._collections, principal, collection.id
+        ):
             raise CollectionNotFound()
         return collection
 
-    def _can_see(self, principal: Principal, collection_id: uuid.UUID) -> bool:
-        if principal.user.role in ("manager", "admin"):
-            return True
-        return self._collections.is_visible_to(collection_id, principal.user.id)
 
-    def _get_groups(self, group_ids: Iterable[uuid.UUID]) -> list[Group]:
-        wanted = set(group_ids)
-        found = self._groups.get_many(wanted)
-        missing = wanted - {group.id for group in found}
-        if missing:
-            raise InvalidRequest(
-                f"unknown group ids: {', '.join(sorted(map(str, missing)))}"
-            )
-        return found
+def can_see_collection(
+    collection_repository: CollectionRepository,
+    principal: Principal,
+    collection_id: uuid.UUID,
+) -> bool:
+    if principal.user.role in ("manager", "admin"):
+        return True
+    return collection_repository.is_visible_to(collection_id, principal.user.id)

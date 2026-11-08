@@ -1,6 +1,6 @@
 import uuid
 from collections.abc import Sequence
-from pathlib import PurePath
+from pathlib import PureWindowsPath
 from typing import BinaryIO
 
 from kb_server.domain.credentials import Principal, can_manage
@@ -9,10 +9,12 @@ from kb_server.domain.errors import (
     CollectionNotFound,
     DocumentNotFound,
     DuplicateFile,
-    GroupNotFound,
     InvalidRequest,
     NotAllowed,
 )
+from kb_server.domain.groups import Group
+from kb_server.services.collections import can_see_collection
+from kb_server.services.groups import get_groups
 from kb_server.services.uploads import stage_upload
 from kb_server.storage.files import FileStore, original_key
 from kb_server.storage.repositories.collections import CollectionRepository
@@ -55,23 +57,26 @@ class DocumentService:
     ) -> DocumentDetails:
         # Check if the collection exists
         collection = self._collections.get(collection_id)
-        if collection is None:
+        if collection is None or not can_see_collection(
+            self._collections, principal, collection_id
+        ):
             raise CollectionNotFound()
 
         # Check the principal's permission on this collection
         if not can_manage(principal, self._collections.list_manager_ids(collection_id)):
             raise NotAllowed(
-                "only an admin or a manager of this colleciton can upload a document."
+                "only an admin or a manager of this collection can upload a document"
             )
 
         # Check groups
         if private and group_ids is not None:
             raise InvalidRequest("choose either group_ids or private, not both")
-
-        if group_ids is not None and group_ids:
-            groups = self._groups.get_many(group_ids)
-            if len(groups) != len(group_ids):
-                raise GroupNotFound("unknown group_id")
+        if private:
+            groups: list[Group] = []
+        elif group_ids is not None:
+            groups = get_groups(self._groups, group_ids)
+        else:
+            groups = self._collections.list_groups(collection_id)
 
         # Stage upload
         with stage_upload(content, max_bytes=self._max_upload_bytes) as staged:
@@ -92,36 +97,34 @@ class DocumentService:
                     media_type=staged.media_type,
                 )
 
-                stored_file = self._stored_files.get_or_add(
-                    sha256=staged.sha256,
-                    size=staged.size,
-                    media_type=staged.media_type,
-                    storage_key=storage_key,
-                )
+            stored_file = self._stored_files.get_or_add(
+                sha256=staged.sha256,
+                size=staged.size,
+                media_type=staged.media_type,
+                storage_key=storage_key,
+            )
 
-                # Clean filename
-                file_path = PurePath(filename)
-                filename = (
-                    file_path.stem[: 255 - len(file_path.suffix)] + file_path.suffix
-                )
-                title = title or PurePath(filename).stem
+            # Clean filename
+            file_path = PureWindowsPath(filename)
+            filename = file_path.stem[: 255 - len(file_path.suffix)] + file_path.suffix
+            title = title or file_path.stem
 
-                document, version = self._documents.add(
-                    collection_id=collection_id,
-                    title=title,
-                    status="active",
-                    group_ids=[group.id for group in groups],
-                    file_id=stored_file.id,
-                    original_filename=filename,
-                    created_by=principal.user.id,
-                )
+            document, version = self._documents.add(
+                collection_id=collection_id,
+                title=title,
+                status="active",
+                group_ids=[group.id for group in groups],
+                file_id=stored_file.id,
+                original_filename=filename,
+                created_by=principal.user.id,
+            )
 
-                job = self._jobs.add(
-                    kind="prepare",
-                    document_id=document.id,
-                    version=1,
-                    created_by=principal.user.id,
-                )
+            job = self._jobs.add(
+                kind="prepare",
+                document_id=document.id,
+                version=1,
+                created_by=principal.user.id,
+            )
 
         return DocumentDetails(
             document=document, version=version, file=stored_file, groups=groups, job=job

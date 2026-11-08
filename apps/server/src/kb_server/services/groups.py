@@ -1,7 +1,14 @@
 import uuid
+from collections.abc import Iterable
 
 from kb_server.domain.credentials import Principal
-from kb_server.domain.errors import GroupInUse, GroupNotFound, NotAllowed, UserNotFound
+from kb_server.domain.errors import (
+    GroupInUse,
+    GroupNotFound,
+    InvalidRequest,
+    NotAllowed,
+    UserNotFound,
+)
 from kb_server.domain.groups import EVERYONE, Group
 from kb_server.domain.users import User
 from kb_server.storage.repositories.groups import GroupRepository
@@ -64,3 +71,16 @@ class GroupService:
     def _require_admin(self, principal: Principal) -> None:
         if not principal.is_admin:
             raise NotAllowed("only an admin can manage groups")
+
+
+def get_groups(
+    group_repository: GroupRepository, group_ids: Iterable[uuid.UUID]
+) -> list[Group]:
+    wanted = set(group_ids)
+    found = group_repository.get_many(wanted)
+    missing = wanted - {group.id for group in found}
+    if missing:
+        raise InvalidRequest(
+            f"unknown group ids: {', '.join(sorted(map(str, missing)))}"
+        )
+    return found

@@ -208,10 +208,10 @@ def _unsupported_file_type(request: Request, error: Exception) -> JSONResponse:
 
 def _duplicate_file(request: Request, error: Exception) -> JSONResponse:
     return _error(
-        HTTPStatus.UNPROCESSABLE_ENTITY,
+        HTTPStatus.CONFLICT,
         "duplicate_file",
         "the uploaded file is already registered in the collection",
-        details=[{"document_id": str(cast(DuplicateFile, error).document_id)}],
+        details={"document_id": str(cast(DuplicateFile, error).document_id)},
     )
 
 
@@ -227,7 +227,7 @@ def _error(
     message: str,
     *,
     headers: dict[str, str] | None = None,
-    details: list[dict[str, str]] | None = None,
+    details: list[dict[str, str]] | dict[str, str] | None = None,
 ) -> JSONResponse:
     return JSONResponse(
         status_code=status,

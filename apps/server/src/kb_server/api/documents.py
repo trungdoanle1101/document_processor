@@ -5,12 +5,12 @@ from typing import Annotated
 
 from fastapi import Form, UploadFile
 from fastapi.routing import APIRouter
-from huggingface_hub import JobStatus
 from pydantic import BaseModel, StringConstraints
 
 from kb_server.api.deps import CurrentPrincipal, DocumentServiceDep
 from kb_server.api.groups import GroupOut
 from kb_server.domain.documents import DocumentDetails, DocumentStatus
+from kb_server.domain.jobs import JobStatus
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -53,8 +53,17 @@ class DocumentOut(BaseModel):
             created_at=details.document.created_at,
             updated_at=details.document.updated_at,
             groups=[GroupOut.model_validate(group) for group in details.groups],
-            file=FileOut.model_validate(details.file),
-            job=IndexingJobOut.model_validate(details.job)
+            file=FileOut(
+                filename=details.version.original_filename,
+                size=details.file.size,
+                media_type=details.file.media_type,
+                sha256=details.file.sha256,
+            ),
+            job=IndexingJobOut(
+                job_id=details.job.id,
+                status=details.job.status,
+                error=details.job.error,
+            )
             if details.job is not None
             else None,
         )

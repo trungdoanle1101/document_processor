@@ -31,6 +31,7 @@ def utc_now() -> datetime:
 class Services:
     settings: Settings
     engine: Engine
+    files: FileStore
     session_factory: sessionmaker[Session]
     passwords: Passwords
     clock: Callable[[], datetime] = utc_now
@@ -41,6 +42,7 @@ def build_services(settings: Settings) -> Services:
     return Services(
         settings=settings,
         engine=engine,
+        files=build_file_store(settings),
         session_factory=sessionmaker(engine),
         passwords=Passwords(hasher=PasswordHasher()),
     )
@@ -90,7 +92,7 @@ def build_document_service(session: Session, services: Services) -> DocumentServ
         stored_files=StoredFileRepository(session),
         jobs=JobRepository(session),
         max_upload_bytes=services.settings.max_upload_mb * 1024 * 1024,
-        files=build_file_store(services.settings),
+        files=services.files,
     )
 
 

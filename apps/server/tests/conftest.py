@@ -25,6 +25,7 @@ from kb_server.services.groups import GroupService
 from kb_server.services.passwords import Passwords
 from kb_server.services.users import UserService
 from kb_server.settings import Settings
+from kb_server.storage.files import LocalFileStore
 from kb_server.storage.repositories.collections import CollectionRepository
 from kb_server.storage.repositories.credentials import CredentialRepository
 from kb_server.storage.repositories.documents import DocumentRepository
@@ -195,10 +196,14 @@ def services(
     passwords: Passwords,
     clock: FakeClock,
     database_url: str,
+    tmp_path: Path,
 ) -> Services:
     return Services(
-        settings=Settings(_env_file=None, database_url=database_url),  # ignore .env
+        settings=Settings(
+            _env_file=None, database_url=database_url, storage_path=tmp_path
+        ),  # ignore .env
         engine=engine,
+        files=LocalFileStore(tmp_path),
         session_factory=session_factory,
         passwords=passwords,
         clock=clock,

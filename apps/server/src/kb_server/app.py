@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from kb_server.api import auth, collections, groups, health, keys, users
+from kb_server.api import auth, collections, documents, groups, health, keys, users
 from kb_server.api.errors import register_error_handlers
 from kb_server.settings import Settings
 from kb_server.wiring import Services, build_services, close_services
@@ -35,6 +35,7 @@ def create_app(services: Services | None = None) -> FastAPI:
     app.include_router(keys.admin_router, prefix=API_V1)
     app.include_router(groups.router, prefix=API_V1)
     app.include_router(collections.router, prefix=API_V1)
+    app.include_router(documents.router, prefix=API_V1)
     return app
 
 

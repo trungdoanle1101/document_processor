@@ -43,4 +43,4 @@ class DocumentDetails:
     version: DocumentVersion  # current version
     file: StoredFile  # size, type, and hash
     groups: list[Group]
-    job: IndexingJob | None  # lastest job for the current version
+    job: IndexingJob | None  # latest job for the current version
