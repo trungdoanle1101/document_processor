@@ -28,7 +28,9 @@ from kb_server.settings import Settings
 from kb_server.storage.repositories.collections import CollectionRepository
 from kb_server.storage.repositories.credentials import CredentialRepository
 from kb_server.storage.repositories.documents import DocumentRepository
+from kb_server.storage.repositories.files import StoredFileRepository
 from kb_server.storage.repositories.groups import GroupRepository
+from kb_server.storage.repositories.jobs import JobRepository
 from kb_server.storage.repositories.users import UserRepository
 from kb_server.wiring import Services
 from tests.support import PASSWORD, FakeClock
@@ -114,6 +116,16 @@ def collections(session: Session) -> CollectionRepository:
 @pytest.fixture
 def documents(session: Session) -> DocumentRepository:
     return DocumentRepository(session)
+
+
+@pytest.fixture
+def stored_files(session: Session) -> StoredFileRepository:
+    return StoredFileRepository(session)
+
+
+@pytest.fixture
+def jobs(session: Session) -> JobRepository:
+    return JobRepository(session)
 
 
 @pytest.fixture
