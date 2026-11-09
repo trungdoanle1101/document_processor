@@ -1,5 +1,46 @@
 # Working with Claude on this repository
 
+## The project
+
+A knowledge-base backend for restricted Vietnamese regulations: upload documents, find their
+structure (Chương, Điều, khoản…), chunk them, index them in a vector store, and search them
+with access control by group.
+
+- `src/document_processor/`: the framework (file adapters, cleaning, profiles, outlines,
+  chunking, review pages, retrieval). Tests in `tests/`.
+- `apps/server/` (`kb_server`): FastAPI + SQLAlchemy 2.0 + Postgres + Alembic.
+  `api → services → domain → storage`, plus `indexing/` for the worker. Services check
+  permissions and raise; repositories only report. Job handlers never touch the database.
+- `apps/cli/`: an HTTP-only client, later.
+
+The design, with the reason for each decision and the build order:
+@docs/backend-design.md
+
+## Commands
+
+```bash
+uv sync --all-packages                        # install everything
+docker compose -f docker/docker-compose.yml up -d postgres
+docker compose -f docker/docker-compose.yml exec postgres createdb -U kb kb_test   # once
+
+# server tests: run from apps/server (its tests/ package clashes with the framework's)
+cd apps/server && KB_TEST_DATABASE_URL=postgresql+psycopg://kb:kb@localhost/kb_test uv run pytest
+#   without KB_TEST_DATABASE_URL a throwaway Postgres container is started (slower)
+
+uv run pytest tests                           # framework tests, from the root
+uv run ruff check . && uv run ruff format --check .
+uv run mypy src apps/server/src apps/server/tests
+
+cd apps/server && uv run alembic upgrade head # migrations (settings from apps/server/.env)
+uv run kb-server create-admin --email … --name …
+uv run kb-server serve --reload
+```
+
+## Current work
+
+Build order step 4b: the worker. The prepare job is built; the index job is next
+(`indexing/handlers.py`, outline in docs/backend-design.md section 8).
+
 ## Roles
 
 - I write the code. Claude designs, explains, reviews and writes tests when asked.
@@ -53,6 +94,7 @@
 
 ## Security (the repository is public)
 
+- Never read anything under `data/`.
 - The regulation documents are restricted. Never commit documents or question sets;
   keep them under the git-ignored `data/`. Never send them to cloud services without
   explicit approval.

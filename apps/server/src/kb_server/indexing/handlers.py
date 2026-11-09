@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, kw_only=True)
-class JobTarget:
+class ClaimedJob:
     """What a job is about, loaded when it's claimed."""
 
     job: IndexingJob
@@ -40,15 +40,18 @@ class PermanentJobError(Exception):
 
 
 @dataclass(frozen=True, kw_only=True)
-class ChosenPreparation:
+class ProfileChoice:
     prepared: PreparedDocument
     profile: str  # name@version that was used
-    tried: tuple[str, ...]  # candidate profiles that found no structure, in order
+    profiles_without_structure: tuple[str, ...]  # in the order they were tried
 
 
 @dataclass(frozen=True, kw_only=True)
-class Preparation:
-    """How documents are prepared: the Preparers, and the settings that describe them."""
+class ProfileChooser:
+    """Prepares a file with the first candidate profile that finds structure, else the fallback.
+
+    Carries the PreparationSettings that describe its preparers.
+    """
 
     preparers: tuple[Preparer, ...]
     fallback_preparer: Preparer
@@ -78,56 +81,58 @@ class Preparation:
             settings=settings,
         )
 
-    def prepare(self, path: Path) -> ChosenPreparation:
-        tried: list[str] = []
+    def prepare(self, path: Path) -> ProfileChoice:
+        profiles_without_structure: list[str] = []
         for preparer in self.preparers:
             prepared = preparer.prepare(path)
             if any(node.is_section for node in prepared.logical.nodes):
-                return ChosenPreparation(
+                return ProfileChoice(
                     prepared=prepared,
                     profile=_profile_label_of(prepared),
-                    tried=tuple(tried),
+                    profiles_without_structure=tuple(profiles_without_structure),
                 )
-            tried.append(_profile_label_of(prepared))
+            profiles_without_structure.append(_profile_label_of(prepared))
         prepared = self.fallback_preparer.prepare(path)
-        return ChosenPreparation(
-            prepared=prepared, profile=_profile_label_of(prepared), tried=tuple(tried)
+        return ProfileChoice(
+            prepared=prepared,
+            profile=_profile_label_of(prepared),
+            profiles_without_structure=tuple(profiles_without_structure),
         )
 
 
 @dataclass(frozen=True, kw_only=True)
 class PrepareResult:
     profile: str
-    tried: tuple[str, ...]
-    settings: dict[str, Any]  # preparation.settings.describe()
-    queue_index: bool
+    profiles_without_structure: tuple[str, ...]
+    settings: dict[str, Any]  # chooser.settings.describe()
+    should_index: bool
 
     def provenance(self) -> dict[str, Any]:
         """Plain JSON, for document_versions.provenance["preparation"]"""
         return {
             "profile": self.profile,
-            "tried": list(self.tried),
+            "profiles_without_structure": list(self.profiles_without_structure),
             "settings": self.settings,
         }
 
 
-def handle_prepare(
-    target: JobTarget, *, preparation: Preparation, store: FileStore
+def run_prepare_job(
+    job: ClaimedJob, *, chooser: ProfileChooser, store: FileStore
 ) -> PrepareResult:
-    file = target.file
-    extension = _suffix_for(file.media_type)
+    file = job.file
+    extension = _file_extension_for(file.media_type)
 
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
         source = _copy_original(store, file, work / f"document{extension}")
-        choice = _prepare_file(preparation, source)
-        _save(store, target, choice, review_page=work / "review.html")
-    _log_warnings(target, choice)
+        choice = _prepare_file(chooser, source)
+        _save(store, job, choice, review_page=work / "review.html")
+    _log_warnings(job, choice)
     return PrepareResult(
         profile=choice.profile,
-        tried=choice.tried,
-        settings=preparation.settings.describe(),
-        queue_index=target.document.status == "active",
+        profiles_without_structure=choice.profiles_without_structure,
+        settings=chooser.settings.describe(),
+        should_index=job.document.status == "active",
     )
 
 
@@ -150,7 +155,7 @@ def _profile_label(profile: Profile) -> str:
     return f"{profile.name}@{profile.version}"
 
 
-def _suffix_for(media_type: str) -> str:
+def _file_extension_for(media_type: str) -> str:
     if media_type == DOCX:
         return ".docx"
     elif media_type == TEXT:
@@ -169,9 +174,9 @@ def _copy_original(store: FileStore, file: StoredFile, destination: Path) -> Pat
     return destination
 
 
-def _prepare_file(preparation: Preparation, path: Path) -> ChosenPreparation:
+def _prepare_file(chooser: ProfileChooser, path: Path) -> ProfileChoice:
     try:
-        return preparation.prepare(path)
+        return chooser.prepare(path)
     except OSError:
         raise
     except Exception as error:
@@ -181,25 +186,25 @@ def _prepare_file(preparation: Preparation, path: Path) -> ChosenPreparation:
 
 
 def _save(
-    store: FileStore, target: JobTarget, choice: ChosenPreparation, *, review_page: Path
+    store: FileStore, job: ClaimedJob, choice: ProfileChoice, *, review_page: Path
 ) -> None:
     save_prepared(
         store,
-        target.document.id,
-        target.version.version,
+        job.document.id,
+        job.version.version,
         PreparedParts(logical=choice.prepared.logical, chunks=choice.prepared.chunks),
     )
     choice.prepared.write_review_page(review_page)
-    save_review_page(store, target.document.id, target.version.version, review_page)
+    save_review_page(store, job.document.id, job.version.version, review_page)
 
 
-def _log_warnings(target: JobTarget, choice: ChosenPreparation) -> None:
+def _log_warnings(job: ClaimedJob, choice: ProfileChoice) -> None:
     counts = Counter(w.code for w in choice.prepared.summarize().warnings)
     if counts:
         logger.warning(
             "document %s v%d prepared with %s: %s",
-            target.document.id,
-            target.version.version,
+            job.document.id,
+            job.version.version,
             choice.profile,
             ", ".join(f"{code}={n}" for code, n in sorted(counts.items())),
         )
