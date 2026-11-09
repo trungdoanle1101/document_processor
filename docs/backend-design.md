@@ -172,12 +172,12 @@ one, and the override is a decision with its own author and time.
 ## 5. Index (Qdrant): chunk attributes
 
 ```text
-built in run_index_job (next)   access_groups (group ids)   collection_id   document_version
+built in run_index_job (next)   access_group_ids   collection_id   document_version
 later                           tags   status   retired_on   part
 ```
 
 - The index holds one version per document: indexing replaces all of the document's chunks.
-- Search filters inside the index: `access_groups` contains one of the reader's groups.
+- Search filters inside the index: `access_group_ids` contains one of the reader's groups.
   Why: filtering only after the search loses results and reveals that hidden hits exist.
   A private document has no groups, so no group filter matches it.
 - After retrieval: drop hits whose `document_version` isn't the document's current version, or
@@ -277,7 +277,7 @@ index. These rules make a crash at any point harmless:
 
 - W1: separate `prepare` (no models) and `index` (embeds) jobs; prepared output is saved
   between them (a claim check: the index job loads it by reference).
-- W2: index attributes are `access_groups`, `collection_id`, `document_version` (section 5).
+- W2: index attributes are `access_group_ids`, `collection_id`, `document_version` (section 5).
 - W3: retries up to `KB_JOB_MAX_ATTEMPTS`; `PermanentJobError` fails a job at once.
 - W4: one worker; a job `running` longer than `KB_JOB_TIMEOUT_MINUTES` is requeued at startup
   (a lease that expired).
@@ -303,10 +303,10 @@ document is `active`). The worker then, in one transaction: sets the version's p
 ### Index job (next)
 
 ```text
-1. load_prepared; missing → PermanentJobError ("prepare it again")
-2. the chunks were sized for this embedder (provenance settings.embedder == embedder.identity),
-   else PermanentJobError
-3. attributes: access_groups (sorted ids), collection_id, document_version
+1. the chunks were sized for this embedder (provenance settings.embedder == embedder.identity),
+   else PermanentJobError; checked first, so a refused job loads nothing
+2. load_prepared; missing → PermanentJobError ("prepare it again")
+3. attributes: access_group_ids (sorted), collection_id, document_version
 4. index_document: replaces all of the document's chunks; no chunks removes it
 5. log the chunk count; return IndexResult
 ```
@@ -322,7 +322,7 @@ results (counts and warnings are rebuilt from the files when shown).
 
 ```json
 {
-  "preparation": {"profile": "vn_regulation@4", "tried": [], "settings": {"...": "..."}},
+  "preparation": {"profile": "vn_regulation@4", "profiles_without_structure": [], "settings": {"...": "..."}},
   "index": {"embedder": "huggingface:BAAI/bge-m3@<revision>", "index": "qdrant:kb_chunks"}
 }
 ```

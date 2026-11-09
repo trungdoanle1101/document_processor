@@ -1,6 +1,7 @@
 import logging
 import shutil
 import tempfile
+import uuid
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, fields, is_dataclass
@@ -11,12 +12,17 @@ from document_processor.chunking.chunker import Chunker
 from document_processor.logical.profile import Profile
 from document_processor.logical.profiles import PROFILES
 from document_processor.preparation.preparer import PreparedDocument, Preparer
+from document_processor.retrieval.attributes import Attributes
+from document_processor.retrieval.embedding import Embedder
+from document_processor.retrieval.index import ChunkIndex
+from document_processor.retrieval.ingest import index_document
 from kb_server.domain.documents import Document, DocumentVersion
 from kb_server.domain.files import DOCX, TEXT, StoredFile
 from kb_server.domain.jobs import IndexingJob
 from kb_server.indexing.prepared import (
     PreparationSettings,
     PreparedParts,
+    load_prepared,
     save_prepared,
     save_review_page,
 )
@@ -33,6 +39,7 @@ class ClaimedJob:
     document: Document
     version: DocumentVersion
     file: StoredFile
+    group_ids: frozenset[uuid.UUID]
 
 
 class PermanentJobError(Exception):
@@ -116,6 +123,33 @@ class PrepareResult:
         }
 
 
+@dataclass(frozen=True, kw_only=True)
+class IndexTools:
+    embedder: Embedder
+    index: ChunkIndex
+    index_label: str
+
+    def __post_init__(self) -> None:
+        if self.embedder.identity != self.index.embedder_identity:
+            raise ValueError(
+                f"the index holds vectors from {self.index.embedder_identity!r}, "
+                f"but the embedder is {self.embedder.identity!r}"
+            )
+
+
+@dataclass(frozen=True, kw_only=True)
+class IndexResult:
+    embedder: str
+    index: str
+
+    def provenance(self) -> dict[str, str]:
+        """Plain JSON, for document_versions.provenance["index"]"""
+        return {
+            "embedder": self.embedder,
+            "index": self.index,
+        }
+
+
 def run_prepare_job(
     job: ClaimedJob, *, chooser: ProfileChooser, store: FileStore
 ) -> PrepareResult:
@@ -134,6 +168,28 @@ def run_prepare_job(
         settings=chooser.settings.describe(),
         should_index=job.document.status == "active",
     )
+
+
+def run_index_job(
+    job: ClaimedJob, *, tools: IndexTools, store: FileStore
+) -> IndexResult:
+    """Make this version's prepared chunks the document's only chunks in the index."""
+    _check_chunks_sized_for(job, embedder=tools.embedder)
+    parts = _load_parts(job, store=store)
+    index_document(
+        parts.chunks,
+        document_id=str(job.document.id),
+        embedder=tools.embedder,
+        index=tools.index,
+        attributes=_index_attributes(job),
+    )
+    logger.info(
+        "document %s v%d indexed: %d chunks",
+        job.document.id,
+        job.version.version,
+        len(parts.chunks),
+    )
+    return IndexResult(embedder=tools.embedder.identity, index=tools.index_label)
 
 
 def _describe_chunker(chunker: Chunker) -> dict[str, Any]:
@@ -212,3 +268,43 @@ def _log_warnings(job: ClaimedJob, choice: ProfileChoice) -> None:
 
 def _profile_label_of(prepared: PreparedDocument) -> str:
     return f"{prepared.logical.profile_name}@{prepared.logical.profile_version}"
+
+
+def _check_chunks_sized_for(job: ClaimedJob, *, embedder: Embedder) -> None:
+    """Raise PermanentJobError unless the version's chunks were sized with this embedder."""
+    document = f"document {job.document.id} v{job.version.version}"
+    if job.version.provenance is None:
+        raise PermanentJobError(f"{document} has no provenance; prepare it again")
+
+    try:
+        prepared_for = job.version.provenance["preparation"]["settings"]["embedder"]
+    # TypeError: a part of the path that isn't a mapping, e.g. "preparation": null
+    except (KeyError, TypeError):
+        raise PermanentJobError(
+            f"provenance for {document} doesn't say which embedder sized its chunks; "
+            "prepare it again"
+        ) from None
+
+    if prepared_for != embedder.identity:
+        raise PermanentJobError(
+            f"chunks of {document} were sized for {prepared_for!r}, "
+            f"but the worker embeds with {embedder.identity!r}; prepare it again"
+        )
+
+
+def _load_parts(job: ClaimedJob, *, store: FileStore) -> PreparedParts:
+    parts = load_prepared(store, job.document.id, job.version.version)
+    if parts is None:
+        raise PermanentJobError(
+            f"document {job.document.id} v{job.version.version} has no prepared "
+            "parts; prepare it again"
+        )
+    return parts
+
+
+def _index_attributes(job: ClaimedJob) -> Attributes:
+    return {
+        "access_group_ids": tuple(str(group_id) for group_id in sorted(job.group_ids)),
+        "collection_id": str(job.document.collection_id),
+        "document_version": job.version.version,
+    }

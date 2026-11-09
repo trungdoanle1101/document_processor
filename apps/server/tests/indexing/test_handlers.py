@@ -1,9 +1,11 @@
-"""Choosing how to prepare a document, and the prepare job's handler.
+"""Choosing how to prepare a document, and the prepare and index jobs' handlers.
 
 No database: a ClaimedJob is built by hand, the store is a LocalFileStore in a temporary
-folder, and chunks are sized in words, so no model is loaded.
+folder, chunks are sized in words and embedded by counting, and the index lives in memory,
+so no model or Qdrant is needed.
 """
 
+import dataclasses
 import hashlib
 import io
 import json
@@ -11,6 +13,7 @@ import logging
 import tempfile
 import uuid
 import zipfile
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, BinaryIO
@@ -21,16 +24,26 @@ import pytest
 from document_processor.chunking import Chunk, OutlineChunker, WordTokenizer
 from document_processor.core.models import LogicalDocument
 from document_processor.logical.profiles import PROFILES
+from document_processor.retrieval.embedding import (
+    DenseVector,
+    DenseVectorSpec,
+    Embedding,
+    VectorSpec,
+)
+from document_processor.retrieval.in_memory_index import InMemoryChunkIndex
+from document_processor.retrieval.index import ChunkFilter, IndexedChunk
 from kb_server.domain.documents import Document, DocumentStatus, DocumentVersion
 from kb_server.domain.files import DOCX, TEXT, StoredFile
 from kb_server.domain.jobs import IndexingJob
 from kb_server.indexing.handlers import (
     ClaimedJob,
+    IndexTools,
     PermanentJobError,
     ProfileChooser,
+    run_index_job,
     run_prepare_job,
 )
-from kb_server.indexing.prepared import load_prepared
+from kb_server.indexing.prepared import PreparedParts, load_prepared, save_prepared
 from kb_server.storage.files import (
     FileStore,
     LocalFileStore,
@@ -65,16 +78,22 @@ def label(name: str) -> str:
 
 VN_REGULATION = label("vn_regulation")
 PLAIN = label("plain")
+# what make_chooser sizes chunks for and CountingEmbedder embeds with, unless told otherwise
+EMBEDDER = "words"
+INDEX_LABEL = "memory:test"
 
 
 def make_chooser(
-    profiles: tuple[str, ...] = ("vn_regulation",), fallback: str = "plain"
+    profiles: tuple[str, ...] = ("vn_regulation",),
+    fallback: str = "plain",
+    *,
+    embedder_identity: str = EMBEDDER,
 ) -> ProfileChooser:
     return ProfileChooser.from_profiles(
         profiles=profiles,
         fallback_profile=fallback,
         chunker=OutlineChunker(tokenizer=WordTokenizer(), max_tokens=50),
-        embedder_identity="words",
+        embedder_identity=embedder_identity,
     )
 
 
@@ -100,6 +119,43 @@ def text_bytes(text: str) -> bytes:
     return text.encode("utf-8")
 
 
+class CountingEmbedder:
+    """An Embedder without a model: a text's vector is its word and character counts.
+
+    Records every passage it encodes, so tests can check nothing was embedded.
+    """
+
+    def __init__(self, identity: str = EMBEDDER) -> None:
+        self._identity = identity
+        self.passages: list[str] = []
+
+    @property
+    def identity(self) -> str:
+        return self._identity
+
+    @property
+    def vector_specs(self) -> Mapping[str, VectorSpec]:
+        return {"dense": DenseVectorSpec(dimension=2)}
+
+    @property
+    def tokenizer(self) -> None:
+        return None
+
+    def encode_query(self, text: str) -> Embedding:
+        return self._encode(text)
+
+    def encode_passages(self, texts: Sequence[str]) -> list[Embedding]:
+        self.passages.extend(texts)
+        return [self._encode(text) for text in texts]
+
+    def _encode(self, text: str) -> Embedding:
+        counts = (float(len(text.split())), float(len(text)))
+        return Embedding(
+            embedder_identity=self._identity,
+            vectors={"dense": DenseVector(values=counts)},
+        )
+
+
 @pytest.fixture
 def root(tmp_path: Path) -> Path:
     root = tmp_path / "store"
@@ -115,6 +171,23 @@ def store(root: Path) -> FileStore:
 @pytest.fixture
 def chooser() -> ProfileChooser:
     return make_chooser()
+
+
+@pytest.fixture
+def embedder() -> CountingEmbedder:
+    return CountingEmbedder()
+
+
+@pytest.fixture
+def index(embedder: CountingEmbedder) -> InMemoryChunkIndex:
+    return InMemoryChunkIndex(
+        embedder_identity=embedder.identity, vector_specs=embedder.vector_specs
+    )
+
+
+@pytest.fixture
+def tools(embedder: CountingEmbedder, index: InMemoryChunkIndex) -> IndexTools:
+    return IndexTools(embedder=embedder, index=index, index_label=INDEX_LABEL)
 
 
 @pytest.fixture
@@ -135,6 +208,7 @@ def stage(
     document_id: uuid.UUID | None = None,
     version: int = 1,
     stored: bool = True,
+    group_ids: frozenset[uuid.UUID] = frozenset(),
 ) -> ClaimedJob:
     """A claimed prepare job, with its original in the store (unless stored=False)."""
     sha256 = hashlib.sha256(content).hexdigest()
@@ -185,6 +259,7 @@ def stage(
             created_at=NOW,
         ),
         file=file,
+        group_ids=group_ids,
     )
 
 
@@ -209,6 +284,41 @@ def write(tmp_path: Path, name: str, content: bytes) -> Path:
     return path
 
 
+def stage_prepared(
+    store: FileStore,
+    content: bytes,
+    *,
+    chooser: ProfileChooser,
+    document_id: uuid.UUID | None = None,
+    version: int = 1,
+    group_ids: frozenset[uuid.UUID] = frozenset(),
+) -> ClaimedJob:
+    """A claimed index job for a version the prepare job prepared, with its provenance."""
+    staged = stage(
+        store, content, document_id=document_id, version=version, group_ids=group_ids
+    )
+    result = run_prepare_job(staged, chooser=chooser, store=store)
+    return dataclasses.replace(
+        with_provenance(staged, {"preparation": result.provenance()}),
+        job=dataclasses.replace(staged.job, kind="index"),
+    )
+
+
+def with_provenance(
+    job: ClaimedJob, provenance: Mapping[str, Any] | None
+) -> ClaimedJob:
+    return dataclasses.replace(
+        job, version=dataclasses.replace(job.version, provenance=provenance)
+    )
+
+
+def indexed(index: InMemoryChunkIndex, job: ClaimedJob) -> list[IndexedChunk]:
+    """The job's document's chunks in the index, in document order."""
+    return index.list_chunks(
+        ChunkFilter(document_ids=(str(job.document.id),)), limit=1000
+    )
+
+
 class FailingPuts:
     """A store that fails every write, like S3 being unreachable."""
 
@@ -220,6 +330,25 @@ class FailingPuts:
 
     def open(self, key: str) -> BinaryIO:
         return self._store.open(key)
+
+    def exists(self, key: str) -> bool:
+        return self._store.exists(key)
+
+    def delete_folder(self, folder: str) -> int:
+        return self._store.delete_folder(folder)
+
+
+class FailingOpens:
+    """A store that fails every read, like S3 being unreachable."""
+
+    def __init__(self, store: FileStore) -> None:
+        self._store = store
+
+    def put(self, key: str, data: BinaryIO, *, size: int, media_type: str) -> None:
+        self._store.put(key, data, size=size, media_type=media_type)
+
+    def open(self, key: str) -> BinaryIO:
+        raise ConnectionError("store unreachable")
 
     def exists(self, key: str) -> bool:
         return self._store.exists(key)
@@ -591,3 +720,280 @@ def test_a_clean_preparation_logs_nothing(
         run_prepare_job(job, chooser=chooser, store=store)
 
     assert caplog.records == []
+
+
+# the index job: building its tools
+
+
+def test_tools_for_an_index_of_another_embedder_are_refused(
+    index: InMemoryChunkIndex,
+) -> None:
+    with pytest.raises(ValueError, match="'another'"):
+        IndexTools(
+            embedder=CountingEmbedder("another"), index=index, index_label=INDEX_LABEL
+        )
+
+
+# the index job
+
+
+def test_the_prepared_chunks_are_indexed_in_document_order(
+    store: FileStore,
+    chooser: ProfileChooser,
+    tools: IndexTools,
+    index: InMemoryChunkIndex,
+) -> None:
+    job = stage_prepared(store, text_bytes(REGULATION), chooser=chooser)
+
+    run_index_job(job, tools=tools, store=store)
+
+    _, chunks = load(store, job)
+    assert [chunk.text for chunk in indexed(index, job)] == [
+        chunk.text for chunk in chunks
+    ]
+
+
+def test_each_chunk_carries_its_groups_collection_and_version(
+    store: FileStore,
+    chooser: ProfileChooser,
+    tools: IndexTools,
+    index: InMemoryChunkIndex,
+) -> None:
+    first, second = uuid.UUID(int=1), uuid.UUID(int=2)
+    job = stage_prepared(
+        store,
+        text_bytes(REGULATION),
+        chooser=chooser,
+        version=3,
+        group_ids=frozenset({second, first}),
+    )
+
+    run_index_job(job, tools=tools, store=store)
+
+    for chunk in indexed(index, job):
+        # sorted, so the same groups always give the same attribute
+        assert chunk.attributes["access_group_ids"] == (str(first), str(second))
+        assert chunk.attributes["collection_id"] == str(job.document.collection_id)
+        assert chunk.attributes["document_version"] == 3
+
+
+def test_a_private_document_is_indexed_without_groups(
+    store: FileStore,
+    chooser: ProfileChooser,
+    tools: IndexTools,
+    index: InMemoryChunkIndex,
+) -> None:
+    job = stage_prepared(store, text_bytes(REGULATION), chooser=chooser)
+
+    run_index_job(job, tools=tools, store=store)
+
+    chunks = indexed(index, job)
+    assert chunks
+    assert all(chunk.attributes["access_group_ids"] == () for chunk in chunks)
+
+
+def test_indexing_a_new_version_replaces_the_old_chunks(
+    store: FileStore,
+    chooser: ProfileChooser,
+    tools: IndexTools,
+    index: InMemoryChunkIndex,
+) -> None:
+    first = stage_prepared(store, text_bytes(PLAIN_TEXT), chooser=chooser)
+    run_index_job(first, tools=tools, store=store)
+    second = stage_prepared(
+        store,
+        text_bytes(REGULATION),
+        chooser=chooser,
+        document_id=first.document.id,
+        version=2,
+    )
+
+    run_index_job(second, tools=tools, store=store)
+
+    chunks = indexed(index, second)
+    assert {chunk.attributes["document_version"] for chunk in chunks} == {2}
+    assert "kế hoạch sao lưu" not in "".join(chunk.text for chunk in chunks)
+
+
+def test_indexing_again_leaves_the_same_chunks(
+    store: FileStore,
+    chooser: ProfileChooser,
+    tools: IndexTools,
+    index: InMemoryChunkIndex,
+) -> None:
+    job = stage_prepared(store, text_bytes(REGULATION), chooser=chooser)
+    run_index_job(job, tools=tools, store=store)
+    once = indexed(index, job)
+
+    run_index_job(job, tools=tools, store=store)
+
+    assert indexed(index, job) == once
+
+
+def test_other_documents_are_left_alone_when_indexing(
+    store: FileStore,
+    chooser: ProfileChooser,
+    tools: IndexTools,
+    index: InMemoryChunkIndex,
+) -> None:
+    other = stage_prepared(store, text_bytes(PLAIN_TEXT), chooser=chooser)
+    run_index_job(other, tools=tools, store=store)
+    before = indexed(index, other)
+    job = stage_prepared(store, text_bytes(REGULATION), chooser=chooser)
+
+    run_index_job(job, tools=tools, store=store)
+
+    assert indexed(index, other) == before
+
+
+def test_a_version_without_chunks_is_removed_from_the_index(
+    store: FileStore,
+    chooser: ProfileChooser,
+    tools: IndexTools,
+    index: InMemoryChunkIndex,
+) -> None:
+    job = stage_prepared(store, text_bytes(REGULATION), chooser=chooser)
+    run_index_job(job, tools=tools, store=store)
+    logical, _ = load(store, job)
+    save_prepared(
+        store,
+        job.document.id,
+        job.version.version,
+        PreparedParts(logical=logical, chunks=()),
+    )
+
+    run_index_job(job, tools=tools, store=store)
+
+    assert indexed(index, job) == []
+
+
+def test_the_index_result_names_the_embedder_and_the_index(
+    store: FileStore, chooser: ProfileChooser, tools: IndexTools
+) -> None:
+    job = stage_prepared(store, text_bytes(REGULATION), chooser=chooser)
+
+    provenance = run_index_job(job, tools=tools, store=store).provenance()
+
+    assert provenance == {"embedder": EMBEDDER, "index": INDEX_LABEL}
+    assert json.loads(json.dumps(provenance)) == provenance  # plain JSON
+
+
+def test_indexing_logs_the_chunk_count_without_document_text(
+    store: FileStore,
+    chooser: ProfileChooser,
+    tools: IndexTools,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    job = stage_prepared(store, text_bytes(REGULATION), chooser=chooser)
+    _, chunks = load(store, job)
+    caplog.clear()
+
+    with caplog.at_level(logging.INFO, logger="kb_server.indexing.handlers"):
+        run_index_job(job, tools=tools, store=store)
+
+    assert [record.getMessage() for record in caplog.records] == [
+        f"document {job.document.id} v1 indexed: {len(chunks)} chunks"
+    ]
+
+
+# the index job: failures that retrying can't fix
+
+
+def test_a_version_without_prepared_parts_fails_for_good(
+    store: FileStore,
+    chooser: ProfileChooser,
+    tools: IndexTools,
+    index: InMemoryChunkIndex,
+) -> None:
+    job = stage_prepared(store, text_bytes(REGULATION), chooser=chooser)
+    store.delete_folder(prepared_version_folder(job.document.id, job.version.version))
+
+    with pytest.raises(PermanentJobError, match="prepare it again") as raised:
+        run_index_job(job, tools=tools, store=store)
+
+    assert str(job.document.id) in str(raised.value)
+    assert indexed(index, job) == []
+
+
+def test_a_version_without_provenance_fails_for_good(
+    store: FileStore, chooser: ProfileChooser, tools: IndexTools
+) -> None:
+    job = with_provenance(
+        stage_prepared(store, text_bytes(REGULATION), chooser=chooser), None
+    )
+
+    with pytest.raises(PermanentJobError, match="no provenance.*prepare it again"):
+        run_index_job(job, tools=tools, store=store)
+
+
+@pytest.mark.parametrize(
+    "provenance",
+    [
+        {},
+        {"index": {"embedder": EMBEDDER, "index": INDEX_LABEL}},
+        {"preparation": None},
+        {"preparation": {}},
+        {"preparation": {"settings": {}}},
+    ],
+    ids=["empty", "index only", "null preparation", "no settings", "no embedder"],
+)
+def test_provenance_that_doesnt_name_the_embedder_fails_for_good(
+    store: FileStore,
+    chooser: ProfileChooser,
+    tools: IndexTools,
+    provenance: Mapping[str, Any],
+) -> None:
+    job = with_provenance(
+        stage_prepared(store, text_bytes(REGULATION), chooser=chooser), provenance
+    )
+
+    with pytest.raises(PermanentJobError, match="doesn't say which embedder") as raised:
+        run_index_job(job, tools=tools, store=store)
+
+    assert raised.value.__suppress_context__  # one clear error in the traceback
+
+
+def test_chunks_sized_for_another_embedder_fail_for_good_before_embedding(
+    store: FileStore, tools: IndexTools, embedder: CountingEmbedder
+) -> None:
+    job = stage_prepared(
+        store,
+        text_bytes(REGULATION),
+        chooser=make_chooser(embedder_identity="another"),
+    )
+
+    with pytest.raises(PermanentJobError) as raised:
+        run_index_job(job, tools=tools, store=store)
+
+    assert "'another'" in str(raised.value)
+    assert repr(EMBEDDER) in str(raised.value)
+    assert embedder.passages == []
+
+
+# the index job: failures worth retrying pass through unchanged
+
+
+def test_an_embedder_error_is_not_permanent(
+    store: FileStore,
+    chooser: ProfileChooser,
+    tools: IndexTools,
+    embedder: CountingEmbedder,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def out_of_memory(texts: Sequence[str]) -> list[Embedding]:
+        raise RuntimeError("CUDA out of memory")
+
+    monkeypatch.setattr(embedder, "encode_passages", out_of_memory)
+    job = stage_prepared(store, text_bytes(REGULATION), chooser=chooser)
+
+    with pytest.raises(RuntimeError, match="out of memory"):
+        run_index_job(job, tools=tools, store=store)
+
+
+def test_a_store_that_cant_be_read_is_not_mistaken_for_missing_parts(
+    store: FileStore, chooser: ProfileChooser, tools: IndexTools
+) -> None:
+    job = stage_prepared(store, text_bytes(REGULATION), chooser=chooser)
+
+    with pytest.raises(ConnectionError):
+        run_index_job(job, tools=tools, store=FailingOpens(store))
