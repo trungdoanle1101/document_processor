@@ -18,6 +18,7 @@ from kb_server.indexing.prepared import (
     PreparationSettings,
     PreparedParts,
     save_prepared,
+    save_review_page,
 )
 from kb_server.storage.files import FileStore
 
@@ -78,23 +79,20 @@ class Preparation:
         )
 
     def prepare(self, path: Path) -> ChosenPreparation:
-        """Candidates are tried in order; list them from most specific to most general."""
         tried: list[str] = []
         for preparer in self.preparers:
             prepared = preparer.prepare(path)
-            profile = (
-                f"{prepared.logical.profile_name}@{prepared.logical.profile_version}"
-            )
-            if not any(node.is_section for node in prepared.logical.nodes):
-                tried.append(profile)
-            else:
-                break
-        else:
-            prepared = self.fallback_preparer.prepare(path)
-            profile = (
-                f"{prepared.logical.profile_name}@{prepared.logical.profile_version}"
-            )
-        return ChosenPreparation(prepared=prepared, profile=profile, tried=tuple(tried))
+            if any(node.is_section for node in prepared.logical.nodes):
+                return ChosenPreparation(
+                    prepared=prepared,
+                    profile=_profile_label_of(prepared),
+                    tried=tuple(tried),
+                )
+            tried.append(_profile_label_of(prepared))
+        prepared = self.fallback_preparer.prepare(path)
+        return ChosenPreparation(
+            prepared=prepared, profile=_profile_label_of(prepared), tried=tuple(tried)
+        )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -119,9 +117,7 @@ def handle_prepare(
     file = target.file
     extension = _suffix_for(file.media_type)
 
-    with (
-        tempfile.TemporaryDirectory() as tmp,
-    ):
+    with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
         source = _copy_original(store, file, work / f"document{extension}")
         choice = _prepare_file(preparation, source)
@@ -167,7 +163,7 @@ def _copy_original(store: FileStore, file: StoredFile, destination: Path) -> Pat
     try:
         original = store.open(file.storage_key)
     except FileNotFoundError:
-        raise PermanentJobError(f"stored file {file.sha256} is missing")
+        raise PermanentJobError(f"stored file {file.sha256} is missing") from None
     with original, destination.open("wb") as out:
         shutil.copyfileobj(original, out)
     return destination
@@ -179,7 +175,9 @@ def _prepare_file(preparation: Preparation, path: Path) -> ChosenPreparation:
     except OSError:
         raise
     except Exception as error:
-        raise PermanentJobError("couldn't prepare file") from error
+        raise PermanentJobError(
+            f"couldn't prepare the file: {type(error).__name__}: {error}"[:500]
+        ) from error
 
 
 def _save(
@@ -192,15 +190,20 @@ def _save(
         PreparedParts(logical=choice.prepared.logical, chunks=choice.prepared.chunks),
     )
     choice.prepared.write_review_page(review_page)
+    save_review_page(store, target.document.id, target.version.version, review_page)
 
 
 def _log_warnings(target: JobTarget, choice: ChosenPreparation) -> None:
     counts = Counter(w.code for w in choice.prepared.summarize().warnings)
     if counts:
         logger.warning(
-            "document %s v%d prepared with %s %s",
+            "document %s v%d prepared with %s: %s",
             target.document.id,
             target.version.version,
             choice.profile,
             ", ".join(f"{code}={n}" for code, n in sorted(counts.items())),
         )
+
+
+def _profile_label_of(prepared: PreparedDocument) -> str:
+    return f"{prepared.logical.profile_name}@{prepared.logical.profile_version}"

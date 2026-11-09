@@ -4,7 +4,6 @@ from datetime import datetime
 
 DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 TEXT = "text/plain"
-HTML = "text/html"
 
 
 @dataclass(frozen=True, kw_only=True)
