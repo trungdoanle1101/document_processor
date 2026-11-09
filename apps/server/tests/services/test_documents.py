@@ -28,7 +28,7 @@ from kb_server.domain.groups import Group
 from kb_server.domain.users import User, UserRole
 from kb_server.services.auth import AuthService
 from kb_server.services.documents import DocumentService
-from kb_server.services.uploads import DOCX, TEXT
+from kb_server.domain.files import DOCX, TEXT
 from kb_server.storage.files import FileStore, original_key
 from kb_server.storage.models import DocumentRow, IndexingJobRow, StoredFileRow
 from kb_server.storage.repositories.collections import CollectionRepository

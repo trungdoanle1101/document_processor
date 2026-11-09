@@ -10,9 +10,7 @@ from typing import BinaryIO
 from zipfile import BadZipFile, ZipFile, is_zipfile
 
 from kb_server.domain.errors import FileTooLarge, InvalidRequest, UnsupportedFileType
-
-DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-TEXT = "text/plain"
+from kb_server.domain.files import DOCX, TEXT
 
 _MB = 1024 * 1024
 _CHUNK_SIZE = 1 * _MB

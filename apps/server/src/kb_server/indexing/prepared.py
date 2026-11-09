@@ -3,6 +3,7 @@ import json
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from document_processor.chunking import Chunk
@@ -67,6 +68,20 @@ def save_prepared(
     )
 
 
+def save_review_page(
+    store: FileStore, document_id: uuid.UUID, version: int, page: Path
+) -> None:
+    """Store review.html next to the parts. Call after save_prepared, which clears the folder."""
+    folder = prepared_version_folder(document_id, version)
+    with page.open("rb") as data:
+        store.put(
+            _review_key(folder),
+            data,
+            size=page.stat().st_size,
+            media_type="text/html; charset=utf-8",
+        )
+
+
 def load_prepared(
     store: FileStore, document_id: uuid.UUID, version: int
 ) -> PreparedParts | None:
@@ -102,3 +117,7 @@ def _logical_key(folder: str) -> str:
 
 def _chunks_key(folder: str) -> str:
     return f"{folder}/chunks.jsonl"
+
+
+def _review_key(folder: str) -> str:
+    return f"{folder}/review.html"
