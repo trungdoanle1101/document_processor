@@ -19,7 +19,10 @@ from kb_server.storage.files import FileStore
 class PreparationSettings:
     """Everything that decides how a file is prepared. Different settings, different chunks."""
 
-    profile: str  # name@version
+    profiles: tuple[
+        str, ...
+    ]  # tuples of name@version - naming the candidate profiles to try
+    fallback_profile: str
     chunker: Mapping[
         str, Any
     ]  # kind and parameters for chunker: e.g., {"kind": "outline", "max_tokens": 512}
@@ -35,7 +38,8 @@ class PreparationSettings:
     def describe(self) -> dict[str, Any]:
         """The settings in full, for provenance."""
         return {
-            "profile": self.profile,
+            "profile": list(self.profiles),
+            "fallback_profile": self.fallback_profile,
             "chunker": dict(self.chunker),
             "embedder": self.embedder,
         }
