@@ -1,4 +1,4 @@
-"""Tests for preparer/review_page.py: the review page as HTML.
+"""Tests for preparation/review_page.py: the review page as HTML.
 
 render_review_html(data) returns one self-contained page: the summary (the
 statistics in a <pre>, each warning a link to its chunk), the outline tree

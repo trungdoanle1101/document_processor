@@ -1,4 +1,4 @@
-"""Tests for pipeline/extraction.py and the ADAPTERS registry: picking the adapter by file extension.
+"""Tests for preparation/extraction.py and the ADAPTERS registry: picking the adapter by file extension.
 
 `extract_physical_document(path, adapters=ADAPTERS)` looks the lowercased
 suffix up in the registry and lets that adapter read the file. Keys are

@@ -1,4 +1,4 @@
-"""Tests for pipeline/pipeline.py: Preparer, PreparedDocument, PreparationFailure.
+"""Tests for preparation/preparer.py: Preparer, PreparedDocument, PreparationFailure.
 
 A Preparer holds configuration only: a profile (a registry name or a Profile),
 a chunker, cleaning steps (DEFAULT_STEPS unless told otherwise; () skips

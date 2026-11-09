@@ -1,4 +1,4 @@
-"""Tests for pipeline/review.py: format_outline, build_review_data, build_table_rows.
+"""Tests for preparation/review.py: format_outline, build_review_data, build_table_rows.
 
 format_outline: one line per node: indentation by depth, the heading label
 (marker and title; "[level]" when both are missing) and the segment range.
