@@ -1,4 +1,4 @@
-"""The file store: content-addressed keys, and LocalFileStore.
+"""The file store: where files go (originals and prepared output), and LocalFileStore.
 
 The store tests use the `store` fixture, typed as the FileStore protocol, so they can run
 against S3FileStore too once it exists (by parametrising the fixture).
@@ -6,6 +6,7 @@ against S3FileStore too once it exists (by parametrising the fixture).
 
 import hashlib
 import io
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -14,8 +15,9 @@ import pytest
 from kb_server.storage.files import (
     FileStore,
     LocalFileStore,
-    derived_prefix,
     original_key,
+    prepared_folder,
+    prepared_version_folder,
 )
 
 CONTENT = "Điều 1. Phạm vi điều chỉnh\n".encode()
@@ -211,8 +213,10 @@ def test_keys_outside_the_root_are_refused(
         store.exists(key)
     with pytest.raises(ValueError):
         store.open(key)
+    with pytest.raises(ValueError):
+        store.delete_folder(key)
 
-    # nothing was written next to the store
+    # nothing was written next to the store, and the store itself is still there
     assert sorted(path.name for path in root.parent.iterdir()) == ["store"]
 
 
@@ -278,44 +282,126 @@ def test_a_relative_root_is_resolved(
     assert read(store, key) == CONTENT
 
 
-# derived_prefix
+# prepared folders
+
+DOCUMENT_ID = uuid.UUID("0b5e4c1a-6f1d-4a43-9c55-3d2b8e0f7a19")
 
 
-FINGERPRINT = "1b4e6c0d9a7f"
+def test_a_documents_prepared_folder_is_named_by_its_id() -> None:
+    assert prepared_folder(DOCUMENT_ID) == f"prepared/{DOCUMENT_ID}"
 
 
-def test_derived_prefix_sits_under_the_files_hash() -> None:
-    digest = hashlib.sha256(b"x").hexdigest()
-
-    prefix = derived_prefix(digest, FINGERPRINT)
-
-    assert prefix == f"derived/sha256/{digest[:2]}/{digest[2:4]}/{digest}/{FINGERPRINT}"
+def test_a_versions_folder_sits_inside_its_documents_folder() -> None:
+    assert (
+        prepared_version_folder(DOCUMENT_ID, 3) == f"{prepared_folder(DOCUMENT_ID)}/v3"
+    )
 
 
-def test_derived_and_original_keys_share_the_same_folders() -> None:
-    digest = hashlib.sha256(b"x").hexdigest()
-
-    original = original_key(digest).removeprefix("originals/")
-    derived = derived_prefix(digest, FINGERPRINT).removeprefix("derived/")
-
-    assert derived == f"{original}/{FINGERPRINT}"
+@pytest.mark.parametrize("version", [0, -1])
+def test_a_version_below_1_is_refused(version: int) -> None:
+    with pytest.raises(ValueError):
+        prepared_version_folder(DOCUMENT_ID, version)
 
 
-@pytest.mark.parametrize(
-    "digest",
-    ["", "abc", "A" * 64, "g" * 64],
-    ids=["empty", "short", "uppercase", "not hex"],
-)
-def test_derived_prefix_refuses_a_bad_file_hash(digest: str) -> None:
-    with pytest.raises(ValueError, match="file_sha256"):
-        derived_prefix(digest, FINGERPRINT)
+def test_prepared_folders_are_valid_store_folders(store: FileStore) -> None:
+    key = f"{prepared_version_folder(DOCUMENT_ID, 1)}/logical.json"
+
+    put_bytes(store, key, b"{}")
+
+    assert read(store, key) == b"{}"
 
 
-@pytest.mark.parametrize(
-    "fingerprint",
-    ["", "1b4e6c0d9a7", "1b4e6c0d9a7f0", "1B4E6C0D9A7F", "1b4e6c0d9a7g", "../../../x"],
-    ids=["empty", "11 chars", "13 chars", "uppercase", "not hex", "path"],
-)
-def test_derived_prefix_refuses_a_bad_fingerprint(fingerprint: str) -> None:
-    with pytest.raises(ValueError, match="fingerprint"):
-        derived_prefix(hashlib.sha256(b"x").hexdigest(), fingerprint)
+# delete_folder
+
+
+def test_delete_folder_deletes_its_files_including_subfolders(
+    root: Path, store: FileStore
+) -> None:
+    for key in ["a/one", "a/b/two", "a/b/c/three"]:
+        put_bytes(store, key, b"x")
+
+    assert store.delete_folder("a") == 3
+
+    for key in ["a/one", "a/b/two", "a/b/c/three"]:
+        assert not store.exists(key)
+    assert not (root / "a").exists()
+
+
+def test_delete_folder_leaves_other_folders_alone(store: FileStore) -> None:
+    put_bytes(store, "a/one", b"x")
+    put_bytes(store, "b/one", b"y")
+    put_bytes(store, "parent/a/one", b"z")
+
+    store.delete_folder("a")
+
+    assert read(store, "b/one") == b"y"
+    assert read(store, "parent/a/one") == b"z"
+
+
+def test_a_folder_doesnt_match_a_longer_name(store: FileStore) -> None:
+    # "v1" must not take "v10" with it: a folder is matched as folder + "/"
+    put_bytes(store, "doc/v1/logical.json", b"1")
+    put_bytes(store, "doc/v10/logical.json", b"10")
+
+    assert store.delete_folder("doc/v1") == 1
+
+    assert read(store, "doc/v10/logical.json") == b"10"
+
+
+def test_deleting_a_folder_inside_a_folder_keeps_the_rest(store: FileStore) -> None:
+    put_bytes(store, "doc/v1/logical.json", b"1")
+    put_bytes(store, "doc/v2/logical.json", b"2")
+
+    store.delete_folder("doc/v1")
+
+    assert not store.exists("doc/v1/logical.json")
+    assert read(store, "doc/v2/logical.json") == b"2"
+
+
+def test_deleting_a_missing_folder_deletes_nothing(store: FileStore) -> None:
+    assert store.delete_folder("never/made") == 0
+
+
+def test_deleting_twice_is_harmless(store: FileStore) -> None:
+    put_bytes(store, "a/one", b"x")
+
+    assert store.delete_folder("a") == 1
+    assert store.delete_folder("a") == 0
+
+
+def test_an_empty_folder_counts_as_nothing(root: Path, store: FileStore) -> None:
+    put_bytes(store, "doc/v1/logical.json", b"1")
+    store.delete_folder("doc/v1")  # leaves an empty doc/ behind on disk
+
+    assert store.delete_folder("doc") == 0
+    assert not (root / "doc").exists()
+
+
+def test_a_file_is_not_a_folder(store: FileStore) -> None:
+    put_bytes(store, "a/one", b"x")
+
+    with pytest.raises(ValueError):
+        store.delete_folder("a/one")
+
+    assert read(store, "a/one") == b"x"  # and it wasn't deleted
+
+
+def test_files_can_be_stored_again_after_their_folder_is_deleted(
+    store: FileStore,
+) -> None:
+    put_bytes(store, "a/one", b"old")
+    store.delete_folder("a")
+
+    put_bytes(store, "a/one", b"new")
+
+    assert read(store, "a/one") == b"new"
+
+
+def test_deleting_a_folder_spares_originals(store: FileStore) -> None:
+    original = key_for(CONTENT)
+    put_bytes(store, original, CONTENT)
+    put_bytes(store, f"{prepared_folder(DOCUMENT_ID)}/v1/logical.json", b"{}")
+
+    assert store.delete_folder(prepared_folder(DOCUMENT_ID)) == 1
+
+    assert read(store, original) == CONTENT

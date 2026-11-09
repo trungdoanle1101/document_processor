@@ -2,17 +2,26 @@ import os
 import re
 import shutil
 import tempfile
+import uuid
 from pathlib import Path
 from typing import BinaryIO, Protocol
 
 _SHA256 = re.compile(r"[0-9a-f]{64}")
-_FINGERPRINT = re.compile(r"[0-9a-f]{12}")
 
 
 class FileStore(Protocol):
-    def put(self, key: str, data: BinaryIO, *, size: int, media_type: str) -> None: ...
+    def put(self, key: str, data: BinaryIO, *, size: int, media_type: str) -> None:
+        """Store data at key. If a file is already there, keep it and ignore data."""
+        ...
+
     def open(self, key: str) -> BinaryIO: ...
     def exists(self, key: str) -> bool: ...
+    def delete_folder(self, folder: str) -> int:
+        """A folder is a key without the last /name part.
+        This method deletes every file whose key starts with folder + '/';
+        a missing folder deletes nothing.
+        """
+        ...
 
 
 class LocalFileStore:
@@ -53,8 +62,19 @@ class LocalFileStore:
         """Check if key exists and is a file."""
         return self._path(key).is_file()
 
+    def delete_folder(self, folder: str) -> int:
+        """Delete the files in the folder (including subfolders) and return number of files deleted."""
+        folder_path = self._path(folder)
+        if folder_path.is_file():
+            raise ValueError(f"{folder!r} names a file, not a folder")
+        if not folder_path.exists():
+            return 0
+        file_count = sum(1 for item in folder_path.rglob("*") if item.is_file())
+        shutil.rmtree(folder_path)
+        return file_count
+
     def _path(self, key: str) -> Path:
-        """The path for a key; refuses keys that aren't a file inside the root."""
+        """The path for a key; refuses keys that aren't a path inside the root."""
         key_path = Path(key)
 
         if key_path.is_absolute():
@@ -62,7 +82,7 @@ class LocalFileStore:
 
         resolved_path = (self._root / key_path).resolve()
         if resolved_path == self._root or not resolved_path.is_relative_to(self._root):
-            raise ValueError(f"key {key!r} isn't a file path inside the store")
+            raise ValueError(f"key {key!r} isn't a path inside the store")
 
         return resolved_path
 
@@ -74,13 +94,16 @@ def original_key(sha256: str) -> str:
     return f"originals/{_by_sha256(sha256)}"
 
 
-def derived_prefix(file_sha256: str, fingerprint: str) -> str:
-    """Decides where a file's prepared parts are kept."""
-    if not _SHA256.fullmatch(file_sha256):
-        raise ValueError(f"file_sha256 is not a sha256 hex digest: {file_sha256!r}")
-    if not _FINGERPRINT.fullmatch(fingerprint):
-        raise ValueError(f"fingerprint is not a 12-char hex digest: {fingerprint!r}")
-    return f"derived/{_by_sha256(file_sha256)}/{fingerprint}"
+def prepared_folder(document_id: uuid.UUID) -> str:
+    """Everything prepared for a document: deleted with the document."""
+    return f"prepared/{document_id}"
+
+
+def prepared_version_folder(document_id: uuid.UUID, version: int) -> str:
+    """One version's prepared output. Refuses version < 1."""
+    if version < 1:
+        raise ValueError(f"version must be >= 1, got {version}")
+    return f"{prepared_folder(document_id)}/v{version}"
 
 
 def _by_sha256(sha256: str) -> str:
