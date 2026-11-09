@@ -8,6 +8,7 @@ import pytest
 
 from document_processor.logical.profile import Profile
 from document_processor.logical.profiles import PROFILES
+from document_processor.logical.profiles.plain import PLAIN
 from document_processor.logical.profiles.vn_regulation import VN_REGULATION
 
 
@@ -15,8 +16,12 @@ def test_vn_regulation_is_registered() -> None:
     assert PROFILES.get("vn_regulation") is VN_REGULATION
 
 
+def test_plain_is_registered() -> None:
+    assert PROFILES.get("plain") is PLAIN
+
+
 def test_builtin_names() -> None:
-    assert PROFILES.names() == ("vn_regulation",)
+    assert PROFILES.names() == ("plain", "vn_regulation")
 
 
 @pytest.mark.parametrize("name", PROFILES.names())
@@ -28,7 +33,7 @@ def test_every_profile_is_registered_under_its_own_name(name: str) -> None:
 
 def test_unknown_profile_lists_the_known_ones() -> None:
     with pytest.raises(
-        KeyError, match="unknown profile 'vn_regulaton'; known: vn_regulation"
+        KeyError, match="unknown profile 'vn_regulaton'; known: plain, vn_regulation"
     ):
         PROFILES.get("vn_regulaton")
 

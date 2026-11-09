@@ -19,14 +19,14 @@ from kb_server.storage.files import FileStore
 class PreparationSettings:
     """Everything that decides how a file is prepared. Different settings, different chunks."""
 
-    profiles: tuple[
-        str, ...
-    ]  # tuples of name@version - naming the candidate profiles to try
+    # candidate profiles tried in order, as name@version
+    profiles: tuple[str, ...]
+    # used when no candidate finds structure, e.g. plain@1
     fallback_profile: str
-    chunker: Mapping[
-        str, Any
-    ]  # kind and parameters for chunker: e.g., {"kind": "outline", "max_tokens": 512}
-    embedder: str  # the identity of the embedder whose tokenizer sized the chunks
+    # kind and parameters for chunker: e.g., {"kind": "outline", "max_tokens": 512}
+    chunker: Mapping[str, Any]
+    # the identity of the embedder whose tokenizer sized the chunks
+    embedder: str
 
     def fingerprint(self) -> str:
         """12 hex characters of the sha256 of these settings, as canonical JSON."""
@@ -38,7 +38,7 @@ class PreparationSettings:
     def describe(self) -> dict[str, Any]:
         """The settings in full, for provenance."""
         return {
-            "profile": list(self.profiles),
+            "profiles": list(self.profiles),
             "fallback_profile": self.fallback_profile,
             "chunker": dict(self.chunker),
             "embedder": self.embedder,
