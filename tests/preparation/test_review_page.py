@@ -1,4 +1,4 @@
-"""Tests for pipeline/review_page.py: the review page as HTML.
+"""Tests for preparer/review_page.py: the review page as HTML.
 
 render_review_html(data) returns one self-contained page: the summary (the
 statistics in a <pre>, each warning a link to its chunk), the outline tree
@@ -8,12 +8,12 @@ links), and one <section> per chunk or gap in document order. A chunk shows
 its header strip (id, breadcrumb, table rows, token bar), its segments and the
 exact embedded text; a table piece is a <table> with its header rows in
 <thead>. A gap in the breadcrumb is heading lines; a dropped gap says so.
-All document text is escaped. PipelineResult.write_review_page(path) writes
+All document text is escaped. PreparedDocument.write_review_page(path) writes
 the page as UTF-8 and returns the path.
 
 render_review_frame(data, height_px=640) is the page for notebooks: one
 <iframe> whose srcdoc is the whole page, so its CSS and ids stay out of the
-notebook. PipelineResult._repr_html_ returns it.
+notebook. PreparedDocument._repr_html_ returns it.
 
 The page is parsed with html.parser into a small tree, so the tests check
 structure, never the exact markup.
@@ -27,19 +27,19 @@ import pytest
 
 from document_processor.chunking import Chunk
 from document_processor.core.models import LogicalDocument
-from document_processor.pipeline.review import (
+from document_processor.preparation.review import (
     Gap,
     ReviewData,
     ReviewWarning,
     build_review_data,
 )
-from document_processor.pipeline.review_page import (
+from document_processor.preparation.review_page import (
     render_review_frame,
     render_review_html,
 )
 from tests.chunking.test_outline_chunker import Blocks, regulation
 from tests.factories import make_table_block
-from tests.pipeline.test_review import MERGED, review
+from tests.preparation.test_review import MERGED, review
 
 VOID = {"meta", "br", "img", "hr", "link", "input"}
 
@@ -560,9 +560,9 @@ def test_file_name_is_escaped_in_the_title() -> None:
 
 
 def test_write_review_page(tmp_path: Path) -> None:
-    from tests.pipeline.test_pipeline import pipeline, write_txt
+    from tests.preparation.test_preparer import preparer, write_txt
 
-    result = pipeline().run(write_txt(tmp_path, "quy_dinh.txt"))
+    result = preparer().prepare(write_txt(tmp_path, "quy_dinh.txt"))
     written = result.write_review_page(tmp_path / "out.html")
     assert written == tmp_path / "out.html"
     assert written.read_text(encoding="utf-8") == render_review_html(
@@ -571,9 +571,9 @@ def test_write_review_page(tmp_path: Path) -> None:
 
 
 def test_write_review_page_accepts_a_string_and_overwrites(tmp_path: Path) -> None:
-    from tests.pipeline.test_pipeline import pipeline, write_txt
+    from tests.preparation.test_preparer import preparer, write_txt
 
-    result = pipeline().run(write_txt(tmp_path, "quy_dinh.txt"))
+    result = preparer().prepare(write_txt(tmp_path, "quy_dinh.txt"))
     target = tmp_path / "out.html"
     target.write_text("old", encoding="utf-8")
     assert result.write_review_page(str(target)) == target
@@ -629,7 +629,7 @@ def test_frame_height() -> None:
 
 
 def test_repr_html_is_the_frame_of_the_result(tmp_path: Path) -> None:
-    from tests.pipeline.test_pipeline import pipeline, write_txt
+    from tests.preparation.test_preparer import preparer, write_txt
 
-    result = pipeline().run(write_txt(tmp_path, "quy_dinh.txt"))
+    result = preparer().prepare(write_txt(tmp_path, "quy_dinh.txt"))
     assert result._repr_html_() == render_review_frame(build_review_data(result))

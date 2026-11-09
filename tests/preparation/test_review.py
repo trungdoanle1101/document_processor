@@ -35,8 +35,8 @@ from document_processor.core.models import (
     TableInfo,
 )
 from document_processor.logical import VN_REGULATION
-from document_processor.pipeline import PipelineResult, format_outline
-from document_processor.pipeline.review import (
+from document_processor.preparation import PreparedDocument, format_outline
+from document_processor.preparation.review import (
     Gap,
     ReviewData,
     build_review_data,
@@ -249,7 +249,7 @@ def review(
     chunks = OutlineChunker(tokenizer=WordTokenizer(), max_tokens=max_tokens).chunk(
         document
     )
-    result = PipelineResult(
+    result = PreparedDocument(
         source=Path("quy_dinh.docx"),
         physical=make_document(),
         logical=document,

@@ -10,7 +10,7 @@ from document_processor.core.models import (
     TableSegment,
     TextSegment,
 )
-from document_processor.pipeline.review import (
+from document_processor.preparation.review import (
     ChunkOrGap,
     Gap,
     ResultSummary,

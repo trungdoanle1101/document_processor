@@ -15,7 +15,7 @@ from document_processor.integrations.huggingface.model_specs import (
 )
 from document_processor.integrations.huggingface.reranker import HuggingFaceReranker
 from document_processor.integrations.qdrant.index import QdrantChunkIndex
-from document_processor.pipeline.pipeline import Pipeline, PipelineResult
+from document_processor.preparation.preparer import PreparedDocument, Preparer
 from document_processor.retrieval.attributes import TextIn
 from document_processor.retrieval.embedding import Embedder
 from document_processor.retrieval.evaluation import (
@@ -56,7 +56,9 @@ def open_reranker() -> HuggingFaceReranker:
         download_model(BGE_RERANKER_V2_M3.reference, RERANKER_FOLDER)
         print("Reranker download completed")
 
-    return HuggingFaceReranker(spec=BGE_RERANKER_V2_M3, folder=RERANKER_FOLDER, device="auto")
+    return HuggingFaceReranker(
+        spec=BGE_RERANKER_V2_M3, folder=RERANKER_FOLDER, device="auto"
+    )
 
 
 def open_index(embedder: Embedder, *, recreate: bool) -> QdrantChunkIndex:
@@ -81,9 +83,9 @@ def index_folder(
         include_breadcrumb_in_size=True,
         keep_sections_apart=True,
     )
-    pipeline = Pipeline(profile="vn_regulation", chunker=chunker)
-    for outcome in pipeline.run_batch(sorted(folder.glob("*.docx"))):
-        if isinstance(outcome, PipelineResult):
+    preparer = Preparer(profile="vn_regulation", chunker=chunker)
+    for outcome in preparer.prepare_many(sorted(folder.glob("*.docx"))):
+        if isinstance(outcome, PreparedDocument):
             print(outcome.summarize().format())
             start = time.perf_counter()
             index_document(

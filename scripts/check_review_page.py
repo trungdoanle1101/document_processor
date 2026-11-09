@@ -1,8 +1,8 @@
 from document_processor.chunking import OutlineChunker, WordTokenizer
-from document_processor.pipeline import Pipeline
+from document_processor.preparation import Preparer
 
 chunker = OutlineChunker(tokenizer=WordTokenizer(), max_tokens=512)
-result = Pipeline(profile="vn_regulation", chunker=chunker).run(
+result = Preparer(profile="vn_regulation", chunker=chunker).prepare(
     "data/2025_Quy dinh quan ly kien truc CNTT.docx"
 )
 result.write_review_page("out/quy_dinh.review.html")

@@ -17,13 +17,13 @@ from document_processor.core.serialization import (
     save_physical_document,
 )
 from document_processor.logical import PROFILES, Profile, build_logical_document
-from document_processor.pipeline.extraction import extract_physical_document
-from document_processor.pipeline.review import (
+from document_processor.preparation.extraction import extract_physical_document
+from document_processor.preparation.review import (
     ResultSummary,
     ReviewWarning,
     build_review_data,
 )
-from document_processor.pipeline.review_page import (
+from document_processor.preparation.review_page import (
     render_review_frame,
     render_review_html,
 )
@@ -37,7 +37,7 @@ class SavedFiles:
 
 
 @dataclass(frozen=True, kw_only=True)
-class PipelineResult:
+class PreparedDocument:
     source: Path
     physical: PhysicalDocument
     logical: LogicalDocument
@@ -137,13 +137,13 @@ class PipelineResult:
 
 
 @dataclass(frozen=True, kw_only=True)
-class PipelineFailure:
+class PreparationFailure:
     source: Path
     error: str
 
 
 @dataclass(frozen=True, kw_only=True)
-class Pipeline:
+class Preparer:
     profile: Profile | str
     chunker: Chunker
     cleaning_steps: tuple[CleaningStep, ...] = DEFAULT_STEPS
@@ -159,7 +159,7 @@ class Pipeline:
         )
         object.__setattr__(self, "_resolved_profile", resolved_profile)
 
-    def run(self, path: Path | str) -> PipelineResult:
+    def prepare(self, path: Path | str) -> PreparedDocument:
         path = Path(path)
         physical = extract_physical_document(path, self.adapters)
         physical = clean_document(physical, self.cleaning_steps)
@@ -168,7 +168,7 @@ class Pipeline:
 
         levels = self._resolved_profile.levels or ()
 
-        return PipelineResult(
+        return PreparedDocument(
             source=path,
             physical=physical,
             logical=logical,
@@ -177,16 +177,16 @@ class Pipeline:
             level_order=tuple(level.name for level in levels),
         )
 
-    def run_batch(
+    def prepare_many(
         self, paths: Iterable[Path | str]
-    ) -> tuple[PipelineResult | PipelineFailure, ...]:
-        outcomes: list[PipelineResult | PipelineFailure] = []
+    ) -> tuple[PreparedDocument | PreparationFailure, ...]:
+        outcomes: list[PreparedDocument | PreparationFailure] = []
         for path in paths:
             try:
-                outcomes.append(self.run(path))
+                outcomes.append(self.prepare(path))
             except (ValueError, KeyError, OSError) as error:
                 outcomes.append(
-                    PipelineFailure(
+                    PreparationFailure(
                         source=Path(path), error=f"{type(error).__name__}: {error}"
                     )
                 )

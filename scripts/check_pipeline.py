@@ -1,12 +1,12 @@
 from document_processor.chunking import OutlineChunker, WordTokenizer
 from document_processor.core.models import TableSegment
-from document_processor.pipeline import Pipeline
+from document_processor.preparation import Preparer
 
 for layout in ("grid", "key_value"):
     chunker = OutlineChunker(
         tokenizer=WordTokenizer(), max_tokens=300, table_layout=layout
     )
-    result = Pipeline(profile="vn_regulation", chunker=chunker).run(
+    result = Preparer(profile="vn_regulation", chunker=chunker).prepare(
         "data/2025_Quy dinh quan ly kien truc CNTT.docx"
     )
     print(f"===== {layout}")

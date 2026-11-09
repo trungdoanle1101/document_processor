@@ -15,7 +15,7 @@ import pytest
 from document_processor.adapters import ADAPTERS, Adapter, DocxAdapter, PlainTextAdapter
 from document_processor.core.models.physical import DocSourceFormat, PhysicalDocument
 from document_processor.core.registry import Registry
-from document_processor.pipeline import extract_physical_document
+from document_processor.preparation import extract_physical_document
 from tests.adapters.docx.test_adapter import BOLD_HEADER_TABLE, build_docx, p
 from tests.factories import make_document
 

@@ -23,7 +23,7 @@ from document_processor.core.models import (
 type ChunkOrGap = Chunk | Gap
 
 if TYPE_CHECKING:
-    from document_processor.pipeline.pipeline import PipelineResult
+    from document_processor.preparation.preparer import PreparedDocument
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -121,7 +121,7 @@ class ReviewData:
     chunks_or_gaps: tuple[ChunkOrGap, ...]
 
 
-def build_review_data(result: PipelineResult) -> ReviewData:
+def build_review_data(result: PreparedDocument) -> ReviewData:
     depths = _node_depths(result.logical.nodes)
     return ReviewData(
         summary=result.summarize(),
