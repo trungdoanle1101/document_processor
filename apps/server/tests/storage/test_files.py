@@ -11,7 +11,12 @@ from typing import Any
 
 import pytest
 
-from kb_server.storage.files import FileStore, LocalFileStore, original_key
+from kb_server.storage.files import (
+    FileStore,
+    LocalFileStore,
+    derived_prefix,
+    original_key,
+)
 
 CONTENT = "Điều 1. Phạm vi điều chỉnh\n".encode()
 
@@ -271,3 +276,46 @@ def test_a_relative_root_is_resolved(
     monkeypatch.chdir("/")  # the store keeps working from anywhere
 
     assert read(store, key) == CONTENT
+
+
+# derived_prefix
+
+
+FINGERPRINT = "1b4e6c0d9a7f"
+
+
+def test_derived_prefix_sits_under_the_files_hash() -> None:
+    digest = hashlib.sha256(b"x").hexdigest()
+
+    prefix = derived_prefix(digest, FINGERPRINT)
+
+    assert prefix == f"derived/sha256/{digest[:2]}/{digest[2:4]}/{digest}/{FINGERPRINT}"
+
+
+def test_derived_and_original_keys_share_the_same_folders() -> None:
+    digest = hashlib.sha256(b"x").hexdigest()
+
+    original = original_key(digest).removeprefix("originals/")
+    derived = derived_prefix(digest, FINGERPRINT).removeprefix("derived/")
+
+    assert derived == f"{original}/{FINGERPRINT}"
+
+
+@pytest.mark.parametrize(
+    "digest",
+    ["", "abc", "A" * 64, "g" * 64],
+    ids=["empty", "short", "uppercase", "not hex"],
+)
+def test_derived_prefix_refuses_a_bad_file_hash(digest: str) -> None:
+    with pytest.raises(ValueError, match="file_sha256"):
+        derived_prefix(digest, FINGERPRINT)
+
+
+@pytest.mark.parametrize(
+    "fingerprint",
+    ["", "1b4e6c0d9a7", "1b4e6c0d9a7f0", "1B4E6C0D9A7F", "1b4e6c0d9a7g", "../../../x"],
+    ids=["empty", "11 chars", "13 chars", "uppercase", "not hex", "path"],
+)
+def test_derived_prefix_refuses_a_bad_fingerprint(fingerprint: str) -> None:
+    with pytest.raises(ValueError, match="fingerprint"):
+        derived_prefix(hashlib.sha256(b"x").hexdigest(), fingerprint)
