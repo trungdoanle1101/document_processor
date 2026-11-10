@@ -41,7 +41,8 @@ apps/server/
       database.py  models.py  repositories/  files.py
     indexing/               the worker's side (models load only here)
       prepared.py           PreparationSettings, PreparedParts, save/load/delete prepared output (built)
-      handlers.py           ProfileChooser, ClaimedJob, run_prepare_job (built), run_index_job (next)
+      handlers.py           ProfileChooser, ClaimedJob, JobTools, run_prepare_job, run_index_job (built)
+      worker.py             Worker.run_once (built); run_forever, the stuck-job sweep (next)
   tests/                    api/ services/ storage/ indexing/ domain/
 ```
 
@@ -172,7 +173,7 @@ one, and the override is a decision with its own author and time.
 ## 5. Index (Qdrant): chunk attributes
 
 ```text
-built in run_index_job (next)   access_group_ids   collection_id   document_version
+built in run_index_job          access_group_ids   collection_id   document_version
 later                           tags   status   retired_on   part
 ```
 
@@ -189,11 +190,13 @@ later                           tags   status   retired_on   part
 
 ```python
 class FileStore(Protocol):
-    def put(self, key: str, data: BinaryIO, *, size: int, media_type: str) -> None: ...
+    def put(self, key: str, data: BinaryIO, *, size: int, media_type: str) -> None:
+        ...
         # keeps whatever is already at the key
-    def open(self, key: str) -> BinaryIO: ...          # missing → FileNotFoundError
-    def exists(self, key: str) -> bool: ...            # files only
-    def delete_folder(self, folder: str) -> int: ...   # every key under folder + "/"
+
+    def open(self, key: str) -> BinaryIO: ...  # missing → FileNotFoundError
+    def exists(self, key: str) -> bool: ...  # files only
+    def delete_folder(self, folder: str) -> int: ...  # every key under folder + "/"
 ```
 
 - A folder is a key without its last `/name` part. On S3 a folder exists only as the start
@@ -283,7 +286,35 @@ index. These rules make a crash at any point harmless:
   (a lease that expired).
 - W5: models load only in the worker (`kb-server[worker]` extra, `IndexTools`).
 - W6: a superseded job (its version isn't current, or the document is `deleting`) is marked done
-  without doing anything.
+  without doing anything. A job with no version (`sync_attributes`) applies to the whole
+  document and is never superseded by a new version.
+
+### Running one job (built)
+
+```text
+transaction 1   claim the oldest queued job (running, attempts + 1, started_at)
+                load its document, current version, stored file and groups
+                  a row missing → fail the job, claim the next one
+                superseded → mark it done, claim the next one
+                → commit
+no transaction  run the handler for its kind
+transaction 2   success → provenance, follow-up job (prepare of an active document → index), done
+                PermanentJobError, or attempts ≥ KB_JOB_MAX_ATTEMPTS → failed
+                any other error → queued again, the error kept
+```
+
+- The claim commits before the handler runs. Why: a crash or a failing handler must not roll
+  the claim back. If it did, `attempts` would never grow and the same job would be claimed
+  forever. It also keeps a transaction from staying open while a model embeds.
+- Loading failures and superseded jobs are handled inside transaction 1, so `run_once` returns
+  false only when no job is waiting, and the loop sleeps only then.
+- The worker takes a `sessionmaker`, its `JobTools` (chooser, index tools, file store), the
+  maximum attempts and a clock, not `Settings`. It opens one session per transaction.
+- Any `Exception` from a handler is recorded on the job (`Type: message`). Logs carry the type
+  only, because a message could quote document text. `KeyboardInterrupt` and `SystemExit` pass
+  through: the job stays `running` and the stuck-job sweep requeues it.
+- If recording a success fails, the error propagates and the job stays `running`. The sweep
+  requeues it, and repeating the job is harmless (rule 1).
 
 ### Prepare job
 
@@ -437,7 +468,9 @@ kb-server gc                        remove originals no row needs
      3. `ProfileChooser`, `ClaimedJob`, `PermanentJobError` **(built)**
      4. the prepare job **(built)**
      5. the index job **(built)**
-     6. `Worker`: claim → load → superseded check → handler → record; retries; the stuck-job sweep; polling; graceful shutdown **(next)**
+     6. `Worker`:
+        - `run_once`: claim → load → superseded check → handler → record; retries **(built)**
+        - `run_forever`: polling, graceful shutdown; the stuck-job sweep at startup **(next)**
      7. settings, `IndexTools`, the `kb-server[worker]` extra, `kb-server worker`, Qdrant in
         Docker Compose, logging setup
      8. a real end-to-end run with a real regulation and bge-m3
@@ -467,6 +500,8 @@ Project hygiene alongside: CI (ruff, mypy, pytest with Postgres), a pre-commit g
 | Search filters inside the index | Post-filtering loses results and leaks hidden hits |
 | Provenance holds inputs and decisions, not results | Results can be rebuilt; settings can't |
 | One worker | No races between jobs; follow-up jobs run in order |
+| The claim commits before the handler runs | A rolled-back claim is retried forever and never counts its attempts |
+| A job with no version is never superseded | It applies to the whole document, not to one version |
 | `vn_regulation` isn't the default | Most documents aren't regulations; `plain` is the safe fallback |
 
 ## 16. Later

@@ -150,6 +150,13 @@ class IndexResult:
         }
 
 
+@dataclass(frozen=True, kw_only=True)
+class JobTools:
+    profile_chooser: ProfileChooser
+    index_tools: IndexTools
+    file_store: FileStore
+
+
 def run_prepare_job(
     job: ClaimedJob, *, chooser: ProfileChooser, store: FileStore
 ) -> PrepareResult:

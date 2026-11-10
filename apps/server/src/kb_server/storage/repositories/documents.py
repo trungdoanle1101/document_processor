@@ -1,7 +1,8 @@
 import uuid
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from typing import Any, cast
 
-from sqlalchemy import and_, insert, select
+from sqlalchemy import CursorResult, and_, insert, select, update
 from sqlalchemy.orm import Session
 
 from kb_server.domain.documents import Document, DocumentStatus, DocumentVersion
@@ -110,6 +111,21 @@ class DocumentRepository:
             )
         )
         return bool(self._session.scalar(select(shared_groups.exists())))
+
+    def set_provenance(
+        self, document_id: uuid.UUID, version: int, provenance: Mapping[str, Any]
+    ) -> bool:
+        """Replace the version's provenance. False if there is no such version."""
+        result = self._session.execute(
+            update(DocumentVersionRow)
+            .where(
+                DocumentVersionRow.document_id == document_id,
+                DocumentVersionRow.version == version,
+            )
+            .values(provenance=dict(provenance))
+        )
+
+        return cast(CursorResult[Any], result).rowcount == 1
 
 
 def to_document(row: DocumentRow) -> Document:
