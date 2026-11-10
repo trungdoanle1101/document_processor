@@ -11,7 +11,7 @@ dependencies = [
     "alembic>=1.20.1",
     "argon2-cffi>=25.1.0",
     "boto3>=1.43.123",
-    "document-processor[huggingface,ollama,qdrant]",
+    "document-processor",
     "fastapi>=0.115",
     "psycopg[binary]>=3.2",
     "pydantic-settings>=2.16.2",
@@ -19,6 +19,12 @@ dependencies = [
     "python-multipart>=0.0.33",
     "sqlalchemy>=2.0",
     "uvicorn[standard]>=0.32",
+]
+
+[project.optional-dependencies]
+# what kb-server worker needs: the embedding model and Qdrant (W5: serve doesn't)
+worker = [
+    "document-processor[embedding,huggingface,qdrant]",
 ]
 
 [project.scripts]
@@ -34,5 +40,7 @@ document-processor = { workspace = true }
 [dependency-groups]
 dev = [
     "boto3-stubs[s3]>=1.43.123",
+    # a dev setup runs and type-checks the worker too
+    "kb-server[worker]",
     "testcontainers[postgres]>=4.15.0",
 ]

@@ -16,9 +16,10 @@ src/document_processor/     the framework: adapters, cleaning, profiles, chunkin
 tests/                      the framework's tests
 apps/
   server/                   package kb-server → document_processor (workspace), FastAPI, SQLAlchemy,
-                            Alembic, psycopg, pydantic-settings, argon2-cffi, boto3
+                            Alembic, psycopg, pydantic-settings, argon2-cffi, boto3;
+                            extra [worker] → torch, sentence-transformers, qdrant-client
   cli/                      package kb-cli → httpx, Typer only (no server or framework imports)
-docker/docker-compose.yml   postgres (built); qdrant, minio later
+docker/docker-compose.yml   postgres, qdrant (built); minio later
 data/                       git-ignored: restricted documents and question sets, never committed
 ```
 
@@ -31,9 +32,10 @@ apps/server/
   migrations/               env.py (URL from Settings, target_metadata = Base.metadata), versions/
   src/kb_server/
     settings.py             Settings (pydantic-settings, env prefix KB_, .env next to where it runs)
-    wiring.py               Services: builds everything the API needs
+    wiring.py               Services: builds everything the API needs; open_job_tools, the worker's
+                            tools (built)
     app.py                  create_app(services) → FastAPI
-    manage.py               kb-server create-admin | serve (built); migrate | worker | reprepare | gc
+    manage.py               kb-server create-admin | serve | worker (built); migrate | reprepare | gc
     api/                    routers + request/response schemas; HTTP only
     services/               use cases and permission checks; no HTTP, no SQL
     domain/                 frozen dataclasses and errors: User, Principal, Document, StoredFile, …
@@ -42,8 +44,8 @@ apps/server/
     indexing/               the worker's side (models load only here)
       prepared.py           PreparationSettings, PreparedParts, save/load/delete prepared output (built)
       handlers.py           ProfileChooser, ClaimedJob, JobTools, run_prepare_job, run_index_job (built)
-      worker.py             Worker.run_once (built); run_forever, the stuck-job sweep (next)
-  tests/                    api/ services/ storage/ indexing/ domain/
+      worker.py             Worker: run_once, run_forever, recover_stuck_jobs (built)
+  tests/                    api/ services/ storage/ indexing/ domain/ test_wiring.py
 ```
 
 ### Layering
@@ -81,12 +83,12 @@ store)`: this job, prepared this way, with this store.
 ## 3. Settings (environment)
 
 ```text
-built      KB_DATABASE_URL  KB_SESSION_TTL_HOURS  KB_ACT_FOR_HEADERS  KB_MAX_UPLOAD_MB
-           KB_STORAGE_KIND (local | s3)  KB_STORAGE_PATH
-worker     KB_PROFILES (candidates, most specific first)  KB_FALLBACK_PROFILE (plain)
-           KB_CHUNK_TOKENS  KB_EMBEDDER_SPEC  KB_EMBEDDER_FOLDER  KB_EMBEDDER_DEVICE
-           KB_QDRANT_URL  KB_QDRANT_COLLECTION
-           KB_WORKER_POLL_SECONDS  KB_JOB_MAX_ATTEMPTS  KB_JOB_TIMEOUT_MINUTES  KB_LOG_LEVEL
+built      KB_DATABASE_URL  KB_LOG_LEVEL  KB_SESSION_TTL_HOURS  KB_ACT_FOR_HEADERS
+           KB_MAX_UPLOAD_MB  KB_STORAGE_KIND (local | s3)  KB_STORAGE_PATH
+built,     KB_PROFILES (candidates, most specific first)  KB_FALLBACK_PROFILE (plain)
+worker     KB_CHUNK_TOKENS  KB_EMBEDDER_SPEC  KB_EMBEDDER_FOLDER  KB_EMBEDDER_DEVICE
+           KB_EMBEDDER_BATCH_SIZE  KB_QDRANT_URL  KB_QDRANT_COLLECTION  KB_QDRANT_API_KEY
+           KB_WORKER_POLL_SECONDS  KB_JOB_MAX_ATTEMPTS  KB_JOB_TIMEOUT_MINUTES
 later      KB_S3_ENDPOINT  KB_S3_BUCKET  KB_S3_ACCESS_KEY  KB_S3_SECRET_KEY
            KB_OLLAMA_URL  KB_CHAT_MODEL  KB_CHAT_CONTEXT_SIZE  KB_CHAT_TIMEOUT
            KB_RERANKER_SPEC  KB_RERANKER_FOLDER  KB_RERANKER_DEVICE  KB_RERANK_DEPTH
@@ -94,6 +96,11 @@ later      KB_S3_ENDPOINT  KB_S3_BUCKET  KB_S3_ACCESS_KEY  KB_S3_SECRET_KEY
 ```
 
 `.env` holds the database password: it is git-ignored and never committed.
+
+- Worker-only settings have defaults or are unset, so the API and `create-admin` start
+  without them; the worker checks the ones it needs when it builds its tools.
+- Tuple settings are JSON in the environment: `KB_PROFILES=["vn_regulation"]`.
+- `Settings` never imports the framework's model code: every process reads it.
 
 ---
 
@@ -284,7 +291,9 @@ index. These rules make a crash at any point harmless:
 - W3: retries up to `KB_JOB_MAX_ATTEMPTS`; `PermanentJobError` fails a job at once.
 - W4: one worker; a job `running` longer than `KB_JOB_TIMEOUT_MINUTES` is requeued at startup
   (a lease that expired).
-- W5: models load only in the worker (`kb-server[worker]` extra, `IndexTools`).
+- W5: models and the Qdrant client load only in the worker. They're installed by the
+  `kb-server[worker]` extra and imported inside `open_job_tools`, so `serve` and the other
+  commands never load them; a test checks it in a fresh interpreter.
 - W6: a superseded job (its version isn't current, or the document is `deleting`) is marked done
   without doing anything. A job with no version (`sync_attributes`) applies to the whole
   document and is never superseded by a new version.
@@ -315,6 +324,32 @@ transaction 2   success → provenance, follow-up job (prepare of an active docu
   through: the job stays `running` and the stuck-job sweep requeues it.
 - If recording a success fails, the error propagates and the job stays `running`. The sweep
   requeues it, and repeating the job is harmless (rule 1).
+
+### Running the worker (built)
+
+```text
+kb-server worker   logging (KB_LOG_LEVEL) → open_job_tools → recover_stuck_jobs
+                   → run_forever until SIGTERM or SIGINT → close the Qdrant client and the engine
+```
+
+- `open_job_tools` builds the worker's tools in a fixed order: the embedder, then the chunker
+  from its tokenizer (chunks are counted in the tokens the model receives), then the profile
+  chooser, then the Qdrant index under the same embedder identity. It's a context manager, so
+  the Qdrant client is closed however the worker stops, and callers never see Qdrant.
+- `run_forever` runs jobs back to back, waits `KB_WORKER_POLL_SECONDS` only when none is
+  waiting, and checks the stop event between jobs; an idle worker stops at once. A signal
+  during a job lets it finish. A process killed mid-job (SIGKILL after Docker's grace period)
+  leaves it `running`, and the sweep recovers it.
+- The stuck-job sweep requeues jobs `running` for longer than `KB_JOB_TIMEOUT_MINUTES`,
+  counted from `started_at`, and fails those on their last attempt: a job that kills the
+  worker would otherwise be retried forever (a poison message).
+- A database error ends `run_forever`, and the process exits. Restarting it (Compose or
+  systemd) runs the sweep, which recovers the job it was running.
+- Startup errors exit with one line, not a traceback (`WorkerSetupError`): the step that
+  failed, then the underlying reason. A message names a `KB_*` variable only where the wiring
+  checks that variable itself, so it can't go stale when a library fails for another reason.
+- The Qdrant payload indexes (`QDRANT_INDEXED_ATTRIBUTES`) live in the wiring, because they're
+  Qdrant's configuration; a test keeps their names equal to what `run_index_job` writes.
 
 ### Prepare job
 
@@ -447,7 +482,7 @@ HTTP only, config in `~/.config/kb/config.toml`. `kb login | docs | jobs | searc
 ```text
 kb-server create-admin              first admin user (built)
 kb-server serve [--reload]          uvicorn (built)
-kb-server worker                    run jobs
+kb-server worker                    run jobs until SIGTERM or SIGINT (built)
 kb-server migrate                   alembic upgrade head
 kb-server reprepare --stale|--all   queue prepare jobs for out-of-date versions
 kb-server gc                        remove originals no row needs
@@ -470,10 +505,10 @@ kb-server gc                        remove originals no row needs
      5. the index job **(built)**
      6. `Worker`:
         - `run_once`: claim → load → superseded check → handler → record; retries **(built)**
-        - `run_forever`: polling, graceful shutdown; the stuck-job sweep at startup **(next)**
+        - `run_forever`: polling, graceful shutdown; the stuck-job sweep at startup **(built)**
      7. settings, `IndexTools`, the `kb-server[worker]` extra, `kb-server worker`, Qdrant in
-        Docker Compose, logging setup
-     8. a real end-to-end run with a real regulation and bge-m3
+        Docker Compose, logging setup **(built)**
+     8. a real end-to-end run with a real regulation and bge-m3 **(next)**
      9. deleting documents
 5. Search: `POST /search` with the access filter. Moved ahead of the read side because it is
    the reason the system exists, and it tests the index decisions early.
@@ -500,6 +535,7 @@ Project hygiene alongside: CI (ruff, mypy, pytest with Postgres), a pre-commit g
 | Search filters inside the index | Post-filtering loses results and leaks hidden hits |
 | Provenance holds inputs and decisions, not results | Results can be rebuilt; settings can't |
 | One worker | No races between jobs; follow-up jobs run in order |
+| Worker dependencies imported inside `open_job_tools` | A top-level import loads torch in `serve` |
 | The claim commits before the handler runs | A rolled-back claim is retried forever and never counts its attempts |
 | A job with no version is never superseded | It applies to the whole document, not to one version |
 | `vn_regulation` isn't the default | Most documents aren't regulations; `plain` is the safe fallback |

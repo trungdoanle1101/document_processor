@@ -595,13 +595,11 @@ source = { editable = "." }
 dependencies = [
     { name = "dotenv" },
     { name = "python-docx" },
-    { name = "sentence-transformers" },
-    { name = "torch" },
-    { name = "transformers" },
 ]
 
 [package.optional-dependencies]
 embedding = [
+    { name = "sentence-transformers" },
     { name = "torch" },
     { name = "transformers" },
 ]
@@ -628,11 +626,9 @@ requires-dist = [
     { name = "huggingface-hub", marker = "extra == 'huggingface'", specifier = ">=2.3.0" },
     { name = "python-docx", specifier = ">=1.2.0" },
     { name = "qdrant-client", marker = "extra == 'qdrant'", specifier = ">=1.20.0" },
-    { name = "sentence-transformers", specifier = ">=6.2,<7" },
-    { name = "torch", specifier = ">=2.14.1" },
+    { name = "sentence-transformers", marker = "extra == 'embedding'", specifier = ">=6.2,<7" },
     { name = "torch", marker = "extra == 'embedding'", specifier = ">=2.14.1" },
-    { name = "transformers", specifier = ">=5,<6" },
-    { name = "transformers", marker = "extra == 'embedding'", specifier = ">=5.21.0" },
+    { name = "transformers", marker = "extra == 'embedding'", specifier = ">=5.21.0,<6" },
 ]
 provides-extras = ["huggingface", "embedding", "qdrant"]
 
@@ -1102,7 +1098,7 @@ dependencies = [
     { name = "alembic" },
     { name = "argon2-cffi" },
     { name = "boto3" },
-    { name = "document-processor", extra = ["huggingface", "qdrant"] },
+    { name = "document-processor" },
     { name = "fastapi" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic", extra = ["email"] },
@@ -1112,9 +1108,15 @@ dependencies = [
     { name = "uvicorn", extra = ["standard"] },
 ]
 
+[package.optional-dependencies]
+worker = [
+    { name = "document-processor", extra = ["embedding", "huggingface", "qdrant"] },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "boto3-stubs", extra = ["s3"] },
+    { name = "kb-server", extra = ["worker"] },
     { name = "testcontainers" },
 ]
 
@@ -1123,7 +1125,8 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.20.1" },
     { name = "argon2-cffi", specifier = ">=25.1.0" },
     { name = "boto3", specifier = ">=1.43.123" },
-    { name = "document-processor", extras = ["huggingface", "ollama", "qdrant"], editable = "." },
+    { name = "document-processor", editable = "." },
+    { name = "document-processor", extras = ["embedding", "huggingface", "qdrant"], marker = "extra == 'worker'", editable = "." },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.14.2" },
@@ -1132,10 +1135,12 @@ requires-dist = [
     { name = "sqlalchemy", specifier = ">=2.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]
+provides-extras = ["worker"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "boto3-stubs", extras = ["s3"], specifier = ">=1.43.123" },
+    { name = "kb-server", extras = ["worker"] },
     { name = "testcontainers", extras = ["postgres"], specifier = ">=4.15.0" },
 ]
 

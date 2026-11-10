@@ -19,8 +19,8 @@ The design, with the reason for each decision and the build order:
 ## Commands
 
 ```bash
-uv sync --all-packages                        # install everything
-docker compose -f docker/docker-compose.yml up -d postgres
+uv sync --all-packages                        # install everything, the worker's models included
+docker compose -f docker/docker-compose.yml up -d postgres qdrant
 docker compose -f docker/docker-compose.yml exec postgres createdb -U kb kb_test   # once
 
 # server tests: run from apps/server (its tests/ package clashes with the framework's)
@@ -34,7 +34,11 @@ uv run mypy src apps/server/src apps/server/tests
 cd apps/server && uv run alembic upgrade head # migrations (settings from apps/server/.env)
 uv run kb-server create-admin --email … --name …
 uv run kb-server serve --reload
+uv run kb-server worker                       # needs KB_EMBEDDER_FOLDER and Qdrant
 ```
+
+A deployment installs `kb-server` for the API and `kb-server[worker]` for the worker: only
+the worker gets torch, the model and the Qdrant client.
 
 ## Roles
 
