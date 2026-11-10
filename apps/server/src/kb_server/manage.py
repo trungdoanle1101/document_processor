@@ -12,9 +12,10 @@ from pydantic import ValidationError
 from pydantic_settings import SettingsError
 from sqlalchemy.exc import OperationalError
 
-from kb_server.domain.errors import AdminExists, EmailTaken
+from kb_server.domain.errors import AdminExists, EmailTaken, StoreNotWritable
 from kb_server.domain.users import MIN_PASSWORD_LEN
 from kb_server.settings import Settings
+from kb_server.storage.files import check_store_writable
 from kb_server.wiring import (
     Services,
     WorkerSetupError,
@@ -61,6 +62,11 @@ def main(argv: Sequence[str] | None = None) -> None:
                 finally:
                     close_services(services)
             case "serve":
+                services = load_services()
+                try:
+                    exit_unless_store_writable(services)
+                finally:
+                    close_services(services)
                 serve(args.host, args.port, args.reload)
             case "worker":
                 services = load_services()
@@ -114,6 +120,7 @@ def run_worker(services: Services) -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     try:
+        exit_unless_store_writable(services)
         with open_job_tools(services) as job_tools:
             worker = build_worker(services, job_tools=job_tools)
             worker.recover_stuck_jobs()
@@ -154,6 +161,14 @@ def stop_on_signals() -> threading.Event:
     signal.signal(signal.SIGTERM, request_stop)
     signal.signal(signal.SIGINT, request_stop)
     return stop
+
+
+def exit_unless_store_writable(services: Services) -> None:
+    """Exit with one line if the file store can't be written: uploads and prepare jobs would fail."""
+    try:
+        check_store_writable(services.files)
+    except StoreNotWritable as error:
+        sys.exit(f"Can't start: {error}")
 
 
 if __name__ == "__main__":

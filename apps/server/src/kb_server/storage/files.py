@@ -1,3 +1,4 @@
+import io
 import os
 import re
 import shutil
@@ -5,6 +6,8 @@ import tempfile
 import uuid
 from pathlib import Path
 from typing import BinaryIO, Protocol
+
+from kb_server.domain.errors import StoreNotWritable
 
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
@@ -31,6 +34,7 @@ class LocalFileStore:
             raise ValueError(
                 f"file store folder {root} doesn't exist or isn't a folder"
             )
+
         self._root = root
 
     def put(self, key: str, data: BinaryIO, *, size: int, media_type: str) -> None:
@@ -85,6 +89,16 @@ class LocalFileStore:
             raise ValueError(f"key {key!r} isn't a path inside the store")
 
         return resolved_path
+
+
+def check_store_writable(store: FileStore) -> None:
+    """Write a small file to the store and delete it again; StoreNotWritable if the store refuses"""
+    key = f"write_checks/{uuid.uuid4()}/probe"
+    try:
+        store.put(key, io.BytesIO(b"ok"), size=2, media_type="text/plain")
+        store.delete_folder(key.rsplit("/", 1)[0])  # "write_checks/<uuid>"
+    except OSError as error:
+        raise StoreNotWritable(f"can't write to the file store: {error}") from error
 
 
 def original_key(sha256: str) -> str:

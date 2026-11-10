@@ -1,6 +1,6 @@
 """Every error comes back as {"error": {"code", "message", "details"}}.
 
-The probe routes raise each error the handlers know about.
+The probe routes raise each error the handlers know about, and one they don't.
 """
 
 from collections.abc import Iterator
@@ -28,6 +28,10 @@ RAISED = {
     "not-authenticated": NotAuthenticated(),
 }
 
+# what a real bug looks like: an error no handler knows, whose message holds internals
+INTERNALS = "/srv/kb/originals/sha256/ab/cd"
+UNEXPECTED = PermissionError(13, "Permission denied", INTERNALS)
+
 
 class Item(BaseModel):
     name: str
@@ -41,6 +45,10 @@ def probe_app(services: Services) -> FastAPI:
     def raise_error(name: str) -> None:
         raise RAISED[name]
 
+    @app.get("/probe/bug")
+    def fail_unexpectedly() -> None:
+        raise UNEXPECTED
+
     @app.post("/probe/items")
     def add_item(item: Item) -> Item:
         return item
@@ -51,6 +59,13 @@ def probe_app(services: Services) -> FastAPI:
 @pytest.fixture
 def client(services: Services) -> Iterator[TestClient]:
     with TestClient(probe_app(services)) as client:
+        yield client
+
+
+@pytest.fixture
+def client_seeing_500s(services: Services) -> Iterator[TestClient]:
+    """Returns the 500 response; by default TestClient re-raises the error instead."""
+    with TestClient(probe_app(services), raise_server_exceptions=False) as client:
         yield client
 
 
@@ -74,7 +89,7 @@ def client(services: Services) -> Iterator[TestClient]:
         (
             "not-authenticated",
             401,
-            "unauthenticated",
+            "not_authenticated",
             "not signed in, or the token is invalid",
         ),
     ],
@@ -111,3 +126,32 @@ def test_a_wrong_method_is_405(client: TestClient) -> None:
 
     assert response.status_code == 405
     assert response.json()["error"]["code"] == "method_not_allowed"
+
+
+def test_an_unexpected_error_is_a_500_in_the_usual_shape(
+    client_seeing_500s: TestClient,
+) -> None:
+    response = client_seeing_500s.get("/probe/bug")
+
+    assert response.status_code == 500
+    assert response.headers["content-type"] == "application/json"
+    error = response.json()["error"]
+    assert error["code"] == "unexpected_error"
+    assert error["details"] is None
+
+
+def test_an_unexpected_error_doesnt_reveal_its_message(
+    client_seeing_500s: TestClient,
+) -> None:
+    response = client_seeing_500s.get("/probe/bug")
+
+    assert INTERNALS not in response.text
+    assert "Permission denied" not in response.text
+    assert "PermissionError" not in response.text
+
+
+def test_an_unexpected_error_still_reaches_the_server(client: TestClient) -> None:
+    # Starlette re-raises after answering, so uvicorn logs the traceback;
+    # the handler must not swallow it or log it a second time
+    with pytest.raises(PermissionError):
+        client.get("/probe/bug")

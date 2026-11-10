@@ -71,3 +71,7 @@ class DuplicateFile(Exception):
 
 class DocumentNotFound(Exception):
     """No such document, or not readable by the caller."""
+
+
+class StoreNotWritable(Exception):
+    """The file store refused a test write; the cause is chained."""

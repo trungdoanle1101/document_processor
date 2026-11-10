@@ -160,7 +160,7 @@ def test_logout_without_a_token_is_401(client: TestClient) -> None:
     response = client.post(LOGOUT)
 
     assert response.status_code == 401
-    assert response.json()["error"]["code"] == "unauthenticated"
+    assert response.json()["error"]["code"] == "not_authenticated"
 
 
 def test_an_api_key_cannot_log_out(

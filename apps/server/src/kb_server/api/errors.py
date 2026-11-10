@@ -27,7 +27,7 @@ from kb_server.domain.errors import (
 )
 
 _CODES = {
-    401: "unauthenticated",
+    401: "not_authenticated",
     403: "not_allowed",
     404: "not_found",
     405: "method_not_allowed",
@@ -54,6 +54,7 @@ def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(UnsupportedFileType, _unsupported_file_type)
     app.add_exception_handler(DuplicateFile, _duplicate_file)
     app.add_exception_handler(DocumentNotFound, _document_not_found)
+    app.add_exception_handler(Exception, _unexpected_error)
 
 
 def _admin_exists(request: Request, error: Exception) -> JSONResponse:
@@ -135,7 +136,7 @@ def _not_allowed(request: Request, error: Exception) -> JSONResponse:
 def _not_authenticated(request: Request, error: Exception) -> JSONResponse:
     return _error(
         HTTPStatus.UNAUTHORIZED,
-        "unauthenticated",
+        "not_authenticated",
         "not signed in, or the token is invalid",
         headers={"WWW-Authenticate": "Bearer"},
     )
@@ -218,6 +219,14 @@ def _duplicate_file(request: Request, error: Exception) -> JSONResponse:
 def _document_not_found(request: Request, error: Exception) -> JSONResponse:
     return _error(
         HTTPStatus.NOT_FOUND, "document_not_found", str(error) or "document not found"
+    )
+
+
+def _unexpected_error(request: Request, error: Exception) -> JSONResponse:
+    return _error(
+        HTTPStatus.INTERNAL_SERVER_ERROR,
+        "unexpected_error",
+        "something went wrong on the server; try again, and tell an admin if it keeps happening",
     )
 
 

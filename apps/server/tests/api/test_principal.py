@@ -102,7 +102,7 @@ def test_no_usable_token_is_401_with_a_bearer_challenge(
 
     assert response.status_code == 401
     assert response.headers["WWW-Authenticate"] == "Bearer"
-    assert response.json()["error"]["code"] == "unauthenticated"
+    assert response.json()["error"]["code"] == "not_authenticated"
 
 
 def test_a_front_end_key_acts_for_the_user_in_either_header(

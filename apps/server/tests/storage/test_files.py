@@ -6,19 +6,23 @@ against S3FileStore too once it exists (by parametrising the fixture).
 
 import hashlib
 import io
+import os
 import uuid
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from kb_server.domain.errors import StoreNotWritable
 from kb_server.storage.files import (
     FileStore,
     LocalFileStore,
+    check_store_writable,
     original_key,
     prepared_folder,
     prepared_version_folder,
 )
+from tests.support import RefusingStore
 
 CONTENT = "Điều 1. Phạm vi điều chỉnh\n".encode()
 
@@ -405,3 +409,60 @@ def test_deleting_a_folder_spares_originals(store: FileStore) -> None:
     assert store.delete_folder(prepared_folder(DOCUMENT_ID)) == 1
 
     assert read(store, original) == CONTENT
+
+
+# checking the store can be written
+
+
+def test_a_writable_store_passes_the_check_and_keeps_no_files(
+    root: Path, store: FileStore
+) -> None:
+    check_store_writable(store)
+
+    assert [path for path in root.rglob("*") if path.is_file()] == []
+
+
+def test_each_check_writes_its_own_file_in_its_own_folder(store: FileStore) -> None:
+    # a reused key would pass without writing: put keeps whatever is already there
+    recording = RefusingStore(store)
+
+    check_store_writable(recording)
+    check_store_writable(recording)
+
+    first, second = recording.put_keys
+    assert first != second
+    assert first.split("/")[1] != second.split("/")[1]
+    assert all(key.startswith("write_checks/") for key in recording.put_keys)
+
+
+def test_a_store_that_refuses_writes_fails_the_check_and_says_why(
+    store: FileStore,
+) -> None:
+    denied = PermissionError(13, "Permission denied", "/srv/kb/write_checks")
+
+    with pytest.raises(StoreNotWritable, match="Permission denied") as raised:
+        check_store_writable(RefusingStore(store, on_put=denied))
+
+    assert raised.value.__cause__ is denied
+
+
+def test_a_store_that_cant_delete_its_check_file_fails_the_check(
+    store: FileStore,
+) -> None:
+    full = OSError(28, "No space left on device")
+
+    with pytest.raises(StoreNotWritable, match="No space left"):
+        check_store_writable(RefusingStore(store, on_delete=full))
+
+
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="root writes to read-only folders anyway",
+)
+def test_a_read_only_folder_fails_the_check(root: Path, store: FileStore) -> None:
+    root.chmod(0o555)
+    try:
+        with pytest.raises(StoreNotWritable, match="Permission denied"):
+            check_store_writable(store)
+    finally:
+        root.chmod(0o755)
