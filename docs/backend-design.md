@@ -216,6 +216,15 @@ class FileStore(Protocol):
 - `LocalFileStore` (built) writes atomically: a temporary file in the same folder, `fsync`,
   `os.replace`. It refuses keys outside its root. `S3FileStore` later, chosen by
   `KB_STORAGE_KIND`.
+- **Checking the store can be written (built):** `check_store_writable` puts a small file at
+  `write_checks/<uuid>/probe` and deletes that folder; any `OSError` becomes
+  `StoreNotWritable`, with the cause chained. `kb-server serve` and `kb-server worker` run it
+  at startup and exit with one line; the worker runs it before loading any model. `GET /ready`
+  runs it on every call and answers `503 {"status": "storage not writable"}`, logging the
+  reason rather than returning it. Why both: the startup check catches a wrong folder when a
+  person starts the server; `/ready` catches one that breaks later (a full disk, a volume
+  remounted read-only) and covers deployments that start uvicorn directly. Why a new key each
+  time: `put` keeps whatever is already at a key, so a fixed key would pass without writing.
 
 ### Layout
 
@@ -468,7 +477,11 @@ Error codes so far: 401 `login_failed`, `not_authenticated`; 403 `not_allowed`; 
 `user_not_found`, `group_not_found`, `collection_not_found`, `document_not_found`,
 `credential_not_found`; 409 `email_taken`, `group_name_taken`, `group_in_use`,
 `collection_slug_taken`, `duplicate_file`; 413 `file_too_large`; 415 `unsupported_file_type`;
-422 `invalid_request`.
+422 `invalid_request`; 500 `unexpected_error`.
+
+An error no handler knows becomes `500 unexpected_error` with a fixed message: its own message
+could reveal paths or SQL. Starlette re-raises it after answering, so uvicorn logs the
+traceback; the handler doesn't log it again.
 
 ## 11. OpenAI-compatible: `/openai/v1` (later)
 
