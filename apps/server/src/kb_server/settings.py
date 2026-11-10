@@ -40,9 +40,11 @@ class Settings(BaseSettings):
     fallback_profile: str = "plain"
     chunk_tokens: Positive = 512  # counted with the embedder's tokenizer
 
+    # worker, models
+    models_folder: Path | None = None  # required by the worker
+
     # worker, embedder: a name from the framework's HUGGINGFACE_MODEL_SPECS
     embedder_spec: str = "bge-m3"
-    embedder_folder: Path | None = None  # required by the worker
     embedder_device: EmbedderDevice = "auto"
     # memory and speed only; the vectors don't change
     embedder_batch_size: Positive = 32

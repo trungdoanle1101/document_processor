@@ -32,7 +32,7 @@ COMMIT = "5617a9f61b028005a4858fdac845db406aefb181"
 BGE_M3 = ModelReference(hub_model_id="BAAI/bge-m3", commit_hash=COMMIT)
 
 
-def model_folder(
+def fake_model_folder(
     tmp_path: Path,
     reference: ModelReference | None = BGE_M3,
     *,
@@ -89,7 +89,7 @@ def test_a_file_is_not_a_folder(tmp_path: Path) -> None:
 
 
 def test_a_model_file_inside_the_folder_is_not_a_folder(tmp_path: Path) -> None:
-    folder = model_folder(tmp_path)
+    folder = fake_model_folder(tmp_path)
     with pytest.raises(NotADirectoryError):
         check_is_folder(folder / MODULES_JSON)
 
@@ -98,11 +98,11 @@ def test_a_model_file_inside_the_folder_is_not_a_folder(tmp_path: Path) -> None:
 
 
 def test_the_expected_model_passes(tmp_path: Path) -> None:
-    check_reference_matches(model_folder(tmp_path), BGE_M3)
+    check_reference_matches(fake_model_folder(tmp_path), BGE_M3)
 
 
 def test_another_commit_is_refused_naming_both(tmp_path: Path) -> None:
-    folder = model_folder(
+    folder = fake_model_folder(
         tmp_path, ModelReference(hub_model_id="BAAI/bge-m3", commit_hash="0" * 40)
     )
     with pytest.raises(ValueError) as raised:
@@ -118,7 +118,7 @@ def test_another_model_is_refused(tmp_path: Path) -> None:
     other = ModelReference(
         hub_model_id="intfloat/multilingual-e5-large", commit_hash=COMMIT
     )
-    folder = model_folder(tmp_path, other)
+    folder = fake_model_folder(tmp_path, other)
     with pytest.raises(
         ValueError,
         match="holds intfloat/multilingual-e5-large@.*but the spec wants BAAI/bge-m3@",
@@ -129,7 +129,7 @@ def test_another_model_is_refused(tmp_path: Path) -> None:
 def test_hub_ids_are_compared_exactly(tmp_path: Path) -> None:
     # The hub treats ids case-insensitively, but a folder records one spelling;
     # matching exactly keeps the check simple and the identity stable.
-    folder = model_folder(
+    folder = fake_model_folder(
         tmp_path, ModelReference(hub_model_id="baai/bge-m3", commit_hash=COMMIT)
     )
     with pytest.raises(ValueError, match="holds baai/bge-m3@"):
@@ -138,7 +138,7 @@ def test_hub_ids_are_compared_exactly(tmp_path: Path) -> None:
 
 def test_a_folder_without_a_reference_says_how_to_get_one(tmp_path: Path) -> None:
     # The message is read_model_reference's own, not repeated here.
-    folder = model_folder(tmp_path, reference=None)
+    folder = fake_model_folder(tmp_path, reference=None)
     with pytest.raises(
         FileNotFoundError, match="cannot find model_reference.json in .*download_model"
     ):
@@ -146,7 +146,7 @@ def test_a_folder_without_a_reference_says_how_to_get_one(tmp_path: Path) -> Non
 
 
 def test_a_broken_reference_file_is_reported_by_the_reader(tmp_path: Path) -> None:
-    folder = model_folder(tmp_path, reference=None)
+    folder = fake_model_folder(tmp_path, reference=None)
     (folder / "model_reference.json").write_text("{", encoding="utf-8")
     with pytest.raises(ValueError, match="is not valid JSON"):
         check_reference_matches(folder, BGE_M3)
@@ -156,11 +156,11 @@ def test_a_broken_reference_file_is_reported_by_the_reader(tmp_path: Path) -> No
 
 
 def test_a_folder_with_modules_json_passes(tmp_path: Path) -> None:
-    check_has_modules_json(model_folder(tmp_path))
+    check_has_modules_json(fake_model_folder(tmp_path))
 
 
 def test_a_folder_without_modules_json_is_refused(tmp_path: Path) -> None:
-    folder = model_folder(tmp_path, modules_json=False)
+    folder = fake_model_folder(tmp_path, modules_json=False)
     with pytest.raises(FileNotFoundError) as raised:
         check_has_modules_json(folder)
     assert str(raised.value) == (
@@ -170,14 +170,14 @@ def test_a_folder_without_modules_json_is_refused(tmp_path: Path) -> None:
 
 
 def test_modules_json_must_be_a_file(tmp_path: Path) -> None:
-    folder = model_folder(tmp_path, modules_json=False)
+    folder = fake_model_folder(tmp_path, modules_json=False)
     (folder / MODULES_JSON).mkdir()
     with pytest.raises(FileNotFoundError, match="has no modules.json"):
         check_has_modules_json(folder)
 
 
 def test_modules_json_in_a_subfolder_does_not_count(tmp_path: Path) -> None:
-    folder = model_folder(tmp_path, modules_json=False)
+    folder = fake_model_folder(tmp_path, modules_json=False)
     (folder / "onnx").mkdir()
     (folder / "onnx" / MODULES_JSON).write_text("[]", encoding="utf-8")
     with pytest.raises(FileNotFoundError, match="has no modules.json"):
@@ -186,7 +186,7 @@ def test_modules_json_in_a_subfolder_does_not_count(tmp_path: Path) -> None:
 
 def test_only_the_file_is_looked_at_not_its_contents(tmp_path: Path) -> None:
     # sentence-transformers reads the contents; a broken file fails there, loudly.
-    folder = model_folder(tmp_path, modules_json=False)
+    folder = fake_model_folder(tmp_path, modules_json=False)
     (folder / MODULES_JSON).write_text("not json", encoding="utf-8")
     check_has_modules_json(folder)
 
@@ -195,7 +195,7 @@ def test_only_the_file_is_looked_at_not_its_contents(tmp_path: Path) -> None:
 
 
 def test_a_complete_folder_passes_all_three(tmp_path: Path) -> None:
-    check_all(model_folder(tmp_path), BGE_M3)
+    check_all(fake_model_folder(tmp_path), BGE_M3)
 
 
 def test_a_missing_folder_is_reported_before_anything_inside_it(tmp_path: Path) -> None:
@@ -207,7 +207,7 @@ def test_a_wrong_model_is_reported_before_a_missing_modules_json(
     tmp_path: Path,
 ) -> None:
     other = ModelReference(hub_model_id="BAAI/bge-m3", commit_hash="0" * 40)
-    folder = model_folder(tmp_path, other, modules_json=False)
+    folder = fake_model_folder(tmp_path, other, modules_json=False)
     with pytest.raises(ValueError, match="but the spec wants"):
         check_all(folder, BGE_M3)
 

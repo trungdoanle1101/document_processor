@@ -1,4 +1,9 @@
-"""Tests for integrations/huggingface/download.py: download_model.
+"""Tests for integrations/huggingface/download.py: download_model and model_folder.
+
+model_folder decides where each model lives under one models folder:
+<hub id>/<commit hash>. The path comes from the reference alone, so whatever
+downloads a model and whatever loads it agree, and two commits of one model
+sit side by side.
 
 download_model is the only function that uses the network, so here
 snapshot_download is replaced by a FakeHub that writes the repo's files,
@@ -26,6 +31,7 @@ from document_processor.integrations.huggingface import download
 from document_processor.integrations.huggingface.download import (
     IGNORED_FILES,
     download_model,
+    model_folder,
 )
 from document_processor.integrations.huggingface.reference import (
     MODEL_REFERENCE_FILE,
@@ -129,6 +135,52 @@ def files_in(folder: Path) -> set[str]:
 
 def partial_of(folder: Path) -> Path:
     return folder.with_name(f".{folder.name}.partial")
+
+
+# ============================================================ model_folder
+
+
+def test_a_model_lives_under_its_hub_id_and_commit(tmp_path: Path) -> None:
+    assert model_folder(BGE_M3, models_folder=tmp_path) == (
+        tmp_path / "BAAI" / "bge-m3" / COMMIT
+    )
+
+
+def test_a_model_without_an_owner_lives_under_its_name(tmp_path: Path) -> None:
+    reference = ModelReference(hub_model_id="bert-base-uncased", commit_hash=COMMIT)
+    assert model_folder(reference, models_folder=tmp_path) == (
+        tmp_path / "bert-base-uncased" / COMMIT
+    )
+
+
+def test_two_commits_of_one_model_get_two_folders(tmp_path: Path) -> None:
+    newer = ModelReference(hub_model_id="BAAI/bge-m3", commit_hash="0" * 40)
+    assert model_folder(BGE_M3, models_folder=tmp_path) != model_folder(
+        newer, models_folder=tmp_path
+    )
+
+
+def test_the_models_folder_may_be_a_string(tmp_path: Path) -> None:
+    assert model_folder(BGE_M3, models_folder=str(tmp_path)) == model_folder(
+        BGE_M3, models_folder=tmp_path
+    )
+
+
+def test_finding_a_model_folder_touches_nothing_on_disk(tmp_path: Path) -> None:
+    models = tmp_path / "models"
+
+    model_folder(BGE_M3, models_folder=models)
+
+    assert not models.exists()
+
+
+def test_a_model_downloaded_to_its_folder_is_found_there(
+    tmp_path: Path, hub: FakeHub
+) -> None:
+    # the hub creates the missing <owner>/<name> folders, as it does on a first download
+    download_model(BGE_M3, model_folder(BGE_M3, models_folder=tmp_path))
+
+    assert read_model_reference(model_folder(BGE_M3, models_folder=tmp_path)) == BGE_M3
 
 
 # ============================================================ downloading

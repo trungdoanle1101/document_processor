@@ -7,7 +7,10 @@ from pathlib import Path
 from qdrant_client import QdrantClient
 
 from document_processor.chunking.outline_chunker import OutlineChunker
-from document_processor.integrations.huggingface.download import download_model
+from document_processor.integrations.huggingface.download import (
+    download_model,
+    model_folder,
+)
 from document_processor.integrations.huggingface.embedder import HuggingFaceEmbedder
 from document_processor.integrations.huggingface.model_specs import (
     BGE_M3,
@@ -31,8 +34,7 @@ from document_processor.retrieval.ingest import index_document
 from document_processor.retrieval.reranker import Reranker
 from document_processor.retrieval.search import RetrievedChunk, search_chunks
 
-MODEL_FOLDER = "huggingface/BAAI/bge_m3"
-RERANKER_FOLDER = "huggingface/BAAI/bge_reranker_v2_m3"
+MODELS_FOLDER = "huggingface"
 QDRANT_URL = "http://localhost:6333"
 COLLECTION = "architecture-bge-m3"
 MAX_TOKENS = 512
@@ -42,22 +44,26 @@ BODY_ONLY = ChunkFilter(attributes={"part": TextIn(values=("body",))})
 
 
 def open_embedder() -> HuggingFaceEmbedder:
-    if not Path(MODEL_FOLDER).exists():
+    resolved_folder = model_folder(BGE_M3.reference, models_folder=MODELS_FOLDER)
+    if not Path(resolved_folder).exists():
         print("Download start...")
-        download_model(BGE_M3.reference, MODEL_FOLDER)
+        download_model(BGE_M3.reference, resolved_folder)
         print("Download completed")
 
-    return HuggingFaceEmbedder(spec=BGE_M3, folder=MODEL_FOLDER, device="cpu")
+    return HuggingFaceEmbedder(spec=BGE_M3, folder=resolved_folder, device="cpu")
 
 
 def open_reranker() -> HuggingFaceReranker:
-    if not Path(RERANKER_FOLDER).exists():
+    resolved_folder = model_folder(
+        BGE_RERANKER_V2_M3.reference, models_folder=MODELS_FOLDER
+    )
+    if not Path(resolved_folder).exists():
         print("Reranker download start...")
-        download_model(BGE_RERANKER_V2_M3.reference, RERANKER_FOLDER)
+        download_model(BGE_RERANKER_V2_M3.reference, resolved_folder)
         print("Reranker download completed")
 
     return HuggingFaceReranker(
-        spec=BGE_RERANKER_V2_M3, folder=RERANKER_FOLDER, device="auto"
+        spec=BGE_RERANKER_V2_M3, folder=resolved_folder, device="auto"
     )
 
 

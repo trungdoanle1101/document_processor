@@ -52,3 +52,8 @@ def download_model(reference: ModelReference, folder: Path | str) -> None:
     if folder.exists():
         folder.rmdir()
     partial.rename(folder)
+
+
+def model_folder(reference: ModelReference, *, models_folder: Path | str) -> Path:
+    """Where this model's files live: <models_folder>/<hub id>/<commit hash>."""
+    return Path(models_folder) / reference.hub_model_id / reference.commit_hash

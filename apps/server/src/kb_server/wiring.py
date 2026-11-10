@@ -187,15 +187,18 @@ def open_job_tools(services: Services) -> Generator[JobTools, None, None]:
 
 
 def _build_embedder(settings: Settings) -> Embedder:
+    from document_processor.integrations.huggingface.download import (
+        model_folder,
+    )
     from document_processor.integrations.huggingface.embedder import HuggingFaceEmbedder
     from document_processor.integrations.huggingface.model_specs import (
         HUGGINGFACE_MODEL_SPECS,
     )
 
-    if settings.embedder_folder is None:
+    if settings.models_folder is None:
         raise WorkerSetupError(
-            "KB_EMBEDDER_FOLDER is not set: "
-            "the worker needs the folder holding the embedder model"
+            "KB_MODELS_FOLDER is not set: "
+            "the worker needs the folder holding all models"
         )
     try:
         spec = HUGGINGFACE_MODEL_SPECS.get(settings.embedder_spec)
@@ -203,17 +206,18 @@ def _build_embedder(settings: Settings) -> Embedder:
         raise WorkerSetupError(
             f"can't find the embedder spec: {error.args[0]}"
         ) from error
+    resolved_folder = model_folder(spec.reference, models_folder=settings.models_folder)
     try:
         return HuggingFaceEmbedder(
             spec=spec,
-            folder=settings.embedder_folder,
+            folder=resolved_folder,
             device=settings.embedder_device,
             batch_size=settings.embedder_batch_size,
         )
     # how the framework reports a missing, incomplete or mismatched model folder
     except (OSError, ValueError) as error:
         raise WorkerSetupError(
-            f"can't load the embedder from {settings.embedder_folder}: {error}"
+            f"can't load {settings.embedder_spec} from {resolved_folder}: {error}"
         ) from error
 
 

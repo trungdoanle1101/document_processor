@@ -34,7 +34,7 @@ uv run mypy src apps/server/src apps/server/tests
 cd apps/server && uv run alembic upgrade head # migrations (settings from apps/server/.env)
 uv run kb-server create-admin --email … --name …
 uv run kb-server serve --reload
-uv run kb-server worker                       # needs KB_EMBEDDER_FOLDER and Qdrant
+uv run kb-server worker                       # needs KB_MODELS_FOLDER and Qdrant
 ```
 
 A deployment installs `kb-server` for the API and `kb-server[worker]` for the worker: only

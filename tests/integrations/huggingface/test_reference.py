@@ -42,9 +42,47 @@ def test_both_fields_are_required() -> None:
         ModelReference(commit_hash=COMMIT)  # type: ignore[call-arg]
 
 
-def test_empty_hub_model_id_is_refused() -> None:
-    with pytest.raises(ValueError, match="^hub_model_id must not be empty$"):
-        ModelReference(hub_model_id="", commit_hash=COMMIT)
+@pytest.mark.parametrize(
+    "hub_model_id",
+    [
+        "BAAI/bge-m3",
+        "intfloat/multilingual-e5-large",
+        "sentence-transformers/all-MiniLM-L6-v2",
+        "org/model_v1.5",
+        "bert-base-uncased",  # older models have no owner
+    ],
+)
+def test_hub_model_ids_as_the_hub_writes_them_are_accepted(hub_model_id: str) -> None:
+    assert ModelReference(hub_model_id=hub_model_id, commit_hash=COMMIT)
+
+
+# The hub id becomes part of a folder path (model_folder), so none of these may
+# point outside the models folder or into a hidden one.
+@pytest.mark.parametrize(
+    "hub_model_id",
+    [
+        "",
+        "/etc",
+        "/bge-m3",
+        "../../outside",
+        "BAAI/../../x",
+        "BAAI/..",
+        "BAAI/.hidden",
+        "BAAI/",
+        "a/b/c",
+        "BAAI\\bge-m3",
+        " BAAI/bge-m3",
+        "BAAI/bge-m3\n",
+    ],
+)
+def test_hub_model_ids_that_arent_owner_slash_name_are_refused(
+    hub_model_id: str,
+) -> None:
+    with pytest.raises(
+        ValueError, match="^hub_model_id must look like owner/name, got "
+    ) as raised:
+        ModelReference(hub_model_id=hub_model_id, commit_hash=COMMIT)
+    assert repr(hub_model_id) in str(raised.value)
 
 
 @pytest.mark.parametrize(
@@ -190,7 +228,9 @@ def test_file_with_a_bad_commit_hash_names_the_file(tmp_path: Path) -> None:
 
 def test_file_with_an_empty_hub_model_id_names_the_file(tmp_path: Path) -> None:
     write_json(tmp_path, {"hub_model_id": "", "commit_hash": COMMIT})
-    with pytest.raises(ValueError, match="hub_model_id must not be empty$") as raised:
+    with pytest.raises(
+        ValueError, match="hub_model_id must look like owner/name"
+    ) as raised:
         read_model_reference(tmp_path)
     assert str(raised.value).startswith(f"{tmp_path / MODEL_REFERENCE_FILE}: ")
 

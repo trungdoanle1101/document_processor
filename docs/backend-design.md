@@ -86,12 +86,12 @@ store)`: this job, prepared this way, with this store.
 built      KB_DATABASE_URL  KB_LOG_LEVEL  KB_SESSION_TTL_HOURS  KB_ACT_FOR_HEADERS
            KB_MAX_UPLOAD_MB  KB_STORAGE_KIND (local | s3)  KB_STORAGE_PATH
 built,     KB_PROFILES (candidates, most specific first)  KB_FALLBACK_PROFILE (plain)
-worker     KB_CHUNK_TOKENS  KB_EMBEDDER_SPEC  KB_EMBEDDER_FOLDER  KB_EMBEDDER_DEVICE
+worker     KB_CHUNK_TOKENS  KB_MODELS_FOLDER  KB_EMBEDDER_SPEC  KB_EMBEDDER_DEVICE
            KB_EMBEDDER_BATCH_SIZE  KB_QDRANT_URL  KB_QDRANT_COLLECTION  KB_QDRANT_API_KEY
            KB_WORKER_POLL_SECONDS  KB_JOB_MAX_ATTEMPTS  KB_JOB_TIMEOUT_MINUTES
 later      KB_S3_ENDPOINT  KB_S3_BUCKET  KB_S3_ACCESS_KEY  KB_S3_SECRET_KEY
            KB_OLLAMA_URL  KB_CHAT_MODEL  KB_CHAT_CONTEXT_SIZE  KB_CHAT_TIMEOUT
-           KB_RERANKER_SPEC  KB_RERANKER_FOLDER  KB_RERANKER_DEVICE  KB_RERANK_DEPTH
+           KB_RERANKER_SPEC  KB_RERANKER_DEVICE  KB_RERANK_DEPTH
            KB_ANSWER_PASSAGES  KB_MIN_SCORE  KB_MIN_PASSAGE_SCORE  KB_SECTION_CHARS  KB_HISTORY_TURNS
 ```
 
@@ -100,6 +100,11 @@ later      KB_S3_ENDPOINT  KB_S3_BUCKET  KB_S3_ACCESS_KEY  KB_S3_SECRET_KEY
 - Worker-only settings have defaults or are unset, so the API and `create-admin` start
   without them; the worker checks the ones it needs when it builds its tools.
 - Tuple settings are JSON in the environment: `KB_PROFILES=["vn_regulation"]`.
+- `KB_MODELS_FOLDER` holds every model, each at `<hub id>/<commit hash>` (e.g.
+  `BAAI/bge-m3/5617a9f…`), found from its spec by the framework's `model_folder`. Why: one
+  setting per model would have to be changed with its spec and could point at the wrong
+  commit; a folder named by its reference can't, and two commits sit side by side while
+  re-embedding. Use an absolute path: the server runs from `apps/server`.
 - `Settings` never imports the framework's model code: every process reads it.
 
 ---
@@ -536,6 +541,7 @@ Project hygiene alongside: CI (ruff, mypy, pytest with Postgres), a pre-commit g
 | Provenance holds inputs and decisions, not results | Results can be rebuilt; settings can't |
 | One worker | No races between jobs; follow-up jobs run in order |
 | Worker dependencies imported inside `open_job_tools` | A top-level import loads torch in `serve` |
+| Models found by reference under one `KB_MODELS_FOLDER` | A folder setting per model drifts from its spec |
 | The claim commits before the handler runs | A rolled-back claim is retried forever and never counts its attempts |
 | A job with no version is never superseded | It applies to the whole document, not to one version |
 | `vn_regulation` isn't the default | Most documents aren't regulations; `plain` is the safe fallback |

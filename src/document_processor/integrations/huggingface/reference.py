@@ -12,9 +12,12 @@ class ModelReference:
     commit_hash: str
 
     def __post_init__(self) -> None:
-        if not self.hub_model_id:
-            raise ValueError("hub_model_id must not be empty")
-
+        if not re.fullmatch(
+            r"[A-Za-z0-9][\w.-]*(/[A-Za-z0-9][\w.-]*)?", self.hub_model_id
+        ):
+            raise ValueError(
+                f"hub_model_id must look like owner/name, got {self.hub_model_id!r}"
+            )
         if not re.fullmatch(r"[0-9a-f]{40}", self.commit_hash):
             raise ValueError(
                 f"commit_hash must be 40-character lower-case hex, got {self.commit_hash!r}"
