@@ -52,6 +52,19 @@ class JobRepository:
         )
         return to_indexing_job(row) if row is not None else None
 
+    def claim_next(self, *, now: datetime) -> IndexingJob | None:
+        row = self._session.scalar(
+            select(IndexingJobRow)
+            .where(IndexingJobRow.status == "queued")
+            .order_by(IndexingJobRow.created_at)
+            .limit(1)
+        )
+        if not row:
+            return None
+        row.status, row.attempts, row.started_at = "running", row.attempts + 1, now
+        self._session.flush()
+        return to_indexing_job(row) if row is not None else None
+
     def claim(self, job_id: uuid.UUID, *, now: datetime) -> bool:
         """queued -> running. False if someone else got it first."""
         result = self._session.execute(

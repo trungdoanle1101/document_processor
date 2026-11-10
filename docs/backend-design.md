@@ -285,7 +285,7 @@ index. These rules make a crash at any point harmless:
 - W6: a superseded job (its version isn't current, or the document is `deleting`) is marked done
   without doing anything.
 
-### Prepare job (built)
+### Prepare job
 
 ```text
 1. media type → extension (.docx / .txt); anything else → PermanentJobError
@@ -300,7 +300,7 @@ index. These rules make a crash at any point harmless:
 document is `active`). The worker then, in one transaction: sets the version's provenance to
 `{"preparation": …}` (dropping any old `index` part), marks the job done, and queues `index`.
 
-### Index job (next)
+### Index job
 
 ```text
 1. the chunks were sized for this embedder (provenance settings.embedder == embedder.identity),
@@ -436,9 +436,8 @@ kb-server gc                        remove originals no row needs
      2. the `plain` profile **(built)**
      3. `ProfileChooser`, `ClaimedJob`, `PermanentJobError` **(built)**
      4. the prepare job **(built)**
-     5. the index job **(next)**
-     6. `Worker`: claim → load → superseded check → handler → record; retries; the stuck-job
-        sweep; polling; graceful shutdown
+     5. the index job **(built)**
+     6. `Worker`: claim → load → superseded check → handler → record; retries; the stuck-job sweep; polling; graceful shutdown **(next)**
      7. settings, `IndexTools`, the `kb-server[worker]` extra, `kb-server worker`, Qdrant in
         Docker Compose, logging setup
      8. a real end-to-end run with a real regulation and bge-m3

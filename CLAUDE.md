@@ -36,11 +36,6 @@ uv run kb-server create-admin --email … --name …
 uv run kb-server serve --reload
 ```
 
-## Current work
-
-Build order step 4b: the worker. The prepare job is built; the index job is next
-(`indexing/handlers.py`, outline in docs/backend-design.md section 8).
-
 ## Roles
 
 - I write the code. Claude designs, explains, reviews and writes tests when asked.
