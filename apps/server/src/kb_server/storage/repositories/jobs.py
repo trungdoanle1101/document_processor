@@ -110,6 +110,18 @@ class JobRepository:
                 f"job {job_id} isn't running, so it can't be marked failed"
             )
 
+    def list_running(self, *, started_before: datetime) -> list[IndexingJob]:
+        """Running jobs claimed before given time, oldest first."""
+        rows = self._session.scalars(
+            select(IndexingJobRow)
+            .where(
+                IndexingJobRow.status == "running",
+                IndexingJobRow.started_at < started_before,
+            )
+            .order_by(IndexingJobRow.started_at)
+        ).all()
+        return [to_indexing_job(row) for row in rows]
+
 
 def to_indexing_job(row: IndexingJobRow) -> IndexingJob:
     return IndexingJob(

@@ -1,6 +1,7 @@
 import logging
+import threading
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import assert_never
 
 from sqlalchemy.orm import Session, sessionmaker
@@ -22,6 +23,8 @@ from kb_server.storage.repositories.jobs import JobRepository
 
 logger = logging.getLogger(__name__)
 
+_LEASE_EXPIRED = "lease expired: the work stopped during this job"
+
 
 class Worker:
     def __init__(
@@ -30,12 +33,32 @@ class Worker:
         session_factory: sessionmaker[Session],
         tools: JobTools,
         max_attempts: int,
+        poll_interval: timedelta,
+        job_timeout: timedelta,
         now: Callable[[], datetime],
     ) -> None:
         self._session_factory = session_factory
         self._tools = tools
         self._max_attempts = max_attempts
+        self._poll_interval = poll_interval
+        self._job_timeout = job_timeout
         self._now = now
+
+    def run_forever(self, *, stop: threading.Event) -> None:
+        """Run jobs until stop is set, waiting poll_interval whenever none is waiting.
+
+        A database error ends the loop: the process exits,
+        and on restart the stuck-job sweep requeues the job it was running.
+        """
+        logger.info(
+            "worker started: polling every %gs, at most %d attempts per job",
+            self._poll_interval.total_seconds(),
+            self._max_attempts,
+        )
+        while not stop.is_set():
+            if not self.run_once():
+                stop.wait(self._poll_interval.total_seconds())
+        logger.info("worker stopped")
 
     def run_once(self) -> bool:
         """Claim the oldest job that still needs running, run it and record the outcome.
@@ -54,6 +77,46 @@ class Worker:
             self._record_success(claimed, result)
 
         return True
+
+    def recover_stuck_jobs(self) -> int:
+        """Requeue jobs aleft running longer than job_timeout, or fail them on their last attempt.
+
+        Returns how many there were. Run at startup, before run_forever.
+        """
+        with self._session_factory.begin() as session:
+            jobs = JobRepository(session)
+            running_jobs = jobs.list_running(
+                started_before=self._now() - self._job_timeout
+            )
+            for job in running_jobs:
+                if self._is_last_attempt(job):
+                    logger.warning(
+                        "job %s (%s, attempt %d): lease expired on its last attempt, failed",
+                        job.id,
+                        job.kind,
+                        job.attempts,
+                    )
+                    jobs.mark_failed(
+                        job.id,
+                        error=_LEASE_EXPIRED,
+                        now=self._now(),
+                    )
+                else:
+                    logger.warning(
+                        "job %s (%s, attempt %d): lease expired, requeued",
+                        job.id,
+                        job.kind,
+                        job.attempts,
+                    )
+                    jobs.requeue(
+                        job.id,
+                        error=_LEASE_EXPIRED,
+                    )
+        return len(running_jobs)
+
+    def _is_last_attempt(self, job: IndexingJob) -> bool:
+        """True once the job has used all its attempts."""
+        return job.attempts >= self._max_attempts
 
     def _claim(self) -> ClaimedJob | None:
         """Claim the oldest job that still needs running and load what it's about.
@@ -132,10 +195,7 @@ class Worker:
             jobs = JobRepository(session)
             message = f"{type(error).__name__}: {error}"
 
-            if (
-                isinstance(error, PermanentJobError)
-                or job.attempts >= self._max_attempts
-            ):
+            if isinstance(error, PermanentJobError) or self._is_last_attempt(job):
                 # the type only: the exception's message could quote document text
                 logger.warning(
                     "job %s (%s, attempt %d) failed: %s",

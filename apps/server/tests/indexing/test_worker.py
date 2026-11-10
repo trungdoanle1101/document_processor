@@ -1,4 +1,5 @@
-"""The worker: claiming a job, running its handler and recording the outcome.
+"""The worker: claiming a job, running its handler, recording the outcome, recovering
+stuck jobs and running until stopped.
 
 Real Postgres rows (uploaded through DocumentService, so each document comes with its
 prepare job), the real ProfileChooser, and the handler tests' word-counting embedder and
@@ -8,6 +9,7 @@ savepoints; the test session reads them after expire_all().
 
 import io
 import logging
+import threading
 import uuid
 from collections.abc import Callable, Sequence
 from datetime import timedelta
@@ -46,6 +48,10 @@ from tests.support import FakeClock
 
 MakeWorker = Callable[..., Worker]
 Upload = Callable[..., DocumentDetails]
+
+POLL_INTERVAL = timedelta(minutes=1)
+JOB_TIMEOUT = timedelta(minutes=30)
+LEASE_EXPIRED = "lease expired: the work stopped during this job"
 
 
 # setup
@@ -131,6 +137,8 @@ def make_worker(
             session_factory=session_factory,
             tools=tools,
             max_attempts=max_attempts,
+            poll_interval=POLL_INTERVAL,
+            job_timeout=JOB_TIMEOUT,
             now=clock,
         )
 
@@ -151,6 +159,31 @@ class UnreachableEmbedder(CountingEmbedder):
 
     def encode_passages(self, texts: Sequence[str]) -> list[Any]:
         raise ConnectionError(self._message)
+
+
+class StopOnFirstWait(threading.Event):
+    """A stop event that sets itself the first time the worker waits, and records the wait."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.waits_seconds: list[float | None] = []
+
+    def wait(self, timeout: float | None = None) -> bool:
+        self.waits_seconds.append(timeout)
+        self.set()
+        return True
+
+
+class SignalsWaiting(threading.Event):
+    """A real stop event that also tells the test when the worker has started waiting."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.waiting = threading.Event()
+
+    def wait(self, timeout: float | None = None) -> bool:
+        self.waiting.set()
+        return super().wait(timeout)
 
 
 # an empty queue
@@ -405,6 +438,178 @@ def test_a_job_for_the_whole_document_is_never_superseded(
     assert recorded.error == "PermanentJobError: sync_attributes not yet supported"
 
 
+# recovering stuck jobs
+
+
+def test_a_job_left_running_past_the_timeout_is_requeued(
+    worker: Worker, upload: Upload, session: Session, clock: FakeClock
+) -> None:
+    details = upload()
+    abandon(session, clock)
+    clock.advance(JOB_TIMEOUT + timedelta(minutes=1))
+
+    assert worker.recover_stuck_jobs() == 1
+
+    requeued = job(session, _first_job_id(details))
+    assert (requeued.status, requeued.attempts) == ("queued", 1)
+    assert requeued.error == LEASE_EXPIRED
+    assert requeued.started_at is None
+
+
+def test_a_requeued_stuck_job_runs_again(
+    worker: Worker, upload: Upload, session: Session, clock: FakeClock
+) -> None:
+    details = upload()
+    abandon(session, clock)
+    clock.advance(JOB_TIMEOUT + timedelta(minutes=1))
+    worker.recover_stuck_jobs()
+
+    assert worker.run_once() is True
+
+    prepare = job(session, _first_job_id(details))
+    assert (prepare.status, prepare.attempts) == ("done", 2)
+
+
+def test_a_stuck_job_on_its_last_attempt_is_failed(
+    make_worker: MakeWorker, upload: Upload, session: Session, clock: FakeClock
+) -> None:
+    details = upload()
+    worker = make_worker(max_attempts=1)
+    abandon(session, clock)
+    clock.advance(JOB_TIMEOUT + timedelta(minutes=1))
+
+    assert worker.recover_stuck_jobs() == 1
+
+    failed = job(session, _first_job_id(details))
+    assert (failed.status, failed.attempts) == ("failed", 1)
+    assert failed.error == LEASE_EXPIRED
+    assert failed.finished_at == clock.now
+
+
+def test_a_job_running_for_less_than_the_timeout_is_left_alone(
+    worker: Worker, upload: Upload, session: Session, clock: FakeClock
+) -> None:
+    details = upload()
+    abandon(session, clock)
+    clock.advance(JOB_TIMEOUT - timedelta(minutes=1))
+
+    assert worker.recover_stuck_jobs() == 0
+
+    assert job(session, _first_job_id(details)).status == "running"
+
+
+def test_the_timeout_counts_from_the_claim_not_from_the_queueing(
+    worker: Worker, upload: Upload, session: Session, clock: FakeClock
+) -> None:
+    details = upload()
+    # queued a day before the clock's now (created_at comes from the database's clock),
+    # claimed just now
+    session.execute(
+        update(IndexingJobRow)
+        .where(IndexingJobRow.id == _first_job_id(details))
+        .values(created_at=clock.now - timedelta(days=1))
+    )
+    abandon(session, clock)
+
+    assert worker.recover_stuck_jobs() == 0
+
+    assert job(session, _first_job_id(details)).status == "running"
+
+
+def test_queued_and_finished_jobs_are_left_alone(
+    worker: Worker, upload: Upload, session: Session, clock: FakeClock
+) -> None:
+    details = upload()
+    worker.run_once()
+    clock.advance(JOB_TIMEOUT + timedelta(minutes=1))
+
+    assert worker.recover_stuck_jobs() == 0
+
+    assert [(j.kind, j.status) for j in jobs_of(session, details)] == [
+        ("prepare", "done"),
+        ("index", "queued"),
+    ]
+
+
+def test_a_stuck_job_is_logged_with_its_id(
+    worker: Worker,
+    upload: Upload,
+    session: Session,
+    clock: FakeClock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    details = upload()
+    abandon(session, clock)
+    clock.advance(JOB_TIMEOUT + timedelta(minutes=1))
+
+    with caplog.at_level(logging.WARNING, logger="kb_server.indexing.worker"):
+        worker.recover_stuck_jobs()
+
+    assert str(_first_job_id(details)) in caplog.text
+    assert "%s" not in caplog.text
+
+
+# running until stopped
+
+
+def test_run_forever_runs_every_waiting_job_before_it_waits(
+    worker: Worker, upload: Upload, session: Session
+) -> None:
+    first = upload()
+    second = upload(content="Điều 1. Một văn bản khác\n".encode(), filename="khac.txt")
+    stop = StopOnFirstWait()
+
+    assert ran_to_the_end(worker, stop=stop), "run_forever never waited on stop"
+
+    for details in (first, second):
+        assert [(j.kind, j.status) for j in jobs_of(session, details)] == [
+            ("prepare", "done"),
+            ("index", "done"),
+        ]
+    assert stop.waits_seconds == [POLL_INTERVAL.total_seconds()]
+
+
+def test_run_forever_runs_no_job_once_stop_is_set(
+    worker: Worker, upload: Upload, session: Session
+) -> None:
+    details = upload()
+    stop = threading.Event()
+    stop.set()
+
+    worker.run_forever(stop=stop)
+
+    assert job(session, _first_job_id(details)).status == "queued"
+
+
+def test_an_idle_worker_stops_as_soon_as_stop_is_set(worker: Worker) -> None:
+    stop = SignalsWaiting()
+    # poll_interval is a minute: a worker that slept instead of waiting on stop would
+    # still be running when the join below gives up
+    thread = start_in_background(worker, stop=stop)
+    assert stop.waiting.wait(timeout=5), "the worker never waited on stop"
+
+    stop.set()
+    thread.join(timeout=5)
+
+    assert not thread.is_alive()
+
+
+def start_in_background(worker: Worker, *, stop: threading.Event) -> threading.Thread:
+    """Start run_forever in a daemon thread, so a worker that never stops can't hang the run."""
+    thread = threading.Thread(
+        target=worker.run_forever, kwargs={"stop": stop}, daemon=True
+    )
+    thread.start()
+    return thread
+
+
+def ran_to_the_end(worker: Worker, *, stop: threading.Event) -> bool:
+    """Run run_forever until it returns. False if it's still running after 10 seconds."""
+    thread = start_in_background(worker, stop=stop)
+    thread.join(timeout=10)
+    return not thread.is_alive()
+
+
 # helpers
 
 
@@ -449,6 +654,13 @@ def queue(
     return JobRepository(session).add(
         kind=kind, document_id=details.document.id, version=version, created_by=None
     )
+
+
+def abandon(session: Session, clock: FakeClock) -> IndexingJob:
+    """Claim the oldest queued job at the clock's time and leave it, as a crashed worker would."""
+    claimed = JobRepository(session).claim_next(now=clock.now)
+    assert claimed is not None
+    return claimed
 
 
 def queued_at(session: Session, job_id: uuid.UUID, *, minutes: int) -> None:
