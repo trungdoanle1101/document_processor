@@ -155,6 +155,25 @@ class DocumentService:
             document=document, version=version, file=file, groups=groups, job=job
         )
 
+    def delete_document(self, principal: Principal, document_id: uuid.UUID) -> None:
+        """Hide the document at once and queue its deletion; the worker removes the files."""
+        document = self._documents.get(document_id)
+        if document is None or not self._can_read(principal, document):
+            raise DocumentNotFound()
+        if not can_manage(
+            principal, self._collections.list_manager_ids(document.collection_id)
+        ):
+            raise NotAllowed(
+                "only an admin or a manager of this document's collection can delete it"
+            )
+        if self._documents.mark_deleting(document_id):
+            self._jobs.add(
+                kind="delete",
+                document_id=document_id,
+                version=None,
+                created_by=principal.user.id,
+            )
+
     def _can_read(self, principal: Principal, document: Document) -> bool:
         role = principal.user.role
         if role == "admin":

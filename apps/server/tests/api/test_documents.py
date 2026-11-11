@@ -1,4 +1,4 @@
-"""POST /api/v1/documents (multipart upload) and GET /api/v1/documents/{id}."""
+"""POST /api/v1/documents (multipart upload), GET and DELETE /api/v1/documents/{id}."""
 
 import io
 import uuid
@@ -354,3 +354,62 @@ def test_reading_needs_a_token(
     uploaded = upload(client, admin_headers, hr_docs)
 
     assert client.get(f"{DOCUMENTS}/{uploaded['id']}").status_code == 401
+
+
+# deleting
+
+
+def test_a_delete_is_accepted_with_no_body_and_the_document_is_gone_at_once(
+    client: TestClient, admin_headers: dict[str, str], hr_docs: Collection
+) -> None:
+    uploaded = upload(client, admin_headers, hr_docs)
+    url = f"{DOCUMENTS}/{uploaded['id']}"
+
+    response = client.delete(url, headers=admin_headers)
+
+    assert response.status_code == 202
+    assert response.content == b""
+    assert client.get(url, headers=admin_headers).status_code == 404
+
+
+def test_who_may_delete(
+    client: TestClient,
+    groups: GroupRepository,
+    users: UserRepository,
+    headers_for: Callable[[str, UserRole], dict[str, str]],
+    admin_headers: dict[str, str],
+    hr: Group,
+    hr_docs: Collection,
+) -> None:
+    url = f"{DOCUMENTS}/{upload(client, admin_headers, hr_docs)['id']}"
+    outsider = headers_for("binh@example.com", "reader")
+    hr_reader = headers_for("an@example.com", "reader")
+    an = users.get_by_email("an@example.com")
+    assert an is not None
+    groups.add_member(user_id=an.id, group_id=hr.id)
+
+    hidden = client.delete(url, headers=outsider)
+    assert (hidden.status_code, error_code(hidden)) == (404, "document_not_found")
+    assert client.delete(url, headers=hr_reader).status_code == 403
+    assert client.get(url, headers=hr_reader).status_code == 200
+
+
+def test_deleting_an_unknown_or_malformed_document_id(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    assert (
+        client.delete(f"{DOCUMENTS}/{uuid.uuid4()}", headers=admin_headers).status_code
+        == 404
+    )
+    assert (
+        client.delete(f"{DOCUMENTS}/not-a-uuid", headers=admin_headers).status_code
+        == 422
+    )
+
+
+def test_deleting_needs_a_token(
+    client: TestClient, admin_headers: dict[str, str], hr_docs: Collection
+) -> None:
+    uploaded = upload(client, admin_headers, hr_docs)
+
+    assert client.delete(f"{DOCUMENTS}/{uploaded['id']}").status_code == 401

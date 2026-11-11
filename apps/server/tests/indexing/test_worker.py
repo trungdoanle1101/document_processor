@@ -438,6 +438,41 @@ def test_a_job_for_the_whole_document_is_never_superseded(
     assert recorded.error == "PermanentJobError: sync_attributes not yet supported"
 
 
+def test_every_job_of_a_document_being_deleted_is_skipped(
+    worker: Worker, upload: Upload, session: Session, embedder: CountingEmbedder
+) -> None:
+    details = upload()
+    queue(session, details, kind="index", version=1)
+    queue(session, details, kind="sync_attributes", version=None)
+    DocumentRepository(session).mark_deleting(details.document.id)
+
+    worker.run_once()
+
+    assert [(j.kind, j.status) for j in jobs_of(session, details)] == [
+        ("sync_attributes", "done"),
+        ("prepare", "done"),
+        ("index", "done"),
+    ]
+    assert provenance(session, details) is None
+    assert embedder.passages == []
+
+
+def test_the_delete_job_of_a_document_being_deleted_is_not_skipped(
+    worker: Worker, upload: Upload, session: Session
+) -> None:
+    details = upload()
+    session.execute(delete(IndexingJobRow))
+    DocumentRepository(session).mark_deleting(details.document.id)
+    deletion = queue(session, details, kind="delete", version=None)
+
+    worker.run_once()
+
+    # it reached its handler, which doesn't support it yet
+    recorded = job(session, deletion.id)
+    assert recorded.status == "failed"
+    assert recorded.error == "PermanentJobError: delete not yet supported"
+
+
 # recovering stuck jobs
 
 
@@ -633,7 +668,12 @@ def jobs_of(session: Session, details: DocumentDetails) -> list[IndexingJob]:
         )
     ).all()
     found = [job(session, job_id) for job_id in ids]
-    order: dict[JobKind, int] = {"prepare": 0, "index": 1, "sync_attributes": 2}
+    order: dict[JobKind, int] = {
+        "prepare": 0,
+        "index": 1,
+        "sync_attributes": 2,
+        "delete": 3,
+    }
     return sorted(found, key=lambda j: (j.version or 0, order[j.kind]))
 
 

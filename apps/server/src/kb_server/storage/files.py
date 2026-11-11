@@ -19,6 +19,10 @@ class FileStore(Protocol):
 
     def open(self, key: str) -> BinaryIO: ...
     def exists(self, key: str) -> bool: ...
+    def delete(self, key: str) -> None:
+        """Delete the file at the key; a missing key deletes nothing."""
+        ...
+
     def delete_folder(self, folder: str) -> int:
         """A folder is a key without the last /name part.
         This method deletes every file whose key starts with folder + '/';
@@ -65,6 +69,12 @@ class LocalFileStore:
     def exists(self, key: str) -> bool:
         """Check if key exists and is a file."""
         return self._path(key).is_file()
+
+    def delete(self, key: str) -> None:
+        path = self._path(key)
+        if path.is_dir():
+            raise ValueError(f"{key!r} names a folder, not a file")
+        path.unlink(missing_ok=True)
 
     def delete_folder(self, folder: str) -> int:
         """Delete the files in the folder (including subfolders) and return number of files deleted."""

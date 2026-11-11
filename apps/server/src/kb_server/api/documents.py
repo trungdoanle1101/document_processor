@@ -3,7 +3,7 @@ from datetime import datetime
 from http import HTTPStatus
 from typing import Annotated
 
-from fastapi import Form, UploadFile
+from fastapi import Form, Response, UploadFile
 from fastapi.routing import APIRouter
 from pydantic import BaseModel, StringConstraints
 
@@ -99,3 +99,14 @@ def get_document(
 ) -> DocumentOut:
     details = document_service.get_document(principal, document_id)
     return DocumentOut.from_details(details)
+
+
+@router.delete(
+    "/{document_id}", status_code=HTTPStatus.ACCEPTED, response_class=Response
+)
+def delete_document(
+    document_id: uuid.UUID,
+    principal: CurrentPrincipal,
+    document_service: DocumentServiceDep,
+) -> None:
+    document_service.delete_document(principal, document_id)

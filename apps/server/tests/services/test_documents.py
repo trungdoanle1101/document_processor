@@ -536,3 +536,120 @@ def test_the_same_file_can_be_uploaded_while_its_document_is_being_deleted(
 
     assert second.document.id != first.document.id
     assert second.file.id == first.file.id
+
+
+# deleting
+
+
+def delete_jobs(session: Session, document_id: uuid.UUID) -> list[IndexingJobRow]:
+    return list(
+        session.scalars(
+            select(IndexingJobRow).where(
+                IndexingJobRow.document_id == document_id,
+                IndexingJobRow.kind == "delete",
+            )
+        )
+    )
+
+
+def status_of(session: Session, document_id: uuid.UUID) -> str | None:
+    return session.scalar(
+        select(DocumentRow.status).where(DocumentRow.id == document_id)
+    )
+
+
+def test_deleting_marks_the_document_and_queues_one_delete_job(
+    upload: Callable[..., DocumentDetails],
+    document_service: DocumentService,
+    session: Session,
+    manager: Principal,
+) -> None:
+    document_id = upload().document.id
+
+    document_service.delete_document(manager, document_id)
+
+    assert status_of(session, document_id) == "deleting"
+    [job] = delete_jobs(session, document_id)
+    assert job.status == "queued"
+    assert job.version is None
+    assert job.created_by == manager.user.id
+
+
+def test_deleting_leaves_the_files_for_the_worker(
+    upload: Callable[..., DocumentDetails],
+    document_service: DocumentService,
+    session: Session,
+    file_store: FileStore,
+    manager: Principal,
+) -> None:
+    details = upload()
+
+    document_service.delete_document(manager, details.document.id)
+
+    assert count(session, StoredFileRow) == 1
+    assert file_store.exists(original_key(details.file.sha256))
+
+
+def test_an_admin_can_delete_any_document(
+    upload: Callable[..., DocumentDetails],
+    document_service: DocumentService,
+    session: Session,
+    admin: Principal,
+) -> None:
+    document_id = upload().document.id
+
+    document_service.delete_document(admin, document_id)
+
+    assert status_of(session, document_id) == "deleting"
+
+
+def test_a_reader_who_can_see_the_document_cannot_delete_it(
+    upload: Callable[..., DocumentDetails],
+    document_service: DocumentService,
+    session: Session,
+    hr_reader: Principal,
+) -> None:
+    document_id = upload().document.id
+
+    with pytest.raises(NotAllowed):
+        document_service.delete_document(hr_reader, document_id)
+
+    assert status_of(session, document_id) == "active"
+    assert delete_jobs(session, document_id) == []
+
+
+def test_someone_who_cannot_see_the_document_is_told_it_doesnt_exist(
+    upload: Callable[..., DocumentDetails],
+    document_service: DocumentService,
+    session: Session,
+    other_manager: Principal,
+    outsider: Principal,
+) -> None:
+    document_id = upload().document.id
+
+    for stranger in (other_manager, outsider):
+        with pytest.raises(DocumentNotFound):
+            document_service.delete_document(stranger, document_id)
+
+    assert status_of(session, document_id) == "active"
+
+
+def test_deleting_an_unknown_document_is_not_found(
+    document_service: DocumentService, admin: Principal
+) -> None:
+    with pytest.raises(DocumentNotFound):
+        document_service.delete_document(admin, uuid.uuid4())
+
+
+def test_deleting_twice_queues_one_delete_job(
+    upload: Callable[..., DocumentDetails],
+    document_service: DocumentService,
+    session: Session,
+    manager: Principal,
+) -> None:
+    document_id = upload().document.id
+
+    document_service.delete_document(manager, document_id)
+    document_service.delete_document(manager, document_id)
+
+    assert len(delete_jobs(session, document_id)) == 1

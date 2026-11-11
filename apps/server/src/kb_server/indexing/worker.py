@@ -254,7 +254,11 @@ def _load_claimed(
 
 
 def _is_superseded(job: IndexingJob, *, document: Document) -> bool:
-    """A job for one version is superseded once that version isn't current."""
+    """True when the job's work is no longer wanted: its document is being deleted
+    (unless it's the delete job), or it's for a version that isn't current."""
+    if document.status == "deleting":
+        return job.kind != "delete"
+
     return job.version is not None and job.version != document.current_version
 
 

@@ -64,6 +64,9 @@ class StopsBeforeChunks:
     def exists(self, key: str) -> bool:
         return self._store.exists(key)
 
+    def delete(self, key: str) -> None:
+        self._store.delete(key)
+
     def delete_folder(self, folder: str) -> int:
         return self._store.delete_folder(folder)
 

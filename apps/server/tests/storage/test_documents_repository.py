@@ -4,7 +4,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
-from sqlalchemy import update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -12,10 +12,17 @@ from kb_server.domain.collections import Collection
 from kb_server.domain.documents import DOCUMENT_STATUSES, Document, DocumentStatus
 from kb_server.domain.groups import Group
 from kb_server.domain.users import User
-from kb_server.storage.models import DocumentRow, DocumentVersionRow, StoredFileRow
+from kb_server.storage.models import (
+    DocumentGroupRow,
+    DocumentRow,
+    DocumentVersionRow,
+    IndexingJobRow,
+    StoredFileRow,
+)
 from kb_server.storage.repositories.collections import CollectionRepository
 from kb_server.storage.repositories.documents import DocumentRepository
 from kb_server.storage.repositories.groups import GroupRepository
+from kb_server.storage.repositories.jobs import JobRepository
 
 
 def stored_file(session: Session, content: bytes) -> uuid.UUID:
@@ -410,3 +417,85 @@ def test_a_stored_file_in_use_cannot_be_deleted(
     with pytest.raises(IntegrityError), session.begin_nested():
         session.delete(session.get(StoredFileRow, version.file_id))
         session.flush()
+
+
+# deleting
+
+
+def rows_for(session: Session, row_type: Any, document_id: uuid.UUID) -> int:
+    return (
+        session.scalar(
+            select(func.count())
+            .select_from(row_type)
+            .where(row_type.document_id == document_id)
+        )
+        or 0
+    )
+
+
+def test_mark_deleting_marks_an_active_document(
+    documents: DocumentRepository, add_document: Callable[..., Document]
+) -> None:
+    document = add_document()
+
+    assert documents.mark_deleting(document.id) is True
+    found = documents.get(document.id)
+    assert found is not None and found.status == "deleting"
+
+
+def test_mark_deleting_a_document_already_being_deleted_reports_false(
+    documents: DocumentRepository, add_document: Callable[..., Document]
+) -> None:
+    document = add_document(status="deleting")
+
+    assert documents.mark_deleting(document.id) is False
+
+
+def test_mark_deleting_an_unknown_document_reports_false(
+    documents: DocumentRepository,
+) -> None:
+    assert documents.mark_deleting(uuid.uuid4()) is False
+
+
+def test_delete_removes_the_document_its_versions_groups_and_jobs(
+    session: Session,
+    documents: DocumentRepository,
+    jobs: JobRepository,
+    add_document: Callable[..., Document],
+    hr: Group,
+) -> None:
+    document = add_document(status="deleting", group_ids=(hr.id,))
+    jobs.add(kind="delete", document_id=document.id, version=None, created_by=None)
+
+    assert documents.delete(document.id) is True
+
+    assert documents.get(document.id) is None
+    for row_type in (DocumentVersionRow, DocumentGroupRow, IndexingJobRow):
+        assert rows_for(session, row_type, document.id) == 0
+
+
+def test_delete_keeps_the_stored_file_for_the_worker_to_decide(
+    session: Session,
+    documents: DocumentRepository,
+    add_document: Callable[..., Document],
+) -> None:
+    document = add_document(status="deleting")
+
+    documents.delete(document.id)
+
+    assert session.scalar(select(func.count()).select_from(StoredFileRow)) == 1
+
+
+def test_delete_refuses_a_document_not_marked_for_deletion(
+    documents: DocumentRepository, add_document: Callable[..., Document]
+) -> None:
+    document = add_document()
+
+    assert documents.delete(document.id) is False
+    assert documents.get(document.id) == document
+
+
+def test_delete_an_unknown_document_reports_false(
+    documents: DocumentRepository,
+) -> None:
+    assert documents.delete(uuid.uuid4()) is False

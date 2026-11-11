@@ -78,6 +78,11 @@ class RefusingStore:
     def exists(self, key: str) -> bool:
         return self._store.exists(key)
 
+    def delete(self, key: str) -> None:
+        if self._on_delete is not None:
+            raise self._on_delete
+        self._store.delete(key)
+
     def delete_folder(self, folder: str) -> int:
         if self._on_delete is not None:
             raise self._on_delete

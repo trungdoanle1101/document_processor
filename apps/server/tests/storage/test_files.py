@@ -218,6 +218,8 @@ def test_keys_outside_the_root_are_refused(
     with pytest.raises(ValueError):
         store.open(key)
     with pytest.raises(ValueError):
+        store.delete(key)
+    with pytest.raises(ValueError):
         store.delete_folder(key)
 
     # nothing was written next to the store, and the store itself is still there
@@ -316,6 +318,50 @@ def test_prepared_folders_are_valid_store_folders(store: FileStore) -> None:
 
 
 # delete_folder
+
+
+def test_delete_removes_the_file(store: FileStore) -> None:
+    put_bytes(store, "a/one", b"x")
+
+    store.delete("a/one")
+
+    assert not store.exists("a/one")
+
+
+def test_delete_leaves_the_other_files_in_its_folder(store: FileStore) -> None:
+    put_bytes(store, "a/one", b"1")
+    put_bytes(store, "a/two", b"2")
+
+    store.delete("a/one")
+
+    assert read(store, "a/two") == b"2"
+
+
+def test_deleting_a_missing_file_does_nothing(store: FileStore) -> None:
+    put_bytes(store, "a/one", b"x")
+
+    store.delete("a/one")
+    store.delete("a/one")
+    store.delete("never/stored")
+
+
+def test_delete_refuses_a_folder_and_keeps_its_files(store: FileStore) -> None:
+    put_bytes(store, "a/one", b"x")
+
+    with pytest.raises(ValueError):
+        store.delete("a")
+
+    assert read(store, "a/one") == b"x"
+
+
+def test_a_deleted_original_can_be_stored_again(store: FileStore) -> None:
+    key = key_for(b"x")
+    put_bytes(store, key, b"x")
+
+    store.delete(key)
+    put_bytes(store, key, b"x")
+
+    assert read(store, key) == b"x"
 
 
 def test_delete_folder_deletes_its_files_including_subfolders(

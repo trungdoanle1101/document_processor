@@ -2,7 +2,7 @@ import uuid
 from collections.abc import Iterable, Mapping
 from typing import Any, cast
 
-from sqlalchemy import CursorResult, and_, insert, select, update
+from sqlalchemy import CursorResult, and_, delete, insert, select, update
 from sqlalchemy.orm import Session
 
 from kb_server.domain.documents import Document, DocumentStatus, DocumentVersion
@@ -64,6 +64,33 @@ class DocumentRepository:
     def get(self, document_id: uuid.UUID) -> Document | None:
         row = self._session.get(DocumentRow, document_id)
         return to_document(row) if row is not None else None
+
+    def mark_deleting(self, document_id: uuid.UUID) -> bool:
+        """Mark the document to be deleted.
+
+        Returns true if the document exists and not already marked for deletion.
+        """
+        result = cast(
+            CursorResult[Any],
+            self._session.execute(
+                update(DocumentRow)
+                .where(DocumentRow.id == document_id, DocumentRow.status != "deleting")
+                .values(status="deleting")
+            ),
+        )
+        return result.rowcount == 1
+
+    def delete(self, document_id: uuid.UUID) -> bool:
+        """Remove a document marked deleting, with its versions, groups and jobs (cascade). False if there's no such document."""
+        result = cast(
+            CursorResult[Any],
+            self._session.execute(
+                delete(DocumentRow).where(
+                    DocumentRow.id == document_id, DocumentRow.status == "deleting"
+                )
+            ),
+        )
+        return result.rowcount == 1
 
     def get_version(
         self, document_id: uuid.UUID, version: int
