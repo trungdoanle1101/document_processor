@@ -8,7 +8,7 @@ from kb_server.domain.files import StoredFile
 from kb_server.domain.groups import Group
 from kb_server.domain.jobs import IndexingJob
 
-DocumentStatus = Literal["draft", "active"]
+DocumentStatus = Literal["draft", "active", "deleting"]
 
 
 DOCUMENT_STATUSES = get_args(DocumentStatus)

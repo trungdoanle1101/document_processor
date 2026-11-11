@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from kb_server.domain.documents import Document
-from kb_server.domain.jobs import IndexingJob
+from kb_server.domain.jobs import JOB_KINDS, IndexingJob, JobKind
 from kb_server.domain.users import User
 from kb_server.storage.models import DocumentRow, IndexingJobRow, StoredFileRow
 from kb_server.storage.repositories.collections import CollectionRepository
@@ -95,6 +95,16 @@ def test_a_job_without_a_version_or_user_is_allowed(
 
     assert job.version is None
     assert job.created_by is None
+
+
+# compare_metadata ignores an Enum's values, so only a write shows that the CHECK allows them
+@pytest.mark.parametrize("kind", JOB_KINDS)
+def test_the_database_allows_every_job_kind(
+    jobs: JobRepository, document: Document, kind: JobKind
+) -> None:
+    job = jobs.add(kind=kind, document_id=document.id, version=None, created_by=None)
+
+    assert job.kind == kind
 
 
 def test_a_job_for_a_version_that_doesnt_exist_is_refused(

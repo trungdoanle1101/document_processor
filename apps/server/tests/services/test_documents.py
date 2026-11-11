@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from kb_server.domain.collections import Collection
@@ -168,6 +168,15 @@ def count(session: Session, row_type: type[Any]) -> int:
 
 def stored_paths(root: Path) -> list[Path]:
     return [path for path in root.rglob("*") if path.is_file()]
+
+
+def mark_deleting(session: Session, document_id: uuid.UUID) -> None:
+    """Set the status by hand: what DELETE /documents/{id} will do."""
+    session.execute(
+        update(DocumentRow)
+        .where(DocumentRow.id == document_id)
+        .values(status="deleting")
+    )
 
 
 # a successful upload
@@ -497,3 +506,33 @@ def test_an_unknown_document_is_not_found(
 ) -> None:
     with pytest.raises(DocumentNotFound):
         document_service.get_document(admin, uuid.uuid4())
+
+
+# a document being deleted
+
+
+def test_a_document_being_deleted_is_not_found_even_by_an_admin(
+    upload: Callable[..., DocumentDetails],
+    document_service: DocumentService,
+    session: Session,
+    admin: Principal,
+    manager: Principal,
+) -> None:
+    document_id = upload().document.id
+    mark_deleting(session, document_id)
+
+    for reader in (admin, manager):
+        with pytest.raises(DocumentNotFound):
+            document_service.get_document(reader, document_id)
+
+
+def test_the_same_file_can_be_uploaded_while_its_document_is_being_deleted(
+    upload: Callable[..., DocumentDetails], session: Session
+) -> None:
+    first = upload()
+    mark_deleting(session, first.document.id)
+
+    second = upload(filename="another-name.txt")
+
+    assert second.document.id != first.document.id
+    assert second.file.id == first.file.id

@@ -96,6 +96,7 @@ class DocumentRepository:
             .where(
                 DocumentRow.collection_id == collection_id,
                 StoredFileRow.sha256 == sha256,
+                DocumentRow.status != "deleting",
             )
         )
         return to_document(row) if row is not None else None

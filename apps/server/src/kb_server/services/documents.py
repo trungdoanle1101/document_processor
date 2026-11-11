@@ -134,7 +134,11 @@ class DocumentService:
         self, principal: Principal, document_id: uuid.UUID
     ) -> DocumentDetails:
         document = self._documents.get(document_id)
-        if document is None or not self._can_read(principal, document):
+        if (
+            document is None
+            or document.status == "deleting"
+            or not self._can_read(principal, document)
+        ):
             raise DocumentNotFound()
 
         version = self._documents.get_version(document.id, document.current_version)

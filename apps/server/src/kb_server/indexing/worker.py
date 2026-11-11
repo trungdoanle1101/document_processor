@@ -79,7 +79,7 @@ class Worker:
         return True
 
     def recover_stuck_jobs(self) -> int:
-        """Requeue jobs aleft running longer than job_timeout, or fail them on their last attempt.
+        """Requeue jobs left running longer than job_timeout, or fail them on their last attempt.
 
         Returns how many there were. Run at startup, before run_forever.
         """
@@ -273,5 +273,7 @@ def _run_handler(
             )
         case "sync_attributes":
             raise PermanentJobError("sync_attributes not yet supported")
+        case "delete":
+            raise PermanentJobError("delete not yet supported")
         case _:
             assert_never(claimed.job.kind)

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, get_args
 
-JobKind = Literal["prepare", "index", "sync_attributes"]
+JobKind = Literal["prepare", "index", "sync_attributes", "delete"]
 JobStatus = Literal["queued", "running", "done", "failed"]
 
 JOB_KINDS = get_args(JobKind)

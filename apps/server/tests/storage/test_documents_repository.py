@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from kb_server.domain.collections import Collection
-from kb_server.domain.documents import Document
+from kb_server.domain.documents import DOCUMENT_STATUSES, Document, DocumentStatus
 from kb_server.domain.groups import Group
 from kb_server.domain.users import User
 from kb_server.storage.models import DocumentRow, DocumentVersionRow, StoredFileRow
@@ -140,6 +140,14 @@ def test_a_draft_document_can_be_added(add_document: Callable[..., Document]) ->
     assert add_document(status="draft").status == "draft"
 
 
+# compare_metadata ignores an Enum's values, so only a write shows that the CHECK allows them
+@pytest.mark.parametrize("status", DOCUMENT_STATUSES)
+def test_the_database_allows_every_document_status(
+    add_document: Callable[..., Document], status: DocumentStatus
+) -> None:
+    assert add_document(status=status).status == status
+
+
 def test_the_read_groups_are_saved_once_each(
     documents: DocumentRepository,
     add_document: Callable[..., Document],
@@ -254,6 +262,21 @@ def test_find_current_with_file_ignores_other_files(
     assert (
         documents.find_current_with_file(
             hr_docs.id, hashlib.sha256(b"other").hexdigest()
+        )
+        is None
+    )
+
+
+def test_find_current_with_file_skips_a_document_being_deleted(
+    documents: DocumentRepository,
+    add_document: Callable[..., Document],
+    hr_docs: Collection,
+) -> None:
+    add_document(content=b"Dieu 1", status="deleting")
+
+    assert (
+        documents.find_current_with_file(
+            hr_docs.id, hashlib.sha256(b"Dieu 1").hexdigest()
         )
         is None
     )
