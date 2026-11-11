@@ -22,6 +22,7 @@ from kb_server.domain.jobs import IndexingJob
 from kb_server.indexing.prepared import (
     PreparationSettings,
     PreparedParts,
+    delete_prepared,
     load_prepared,
     save_prepared,
     save_review_page,
@@ -151,6 +152,11 @@ class IndexResult:
 
 
 @dataclass(frozen=True, kw_only=True)
+class DeleteResult:
+    prepared_files_deleted: int
+
+
+@dataclass(frozen=True, kw_only=True)
 class JobTools:
     profile_chooser: ProfileChooser
     index_tools: IndexTools
@@ -197,6 +203,20 @@ def run_index_job(
         len(parts.chunks),
     )
     return IndexResult(embedder=tools.embedder.identity, index=tools.index_label)
+
+
+def run_delete_job(
+    job: ClaimedJob, *, index: ChunkIndex, store: FileStore
+) -> DeleteResult:
+    """Remove the document's chunks from the index and its prepared output; return how many prepared files went."""
+    index.replace_document(str(job.document.id), [], [])
+    files_deleted = delete_prepared(store, job.document.id)
+    logger.info(
+        "document %s removed from the index, %d prepared files deleted",
+        job.document.id,
+        files_deleted,
+    )
+    return DeleteResult(prepared_files_deleted=files_deleted)
 
 
 def _describe_chunker(chunker: Chunker) -> dict[str, Any]:

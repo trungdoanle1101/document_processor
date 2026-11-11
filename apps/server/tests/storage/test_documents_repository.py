@@ -433,6 +433,36 @@ def rows_for(session: Session, row_type: Any, document_id: uuid.UUID) -> int:
     )
 
 
+def test_list_file_ids_gives_the_file_of_every_version(
+    session: Session,
+    documents: DocumentRepository,
+    add_document: Callable[..., Document],
+    uploader: User,
+) -> None:
+    document = add_document(content=b"version 1")
+    first = documents.get_version(document.id, 1)
+    assert first is not None
+    second_file = stored_file(session, b"version 2")
+    session.add(
+        DocumentVersionRow(
+            document_id=document.id,
+            version=2,
+            file_id=second_file,
+            original_filename="quy-che.docx",
+            uploaded_by=uploader.id,
+        )
+    )
+    session.flush()
+
+    assert documents.list_file_ids(document.id) == {first.file_id, second_file}
+
+
+def test_list_file_ids_of_an_unknown_document_is_empty(
+    documents: DocumentRepository,
+) -> None:
+    assert documents.list_file_ids(uuid.uuid4()) == set()
+
+
 def test_mark_deleting_marks_an_active_document(
     documents: DocumentRepository, add_document: Callable[..., Document]
 ) -> None:

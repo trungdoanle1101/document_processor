@@ -40,6 +40,7 @@ from kb_server.indexing.handlers import (
     IndexTools,
     PermanentJobError,
     ProfileChooser,
+    run_delete_job,
     run_index_job,
     run_prepare_job,
 )
@@ -48,6 +49,7 @@ from kb_server.storage.files import (
     FileStore,
     LocalFileStore,
     original_key,
+    prepared_folder,
     prepared_version_folder,
 )
 
@@ -1003,3 +1005,123 @@ def test_a_store_that_cant_be_read_is_not_mistaken_for_missing_parts(
 
     with pytest.raises(ConnectionError):
         run_index_job(job, tools=tools, store=FailingOpens(store))
+
+
+# the delete job
+
+
+def test_deleting_removes_the_documents_chunks_from_the_index(
+    store: FileStore,
+    chooser: ProfileChooser,
+    tools: IndexTools,
+    index: InMemoryChunkIndex,
+) -> None:
+    job = stage_prepared(store, text_bytes(REGULATION), chooser=chooser)
+    run_index_job(job, tools=tools, store=store)
+
+    run_delete_job(deleting(job), index=index, store=store)
+
+    assert indexed(index, job) == []
+
+
+def test_deleting_leaves_other_documents_in_the_index(
+    store: FileStore,
+    chooser: ProfileChooser,
+    tools: IndexTools,
+    index: InMemoryChunkIndex,
+) -> None:
+    other = stage_prepared(store, text_bytes(PLAIN_TEXT), chooser=chooser)
+    run_index_job(other, tools=tools, store=store)
+    before = indexed(index, other)
+    job = stage_prepared(store, text_bytes(REGULATION), chooser=chooser)
+    run_index_job(job, tools=tools, store=store)
+
+    run_delete_job(deleting(job), index=index, store=store)
+
+    assert indexed(index, other) == before
+
+
+def test_deleting_removes_every_prepared_version(
+    root: Path, store: FileStore, chooser: ProfileChooser, index: InMemoryChunkIndex
+) -> None:
+    document_id = uuid.uuid4()
+    stage_prepared(
+        store, text_bytes(PLAIN_TEXT), chooser=chooser, document_id=document_id
+    )
+    job = stage_prepared(
+        store,
+        text_bytes(REGULATION),
+        chooser=chooser,
+        document_id=document_id,
+        version=2,
+    )
+
+    run_delete_job(deleting(job), index=index, store=store)
+
+    assert not (root / prepared_folder(document_id)).exists()
+
+
+def test_the_delete_result_counts_the_prepared_files_it_deleted(
+    root: Path, store: FileStore, chooser: ProfileChooser, index: InMemoryChunkIndex
+) -> None:
+    job = stage_prepared(store, text_bytes(REGULATION), chooser=chooser)
+    saved = len(saved_files(root, job))
+
+    result = run_delete_job(deleting(job), index=index, store=store)
+
+    assert saved > 0
+    assert result.prepared_files_deleted == saved
+
+
+def test_deleting_leaves_other_documents_prepared_output(
+    store: FileStore, chooser: ProfileChooser, index: InMemoryChunkIndex
+) -> None:
+    other = stage_prepared(store, text_bytes(PLAIN_TEXT), chooser=chooser)
+    job = stage_prepared(store, text_bytes(REGULATION), chooser=chooser)
+
+    run_delete_job(deleting(job), index=index, store=store)
+
+    assert load_prepared(store, other.document.id, other.version.version) is not None
+
+
+def test_deleting_leaves_the_original_for_the_worker_to_decide(
+    store: FileStore, chooser: ProfileChooser, index: InMemoryChunkIndex
+) -> None:
+    # another document may share the original; only the worker can tell
+    job = stage_prepared(store, text_bytes(REGULATION), chooser=chooser)
+
+    run_delete_job(deleting(job), index=index, store=store)
+
+    assert store.exists(job.file.storage_key)
+
+
+def test_deleting_a_document_never_prepared_or_indexed_does_nothing(
+    store: FileStore, index: InMemoryChunkIndex
+) -> None:
+    job = stage(store, text_bytes(REGULATION))
+
+    run_delete_job(deleting(job), index=index, store=store)
+
+    assert indexed(index, job) == []
+
+
+def test_deleting_again_after_a_crash_is_harmless(
+    store: FileStore,
+    chooser: ProfileChooser,
+    tools: IndexTools,
+    index: InMemoryChunkIndex,
+) -> None:
+    job = stage_prepared(store, text_bytes(REGULATION), chooser=chooser)
+    run_index_job(job, tools=tools, store=store)
+
+    run_delete_job(deleting(job), index=index, store=store)
+    run_delete_job(deleting(job), index=index, store=store)
+
+    assert indexed(index, job) == []
+
+
+def deleting(job: ClaimedJob) -> ClaimedJob:
+    """The same document, claimed by a delete job."""
+    return dataclasses.replace(
+        job, job=dataclasses.replace(job.job, kind="delete", version=None)
+    )

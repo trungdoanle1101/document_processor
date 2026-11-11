@@ -1,19 +1,23 @@
 import logging
 import threading
-from collections.abc import Callable
+import uuid
+from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta
 from typing import assert_never
 
 from sqlalchemy.orm import Session, sessionmaker
 
 from kb_server.domain.documents import Document
+from kb_server.domain.files import StoredFile
 from kb_server.domain.jobs import IndexingJob
 from kb_server.indexing.handlers import (
     ClaimedJob,
+    DeleteResult,
     IndexResult,
     JobTools,
     PermanentJobError,
     PrepareResult,
+    run_delete_job,
     run_index_job,
     run_prepare_job,
 )
@@ -71,10 +75,13 @@ class Worker:
 
         try:
             result = _run_handler(claimed, tools=self._tools)
+            match result:
+                case DeleteResult():
+                    self._finish_deletion(claimed)
+                case _:
+                    self._record_success(claimed, result)
         except Exception as error:  # noqa: BLE001
             self._record_failure(claimed.job, error)
-        else:
-            self._record_success(claimed, result)
 
         return True
 
@@ -215,6 +222,34 @@ class Worker:
                 )
                 jobs.requeue(job.id, error=message)
 
+    def _finish_deletion(self, claimed: ClaimedJob) -> None:
+        """Delete the document's row, then the originals nothing else uses.
+
+        Nothing is recorded: the job's row goes with the document.
+        """
+        unused_files = self._delete_rows(claimed.document.id)
+        self._delete_originals(unused_files)
+
+    def _delete_rows(self, document_id: uuid.UUID) -> list[StoredFile]:
+        with self._session_factory.begin() as session:
+            documents = DocumentRepository(session)
+            stored_files = StoredFileRepository(session)
+            file_ids = documents.list_file_ids(document_id)
+            documents.delete(document_id)
+            return stored_files.delete_unused(file_ids)
+
+    def _delete_originals(self, files: Sequence[StoredFile]) -> None:
+        store = self._tools.file_store
+        for file in files:
+            try:
+                store.delete(file.storage_key)
+            except OSError as error:
+                logger.warning(
+                    "original of stored file %s not deleted (%s); kb-server gc will remove it",
+                    file.id,
+                    type(error).__name__,
+                )
+
 
 def _load_claimed(
     job: IndexingJob,
@@ -264,7 +299,7 @@ def _is_superseded(job: IndexingJob, *, document: Document) -> bool:
 
 def _run_handler(
     claimed: ClaimedJob, *, tools: JobTools
-) -> PrepareResult | IndexResult:
+) -> PrepareResult | IndexResult | DeleteResult:
     """Run the handler for the job's kind and return its result. Raises what it raises."""
     match claimed.job.kind:
         case "prepare":
@@ -278,6 +313,8 @@ def _run_handler(
         case "sync_attributes":
             raise PermanentJobError("sync_attributes not yet supported")
         case "delete":
-            raise PermanentJobError("delete not yet supported")
+            return run_delete_job(
+                claimed, index=tools.index_tools.index, store=tools.file_store
+            )
         case _:
             assert_never(claimed.job.kind)

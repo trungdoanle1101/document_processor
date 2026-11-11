@@ -43,7 +43,8 @@ apps/server/
       database.py  models.py  repositories/  files.py
     indexing/               the worker's side (models load only here)
       prepared.py           PreparationSettings, PreparedParts, save/load/delete prepared output (built)
-      handlers.py           ProfileChooser, ClaimedJob, JobTools, run_prepare_job, run_index_job (built)
+      handlers.py           ProfileChooser, ClaimedJob, JobTools, run_prepare_job, run_index_job,
+                            run_delete_job (built)
       worker.py             Worker: run_once, run_forever, recover_stuck_jobs (built)
   tests/                    api/ services/ storage/ indexing/ domain/ test_wiring.py
 ```
@@ -118,6 +119,11 @@ later      KB_S3_ENDPOINT  KB_S3_BUCKET  KB_S3_ACCESS_KEY  KB_S3_SECRET_KEY
   rolled back.
 - Ids: UUIDs. Timestamps: `timestamptz`.
 - Columns are added by migration when a feature first uses them, not ahead of time.
+- Enum columns are `VARCHAR` + `CHECK` (`native_enum=False`). Autogenerate doesn't see a new
+  value, so its migration is written by hand, and a test writes every value of each `Literal`.
+  Adding a value is one-way: the downgrade keeps the wider constraint. Why: narrowing it would
+  fail or lose the rows that use the value. Rolling back the code still means finishing or
+  clearing those rows first, because the ORM refuses a value it doesn't know.
 
 ### Tables
 
@@ -133,18 +139,14 @@ collections           id, slug (unique), title, description, created_at
 collection_groups     collection_id, group_id (restrict)             default read groups for new documents
 collection_managers   collection_id, user_id
 stored_files          id, sha256 (unique), size, media_type, storage_key, created_at
-documents             id, collection_id (restrict), title, status (draft|active), current_version,
+documents             id, collection_id (restrict), title, status (draft|active|deleting), current_version,
                       created_by, created_at, updated_at
 document_versions     document_id, version, file_id (restrict), original_filename, provenance (json, nullable),
                       uploaded_by, created_at                        pk (document_id, version)
 document_groups       document_id, group_id (restrict)               who may read it
-indexing_jobs         id, kind (prepare|index|sync_attributes), document_id (cascade), version (nullable),
+indexing_jobs         id, kind (prepare|index|sync_attributes|delete), document_id (cascade), version (nullable),
                       status (queued|running|done|failed), attempts, error, created_by,
                       created_at, started_at, finished_at            index (status, created_at)
-
-next
-documents.status      + deleting
-indexing_jobs.kind    + delete
 
 later
 document_preparation  document_id (pk), profile, set_by, set_at      a manager's profile override
@@ -208,6 +210,7 @@ class FileStore(Protocol):
 
     def open(self, key: str) -> BinaryIO: ...  # missing → FileNotFoundError
     def exists(self, key: str) -> bool: ...  # files only
+    def delete(self, key: str) -> None: ...  # one file; missing → nothing; a folder → ValueError
     def delete_folder(self, folder: str) -> int: ...  # every key under folder + "/"
 ```
 
@@ -322,6 +325,7 @@ transaction 1   claim the oldest queued job (running, attempts + 1, started_at)
                 → commit
 no transaction  run the handler for its kind
 transaction 2   success → provenance, follow-up job (prepare of an active document → index), done
+                  a delete → its own steps instead ("Deleting" below)
                 PermanentJobError, or attempts ≥ KB_JOB_MAX_ATTEMPTS → failed
                 any other error → queued again, the error kept
 ```
@@ -412,20 +416,42 @@ differ from the current ones); finding versions to re-embed after an embedder ch
 version with `preparation` but no `index` isn't searchable with its current preparation.
 Who ran what and when is in `indexing_jobs`, not here.
 
-### Deleting (planned, after the worker)
+### Deleting (built)
 
 ```text
-request  DELETE /documents/{id} (can_manage) → 202; status = deleting + a delete job, one
-         transaction. Reads and search treat a deleting document as gone (a tombstone).
-worker   1. remove its chunks from the index
-         2. delete prepared/<document_id>/
-         3. one transaction: delete the document row (cascades), then stored_files rows nothing uses
-         4. delete those originals from the store
+request  DELETE /documents/{id} → 202, no body. One transaction: status = deleting (only if it
+         isn't already) and, if it changed, a delete job with version = None.
+         Hidden → 404; readable but not manageable → 403; a second DELETE queues nothing.
+handler  run_delete_job: 1. remove its chunks from the index
+                         2. delete prepared/<document_id>/
+worker   3. one transaction: read every version's file id, delete the document row (versions,
+            groups and jobs cascade, this job's row included), then delete the stored_files
+            rows among those files that no version uses
+         4. after the commit: delete those originals from the store
 ```
 
-Steps 1–2 are safe to repeat; the database goes before the originals. The delete job's own row
-cascades away, so the worker skips recording it. A crash between 3 and 4 leaves an orphaned
-original, which `kb-server gc` removes later.
+- Reads treat a `deleting` document as gone (a tombstone): `GET` is 404, and the duplicate-file
+  check skips it, so the same file can be uploaded again at once. Search will drop its hits too
+  (section 5).
+- Every other job of a `deleting` document is skipped (W6); the delete job isn't.
+- The delete job has no version. Why: it applies to the whole document, so a new version can't
+  supersede it and leave the tombstone behind.
+- Steps 1–2 are safe to repeat. The database goes before the originals (rule 4): a crash
+  between 3 and 4 leaves an orphaned original, never a row pointing at a missing file.
+- Nothing is recorded: the job's row goes with the document. So step 4 can't fail the job: an
+  `OSError` is logged with the stored file's id, and `kb-server gc` removes the orphan later.
+- No job id in the response, unlike other long work. Why: the job's row disappears when it
+  finishes, so `GET /jobs/{id}` couldn't tell "finished" from "never existed".
+- `DocumentRepository.delete` removes only a document already marked `deleting`. Why: a bug
+  can't hard-delete an active document.
+- Known window, accepted: if the same file is uploaded again between step 3's commit and
+  step 4, the upload finds the original still there and doesn't write it, then step 4 deletes
+  it; the new document's prepare job fails with "stored file missing". The window is
+  milliseconds. While the delete job waits in the queue, a re-upload is safe: step 3 deletes
+  only rows no version uses.
+- Open: a delete job that fails for good (the index down for every attempt) leaves the
+  tombstone in place, and a second DELETE queues nothing. A retry path (DELETE queues a new
+  job when the last one failed, or an operator command) comes with operations (step 8).
 
 ### Logging
 
@@ -468,7 +494,7 @@ long work    202 Accepted + job body + Location: /api/v1/jobs/{id}
 | users (built) | `POST /users`  `GET /users`  `GET /users/{id}`  `PATCH /users/{id}`  … |
 | groups (built) | `POST /groups`  `GET /groups`  `DELETE /groups/{id}`  members |
 | collections (built) | CRUD, `PUT /collections/{id}/groups`, managers |
-| documents | `POST /documents` (built)  `GET /documents/{id}` (built)  `GET /documents`  `PATCH /documents/{id}`  `PUT /documents/{id}/file`  `DELETE /documents/{id}`  `GET /documents/{id}/versions`  `GET /documents/{id}/file`  `GET /documents/{id}/review` |
+| documents | `POST /documents` (built)  `GET /documents/{id}` (built)  `GET /documents`  `PATCH /documents/{id}`  `PUT /documents/{id}/file`  `DELETE /documents/{id}` (built)  `GET /documents/{id}/versions`  `GET /documents/{id}/file`  `GET /documents/{id}/review` |
 | jobs | `GET /jobs`  `GET /jobs/{id}` |
 | search | `POST /search`  `POST /answer` |
 | later | batches, relations, retirements, feedback, `/admin/*`, `/openai/v1` |
@@ -527,7 +553,7 @@ kb-server gc                        remove originals no row needs
      7. settings, `IndexTools`, the `kb-server[worker]` extra, `kb-server worker`, Qdrant in
         Docker Compose, logging setup **(built)**
      8. a real end-to-end run with a real regulation and bge-m3 **(next)**
-     9. deleting documents
+     9. deleting documents **(built)**
 5. Search: `POST /search` with the access filter. Moved ahead of the read side because it is
    the reason the system exists, and it tests the index decisions early.
 6. Read side: list with paging, versions, download, review page, `GET /jobs/{id}`.
@@ -556,7 +582,12 @@ Project hygiene alongside: CI (ruff, mypy, pytest with Postgres), a pre-commit g
 | Worker dependencies imported inside `open_job_tools` | A top-level import loads torch in `serve` |
 | Models found by reference under one `KB_MODELS_FOLDER` | A folder setting per model drifts from its spec |
 | The claim commits before the handler runs | A rolled-back claim is retried forever and never counts its attempts |
-| A job with no version is never superseded | It applies to the whole document, not to one version |
+| A job with no version is never superseded by a new version | It applies to the whole document, not to one version |
+| Every job but the delete job of a `deleting` document is skipped | Its work would be removed anyway; an index job would re-embed it |
+| Originals are deleted after the commit | A crash leaves an orphaned file, never a row pointing at nothing |
+| A delete job records nothing | Its row is deleted with the document; `mark_done` would fail |
+| `DocumentRepository.delete` needs status `deleting` | A bug can't hard-delete an active document |
+| Adding an enum value has a no-op downgrade | Narrowing it would fail or lose the rows that use the value |
 | `vn_regulation` isn't the default | Most documents aren't regulations; `plain` is the safe fallback |
 
 ## 16. Later

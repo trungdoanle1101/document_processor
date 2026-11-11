@@ -14,7 +14,7 @@ import uuid
 from collections.abc import Callable, Sequence
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 import pytest
 from sqlalchemy import delete, insert, select, update
@@ -31,10 +31,11 @@ from kb_server.domain.users import User
 from kb_server.indexing.handlers import IndexTools, JobTools
 from kb_server.indexing.worker import Worker
 from kb_server.services.documents import DocumentService
-from kb_server.storage.files import FileStore
+from kb_server.storage.files import FileStore, prepared_folder
 from kb_server.storage.models import DocumentRow, DocumentVersionRow, IndexingJobRow
 from kb_server.storage.repositories.collections import CollectionRepository
 from kb_server.storage.repositories.documents import DocumentRepository
+from kb_server.storage.repositories.files import StoredFileRepository
 from kb_server.storage.repositories.groups import GroupRepository
 from kb_server.storage.repositories.jobs import JobRepository
 from tests.indexing.test_handlers import (
@@ -121,17 +122,20 @@ def make_worker(
     embedder: CountingEmbedder,
     clock: FakeClock,
 ) -> MakeWorker:
-    """make_worker(embedder=…, max_attempts=…): a worker over the test's rows and index."""
+    """make_worker(embedder=…, max_attempts=…, store=…): a worker over the test's rows and index."""
 
     def make(
-        *, embedder_: CountingEmbedder | None = None, max_attempts: int = 3
+        *,
+        embedder_: CountingEmbedder | None = None,
+        max_attempts: int = 3,
+        store: FileStore | None = None,
     ) -> Worker:
         tools = JobTools(
             profile_chooser=make_chooser(),
             index_tools=IndexTools(
                 embedder=embedder_ or embedder, index=index, index_label=INDEX_LABEL
             ),
-            file_store=file_store,
+            file_store=store or file_store,
         )
         return Worker(
             session_factory=session_factory,
@@ -467,10 +471,102 @@ def test_the_delete_job_of_a_document_being_deleted_is_not_skipped(
 
     worker.run_once()
 
-    # it reached its handler, which doesn't support it yet
-    recorded = job(session, deletion.id)
-    assert recorded.status == "failed"
-    assert recorded.error == "PermanentJobError: delete not yet supported"
+    session.expire_all()
+    assert JobRepository(session).get(deletion.id) is None
+    assert DocumentRepository(session).get(details.document.id) is None
+
+
+# the delete job
+
+
+def test_a_delete_job_removes_the_document_everywhere(
+    worker: Worker,
+    upload: Upload,
+    session: Session,
+    index: InMemoryChunkIndex,
+    file_store: FileStore,
+    file_store_root: Path,
+) -> None:
+    details = upload()
+    run_until_idle(worker)
+    assert indexed(index, details) != []
+    request_deletion(session, details)
+
+    assert worker.run_once() is True
+
+    session.expire_all()
+    assert DocumentRepository(session).get(details.document.id) is None
+    assert jobs_of(session, details) == []
+    assert StoredFileRepository(session).get(details.file.id) is None
+    assert indexed(index, details) == []
+    assert not (file_store_root / prepared_folder(details.document.id)).exists()
+    assert not file_store.exists(details.file.storage_key)
+
+
+def test_an_original_another_document_uses_is_kept(
+    worker: Worker, upload: Upload, session: Session, file_store: FileStore
+) -> None:
+    details = upload()
+    DocumentRepository(session).add(
+        collection_id=details.document.collection_id,
+        title="Bản sao",
+        status="active",
+        group_ids=[],
+        file_id=details.file.id,
+        original_filename="ban-sao.txt",
+        created_by=details.document.created_by,
+    )
+    request_deletion(session, details)
+
+    run_until_idle(worker)
+
+    session.expire_all()
+    assert DocumentRepository(session).get(details.document.id) is None
+    assert StoredFileRepository(session).get(details.file.id) is not None
+    assert file_store.exists(details.file.storage_key)
+
+
+def test_an_original_the_store_cant_delete_is_left_and_logged_by_id(
+    make_worker: MakeWorker,
+    upload: Upload,
+    session: Session,
+    file_store: FileStore,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    worker = make_worker(store=FailingFileDeletes(file_store))
+    details = upload()
+    request_deletion(session, details)
+    caplog.set_level(logging.WARNING, logger="kb_server.indexing.worker")
+
+    run_until_idle(worker)
+
+    session.expire_all()
+    assert DocumentRepository(session).get(details.document.id) is None
+    assert file_store.exists(details.file.storage_key)  # an orphan, for gc
+    assert str(details.file.id) in caplog.text
+    assert details.file.sha256 not in caplog.text
+
+
+class FailingFileDeletes:
+    """A store that can't delete single files, like a read-only bucket; folders still go."""
+
+    def __init__(self, store: FileStore) -> None:
+        self._store = store
+
+    def put(self, key: str, data: BinaryIO, *, size: int, media_type: str) -> None:
+        self._store.put(key, data, size=size, media_type=media_type)
+
+    def open(self, key: str) -> BinaryIO:
+        return self._store.open(key)
+
+    def exists(self, key: str) -> bool:
+        return self._store.exists(key)
+
+    def delete(self, key: str) -> None:
+        raise PermissionError("read-only")
+
+    def delete_folder(self, folder: str) -> int:
+        return self._store.delete_folder(folder)
 
 
 # recovering stuck jobs
@@ -646,6 +742,17 @@ def ran_to_the_end(worker: Worker, *, stop: threading.Event) -> bool:
 
 
 # helpers
+
+
+def run_until_idle(worker: Worker) -> None:
+    while worker.run_once():
+        pass
+
+
+def request_deletion(session: Session, details: DocumentDetails) -> None:
+    """What DELETE /documents/{id} does: mark the document and queue its delete job."""
+    assert DocumentRepository(session).mark_deleting(details.document.id)
+    queue(session, details, kind="delete", version=None)
 
 
 def job(session: Session, job_id: uuid.UUID) -> IndexingJob:

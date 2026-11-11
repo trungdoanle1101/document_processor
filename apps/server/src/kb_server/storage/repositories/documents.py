@@ -106,6 +106,14 @@ class DocumentRepository:
         ).all()
         return set(ids)
 
+    def list_file_ids(self, document_id: uuid.UUID) -> set[uuid.UUID]:
+        ids = self._session.scalars(
+            select(DocumentVersionRow.file_id).where(
+                DocumentVersionRow.document_id == document_id
+            )
+        ).all()
+        return set(ids)
+
     def find_current_with_file(
         self, collection_id: uuid.UUID, sha256: str
     ) -> Document | None:

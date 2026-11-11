@@ -1,11 +1,12 @@
 import uuid
+from collections.abc import Iterable
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from kb_server.domain.files import StoredFile
-from kb_server.storage.models import StoredFileRow
+from kb_server.storage.models import DocumentVersionRow, StoredFileRow
 
 
 class StoredFileRepository:
@@ -44,6 +45,27 @@ class StoredFileRepository:
             assert found is not None
             return found
         return to_stored_file(row)
+
+    def delete_unused(self, file_ids: Iterable[uuid.UUID]) -> list[StoredFile]:
+        """Delete those of these files that no version uses; return the ones deleted."""
+        is_used = (
+            select(DocumentVersionRow.file_id)
+            .where(DocumentVersionRow.file_id == StoredFileRow.id)
+            .exists()
+        )
+        rows = self._session.scalars(
+            select(StoredFileRow).where(StoredFileRow.id.in_(file_ids), ~is_used)
+        ).all()
+
+        unused = [to_stored_file(row) for row in rows]
+        if unused:
+            # checked again: an upload may have started using one since select
+            self._session.execute(
+                delete(StoredFileRow).where(
+                    StoredFileRow.id.in_([file.id for file in unused]), ~is_used
+                )
+            )
+        return unused
 
 
 def to_stored_file(row: StoredFileRow) -> StoredFile:
