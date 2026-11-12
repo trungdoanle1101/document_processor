@@ -12,6 +12,8 @@ with access control by group.
   `api → services → domain → storage`, plus `indexing/` for the worker. Services check
   permissions and raise; repositories only report. Job handlers never touch the database.
 - `apps/cli/`: an HTTP-only client, later.
+- `packages/retrieval/` (`salemdex_retrieval`): the new retrieval engine, being built
+  alongside the framework's retrieval (design: `docs/graph-workflow-design.md`).
 
 The design, with the reason for each decision and the build order:
 @docs/backend-design.md
@@ -28,8 +30,9 @@ cd apps/server && KB_TEST_DATABASE_URL=postgresql+psycopg://kb:kb@localhost/kb_t
 #   without KB_TEST_DATABASE_URL a throwaway Postgres container is started (slower)
 
 uv run pytest tests                           # framework tests, from the root
+cd packages/retrieval && uv run pytest        # retrieval tests: its tests/ package clashes too
 uv run ruff check . && uv run ruff format --check .
-uv run mypy src apps/server/src apps/server/tests
+uv run mypy src apps/server/src apps/server/tests packages/retrieval/src packages/retrieval/tests
 
 cd apps/server && uv run alembic upgrade head # migrations (settings from apps/server/.env)
 uv run kb-server create-admin --email … --name …

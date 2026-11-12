@@ -1,15 +1,18 @@
 import dataclasses
+import re
 import uuid
+from typing import Any
 
 import pytest
 
 from salemdex_retrieval.filters import AnyOf, Equals
-from salemdex_retrieval.schema import Many, One
+from salemdex_retrieval.schema import Many, One, Schema
 
 
-class Chunks:
+class Chunks(Schema):
     document_id = One(uuid.UUID, indexed=True)
     version = One(int)
+    position = One(int)
     groups = Many(uuid.UUID, indexed=True)
     headings = Many(str)
 
@@ -27,7 +30,12 @@ def test_eq_describes_the_field_and_the_value() -> None:
 
 
 def test_eq_on_different_fields_gives_different_filters() -> None:
-    assert Chunks.version.eq(1) != Equals(field=Chunks.document_id, value=1)
+    assert Chunks.version.eq(1) != Chunks.position.eq(1)
+
+
+def test_eq_rejects_a_value_not_of_the_field_type() -> None:
+    with pytest.raises(TypeError, match="document_id is 'str', expected UUID"):
+        Chunks.document_id.eq(str(DOCUMENT_ID))  # type: ignore[arg-type]
 
 
 def test_a_filter_cannot_be_changed_after_it_is_built() -> None:
@@ -68,10 +76,23 @@ def test_any_of_accepts_any_iterable_such_as_a_generator() -> None:
     assert where == AnyOf(field=Chunks.groups, values=frozenset({HR, LEGAL}))
 
 
+def test_any_of_names_the_position_of_a_value_not_of_the_field_type() -> None:
+    with pytest.raises(TypeError, match=re.escape("groups[1] is 'str', expected UUID")):
+        Chunks.groups.any_of([HR, str(LEGAL)])  # type: ignore[list-item]
+
+
 def test_any_of_with_no_values_keeps_no_values() -> None:
     assert Chunks.groups.any_of([]) == AnyOf(field=Chunks.groups, values=frozenset())
 
 
-def test_any_of_rejects_a_single_string_and_suggests_a_list() -> None:
-    with pytest.raises(TypeError, match=r"use any_of\(\['intro'\]\)"):
-        Chunks.headings.any_of("intro")
+@pytest.mark.parametrize(
+    ("wrong", "type_name"),
+    [("intro", "str"), (b"ab", "bytes"), ({"a": 1}, "dict")],
+    ids=["str", "bytes", "dict"],
+)
+def test_any_of_rejects_a_string_bytes_or_mapping_naming_its_type(
+    wrong: Any, type_name: str
+) -> None:
+    message = f"any_of(...) needs a collection of values, not {type_name!r}"
+    with pytest.raises(TypeError, match=re.escape(message)):
+        Chunks.headings.any_of(wrong)

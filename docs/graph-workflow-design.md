@@ -1,6 +1,7 @@
 # Retrieval as a graph of stages
 
-Status: design discussion, nothing built. Branch: `features/retrieval-redesign`.
+Status: build step 1 in progress (section 10): fields, schemas, field values and the first
+filters (`eq`, `any_of`) are built. Branch: `features/retrieval-redesign`.
 
 The project is named **Salemdex**. This engine is its first package under that name,
 `salemdex-retrieval` (section 10).
@@ -198,8 +199,19 @@ single `Field[T]`: mypy can't infer `T` from `tuple[str, ...]`, only from a real
 the operations differ: `eq` and ranges fit one value, `any_of` / `all_of` fit several.
 
 - `T` is one of `str`, `int`, `float`, `bool`, `UUID`, `datetime`: what every backend can store.
-  `One.__init__` checks this and names the allowed types. It compares classes exactly, not with
-  `issubclass`, because `bool` is a subclass of `int`.
+  `Field.__init__` checks this and names the allowed types. It compares classes exactly, not
+  with `issubclass`, because `bool` is a subclass of `int`.
+- **Values are checked wherever they enter:** in `value()` (writes) and in `eq` / `any_of`
+  (filters), with one shared check. Why filters too: statements built at run time (config, an
+  agent) arrive as `Any`, and a `str` where a `UUID` belongs would match nothing instead of
+  failing.
+  - The type must match exactly; an `int` is widened to `float` for a `float` field.
+  - A `datetime` must have a timezone.
+  - A `float` must be finite, and an `int` must fit in 64 bits (`ValueError`). Why: JSON has
+    no NaN or infinity, Qdrant stores int64, and `nan` never equals itself, so `eq(nan)` would
+    match nothing without saying so.
+  - `Many.value` and `any_of` refuse a `str`, `bytes` or `Mapping`: each is iterable, and
+    would be taken apart into characters, ints or keys.
 - `One(UUID)` is the call; `One[UUID]` is the type mypy infers from it. The type is passed as an
   argument because the run time needs it too (checking and encoding values, choosing backend
   index types), and generic parameters are erased at run time.
@@ -252,6 +264,18 @@ Chunk(id=…, text=…, values=[KbChunks.document_id.value(doc_id), KbChunks.ver
 
 - Every field-value pair is type-checked. A missing field is caught at run time, when the
   index checks the write against its schema.
+- **Two value classes, like the two field kinds:** `One.value` returns `OneValue[T]` (`value:
+  T`) and `Many.value` returns `ManyValues[T]` (`values: tuple[T, ...]`).
+  `type FieldValue = OneValue[Any] | ManyValues[Any]` names either, and a backend matches on
+  the class to tell one value from several. Filters follow the same pattern: `Equals[T]`,
+  `AnyOf[T]`, and `type Filter = Equals[Any] | AnyOf[Any]`.
+  - Why not one generic `FieldValue[T]`: with `value: T`, a `Many` field's tuple isn't a `T`,
+    and `value: T | tuple[T, ...]` wouldn't tie the shape to the kind of field.
+  - Why the unions aren't generic: a chunk's values, and a filter combining fields, span
+    several types, so every user would write `[Any]`. `T` is kept where it is known: `value()`,
+    `eq` and `any_of` return the specific class.
+- **Fields come only from the class body and from `Schema` bases.** A `Field` in a plain mixin
+  isn't part of the schema; shared fields belong in a `Schema` preset.
 - Why this level: chunks are built in one place (the index handler), while filters and reads are
   spread everywhere, and those are fully typed.
 - Possible later: the SQLAlchemy 2.0 style. The schema class is also a typed record
@@ -279,6 +303,14 @@ Chunk(id=…, text=…, values=[KbChunks.document_id.value(doc_id), KbChunks.ver
   `QDRANT_INDEXED_ATTRIBUTES`.
 - Values are encoded to the backend's format and decoded back (`UUID`, `datetime`). Why: that
   removes the need for the private `_payload` module.
+- **Field values sit under their own payload key**, apart from the chunk's own parts:
+  `{"text": …, "embedded_text": …, "fields": {"document_id": …, "groups": […]}}`. Only the
+  Qdrant backend knows this layout; it turns `KbChunks.document_id` into the key
+  `fields.document_id` for filters and payload indexes (Qdrant handles dotted keys). Why: in a
+  flat payload, a field named `text` would overwrite the chunk's text and break "faithful"
+  without an error. Reserving names instead would make every payload key the framework adds
+  later a breaking change for existing schemas, and would put one backend's layout into the
+  schema's rules.
 - **Writes are filter-based**, like SQL's `DELETE … WHERE`: `index.add(chunks)`,
   `index.delete(where=…)`, `index.replace(where=KbChunks.document_id.eq(x), with_=new_chunks)`.
   The framework needs no document concept even for index upkeep, and

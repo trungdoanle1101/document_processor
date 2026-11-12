@@ -1,5 +1,6 @@
 import dataclasses
 import enum
+import math
 import re
 import uuid
 from datetime import UTC, date, datetime
@@ -9,9 +10,10 @@ import pytest
 
 from salemdex_retrieval.schema import (
     Field,
-    FieldValue,
     Many,
+    ManyValues,
     One,
+    OneValue,
     Schema,
     SchemaError,
 )
@@ -142,6 +144,14 @@ class Standard(Schema):
     position = One(int)
 
 
+def test_a_field_shows_its_kind_type_name_and_indexing() -> None:
+    assert repr(Standard.document_id) == "One(UUID, name='document_id', indexed=True)"
+
+
+def test_a_field_without_a_name_can_still_be_shown() -> None:
+    assert repr(Many(str)) == "Many(str, name=None, indexed=False)"
+
+
 def test_a_schema_lists_its_fields_in_declaration_order() -> None:
     class Chunks(Schema):
         document_id = One(uuid.UUID)
@@ -199,6 +209,16 @@ def test_a_preset_reached_through_two_branches_counts_its_fields_once() -> None:
     assert list(Both.fields()) == ["document_id", "position"]
 
 
+def test_a_schema_ignores_fields_declared_in_a_base_that_is_not_a_schema() -> None:
+    class Common:
+        collection_id = One(uuid.UUID)
+
+    class Chunks(Common, Schema):
+        document_id = One(uuid.UUID)
+
+    assert list(Chunks.fields()) == ["document_id"]
+
+
 def test_inheriting_two_different_fields_with_one_name_is_rejected() -> None:
     class First(Schema):
         position = One(int)
@@ -244,6 +264,7 @@ class Record(Schema):
     title = One(str)
     indexed_at = One(datetime)
     headings = Many(str)
+    counts = Many(int)
     groups = Many(uuid.UUID)
     seen_at = Many(datetime)
 
@@ -255,7 +276,7 @@ NAIVE_NEW_YEAR = datetime(2026, 1, 1)
 
 
 def test_one_value_pairs_the_field_with_the_value() -> None:
-    assert Record.title.value("Scope") == FieldValue(field=Record.title, value="Scope")
+    assert Record.title.value("Scope") == OneValue(field=Record.title, value="Scope")
 
 
 @pytest.mark.parametrize(
@@ -302,20 +323,54 @@ def test_one_value_rejects_a_datetime_without_a_timezone() -> None:
         Record.indexed_at.value(NAIVE_NEW_YEAR)
 
 
+@pytest.mark.parametrize(
+    "wrong", [math.nan, math.inf, -math.inf], ids=["nan", "inf", "-inf"]
+)
+def test_a_float_field_rejects_a_value_that_is_not_finite(wrong: float) -> None:
+    message = f"score is {wrong!r}; expected a finite number"
+    with pytest.raises(ValueError, match=re.escape(message)):
+        Record.score.value(wrong)
+    with pytest.raises(ValueError, match=re.escape(message)):
+        Record.score.eq(wrong)
+
+
+@pytest.mark.parametrize("limit", [-(2**63), 2**63 - 1], ids=["smallest", "largest"])
+def test_an_int_field_accepts_the_64_bit_limits(limit: int) -> None:
+    assert Record.count.value(limit).value == limit
+
+
+@pytest.mark.parametrize("wrong", [-(2**63) - 1, 2**63], ids=["below", "above"])
+def test_an_int_field_rejects_a_value_outside_64_bits(wrong: int) -> None:
+    with pytest.raises(ValueError, match="count is outside 64 bits"):
+        Record.count.value(wrong)
+    with pytest.raises(ValueError, match="count is outside 64 bits"):
+        Record.count.eq(wrong)
+
+
+def test_a_float_field_rejects_an_int_too_large_to_widen() -> None:
+    with pytest.raises(ValueError, match="score is an int too large for a float"):
+        Record.score.value(10**400)
+
+
+def test_many_value_names_the_position_of_an_int_outside_64_bits() -> None:
+    with pytest.raises(ValueError, match=re.escape("counts[1] is outside 64 bits")):
+        Record.counts.value([1, 2**63])
+
+
 def test_many_value_keeps_the_order_and_repeats_as_a_tuple() -> None:
     field_value = Record.headings.value(["Part 1", "Scope", "Part 1"])
 
-    assert field_value == FieldValue(
-        field=Record.headings, value=("Part 1", "Scope", "Part 1")
+    assert field_value == ManyValues(
+        field=Record.headings, values=("Part 1", "Scope", "Part 1")
     )
 
 
 def test_many_value_accepts_no_values() -> None:
-    assert Record.groups.value([]).value == ()
+    assert Record.groups.value([]).values == ()
 
 
 def test_many_value_accepts_any_iterable_such_as_a_generator() -> None:
-    assert Record.groups.value(g for g in [HR, LEGAL]).value == (HR, LEGAL)
+    assert Record.groups.value(g for g in [HR, LEGAL]).values == (HR, LEGAL)
 
 
 def test_many_value_names_the_position_of_a_value_of_the_wrong_type() -> None:
@@ -328,9 +383,17 @@ def test_many_value_names_the_position_of_a_datetime_without_a_timezone() -> Non
         Record.seen_at.value([NEW_YEAR, NAIVE_NEW_YEAR])
 
 
-def test_many_value_rejects_a_single_string_and_suggests_a_list() -> None:
-    with pytest.raises(TypeError, match=re.escape("use value(['intro'])")):
-        Record.headings.value("intro")
+@pytest.mark.parametrize(
+    ("wrong", "type_name"),
+    [("intro", "str"), (b"ab", "bytes"), ({"a": 1}, "dict")],
+    ids=["str", "bytes", "dict"],
+)
+def test_many_value_rejects_a_string_bytes_or_mapping_naming_its_type(
+    wrong: Any, type_name: str
+) -> None:
+    message = f"value(...) needs a collection of values, not {type_name!r}"
+    with pytest.raises(TypeError, match=re.escape(message)):
+        Record.headings.value(wrong)
 
 
 def test_a_field_value_cannot_be_changed_after_it_is_built() -> None:
