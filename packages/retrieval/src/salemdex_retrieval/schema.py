@@ -1,4 +1,8 @@
-"""Schemas: the typed fields a chunk holds, and the checked values written for them."""
+"""The typed fields a chunk holds, and the checked values written for them.
+
+A schema subclasses `Schema` and declares `One` and `Many` fields. Each field checks
+values where they enter: for writes (`value`) and for filters (`eq`, `any_of`).
+"""
 
 from __future__ import annotations
 
@@ -20,17 +24,36 @@ _INT64_MAX = 2**63 - 1
 
 
 class SchemaError(Exception):
-    """Schema definition rule violation."""
+    """Raised when a schema or a field is declared against the rules."""
 
 
 class Field[T]:
     """A typed, named field of a schema.
 
-    One and Many add what differs by kind: how a chunk's value is given, and which
-    filters apply.
+    `One` and `Many` add what differs by kind: how a chunk's value is given, and which
+    filters apply. A field takes its name from the schema class body it's declared in.
+
+    Every value given to a field, for a write or a filter, is checked: its type must be
+    exactly `value_type` (an `int` is widened for a `float` field), a `datetime` must
+    have a timezone, a `float` must be finite and an `int` must fit in 64 bits.
+
+    Attributes:
+        value_type: The type every value must have exactly.
+        indexed: Whether backends build an index on the field for filtering.
     """
 
     def __init__(self, value_type: type[T], *, indexed: bool = False) -> None:
+        """Declare a field whose values are of `value_type`.
+
+        Args:
+            value_type: One of `str`, `int`, `float`, `bool`, `UUID`, `datetime`.
+                Subclasses, such as `bool` for `int` or a `StrEnum` for `str`, are
+                refused.
+            indexed: Whether backends build an index on the field for filtering.
+
+        Raises:
+            TypeError: `value_type` isn't one of the supported types.
+        """
         if value_type not in _VALUE_TYPES:
             supported_types = ", ".join(t.__name__ for t in _VALUE_TYPES)
             raise TypeError(
@@ -41,6 +64,11 @@ class Field[T]:
         self._name: str | None = None
 
     def __set_name__(self, owner: type[Any], name: str) -> None:
+        """Take the attribute's name as the field's name.
+
+        Raises:
+            SchemaError: The field already has a name, in this class or another.
+        """
         if self._name is not None:
             raise SchemaError(
                 f"this {type(self).__name__}(...) is already the field {self._name!r}; "
@@ -58,6 +86,11 @@ class Field[T]:
 
     @property
     def name(self) -> str:
+        """The name the field was declared under.
+
+        Raises:
+            SchemaError: The field wasn't declared in a class body.
+        """
         if self._name is None:
             declaration = f"{type(self).__name__}({self.value_type.__name__})"
             raise SchemaError(
@@ -67,11 +100,19 @@ class Field[T]:
         return self._name
 
     def _check(self, value: object, *, position: int | None = None) -> T:
-        """Return `value` if it has exactly this field's type, an int widened to float.
+        """Return `value` checked against this field, an `int` widened for a `float`.
 
-        Raises TypeError naming the field (and `position` within a Many) for another
-        type or a datetime without a timezone; ValueError for a float that isn't
-        finite or an int outside 64 bits.
+        Args:
+            value: The value to check.
+            position: The value's position within a `Many`, named in errors.
+
+        Returns:
+            The value, as a `float` when an `int` was given for a `float` field.
+
+        Raises:
+            TypeError: The value isn't exactly of the field's type, or is a
+                `datetime` without a timezone.
+            ValueError: A `float` isn't finite, or an `int` is outside 64 bits.
         """
         if type(value) is int and self.value_type is float:
             try:
@@ -101,6 +142,7 @@ class Field[T]:
         return value
 
     def _label(self, position: int | None) -> str:
+        """Return the field's name for messages, with `[position]` within a `Many`."""
         return self.name + (f"[{position}]" if position is not None else "")
 
 
@@ -108,11 +150,33 @@ class One[T](Field[T]):
     """A field holding exactly one value per chunk."""
 
     def value(self, value: T) -> OneValue[T]:
-        """Return a chunk's value for this field, checked against the field's type."""
+        """Return a chunk's value for this field.
+
+        Args:
+            value: The chunk's value.
+
+        Returns:
+            The checked value paired with this field, for `Chunk(field_values=...)`.
+
+        Raises:
+            TypeError: The value is of the wrong type (see `Field`).
+            ValueError: The value can't be stored (see `Field`).
+        """
         return OneValue(field=self, value=self._check(value))
 
     def eq(self, value: T) -> Equals[T]:
-        """Return a filter matching chunks whose value for this field equals `value`."""
+        """Return a filter matching chunks whose value for this field equals `value`.
+
+        Args:
+            value: The value to match.
+
+        Returns:
+            An `Equals` filter.
+
+        Raises:
+            TypeError: The value is of the wrong type (see `Field`).
+            ValueError: The value can't be stored (see `Field`).
+        """
         return Equals(field=self, value=self._check(value))
 
 
@@ -120,9 +184,23 @@ class Many[T](Field[T]):
     """A field holding any number of values per chunk, possibly none."""
 
     def value(self, values: Iterable[T]) -> ManyValues[T]:
-        """Return a chunk's values for this field, each checked against the field's type.
+        """Return a chunk's values for this field.
 
-        Order and repeats are kept; no values is allowed.
+        Order and repeats are kept. No values is allowed, and is how a chunk says it
+        has none.
+
+        Args:
+            values: The chunk's values, in any iterable but a `str`, `bytes` or
+                mapping.
+
+        Returns:
+            The checked values, as a tuple paired with this field, for
+            `Chunk(field_values=...)`.
+
+        Raises:
+            TypeError: `values` is a `str`, `bytes` or mapping, or a value is of the
+                wrong type (see `Field`).
+            ValueError: A value can't be stored (see `Field`).
         """
         self._check_iterable(values, owner="value(...)")
 
@@ -136,7 +214,17 @@ class Many[T](Field[T]):
     def any_of(self, values: Iterable[T]) -> AnyOf[T]:
         """Return a filter matching chunks with at least one value in `values`.
 
-        An empty `values` matches no chunk.
+        Args:
+            values: The values to match, in any iterable but a `str`, `bytes` or
+                mapping. Order and repeats don't matter; no values matches no chunk.
+
+        Returns:
+            An `AnyOf` filter.
+
+        Raises:
+            TypeError: `values` is a `str`, `bytes` or mapping, or a value is of the
+                wrong type (see `Field`).
+            ValueError: A value can't be stored (see `Field`).
         """
         self._check_iterable(values, owner="any_of(...)")
 
@@ -148,6 +236,11 @@ class Many[T](Field[T]):
         )
 
     def _check_iterable(self, values: Iterable[T], *, owner: str) -> None:
+        """Refuse an iterable that would be taken apart into characters, ints or keys.
+
+        Raises:
+            TypeError: `values` is a `str`, `bytes` or mapping.
+        """
         if isinstance(values, (str, bytes, Mapping)):
             message = (
                 f"{owner} needs a collection of values, not {type(values).__name__!r}"
@@ -157,7 +250,12 @@ class Many[T](Field[T]):
 
 @dataclass(frozen=True, kw_only=True)
 class OneValue[T]:
-    """A chunk's value for a One field, checked against the field's type."""
+    """A chunk's value for a `One` field, built by `One.value`.
+
+    Attributes:
+        field: The field the value is for.
+        value: The value, checked against the field.
+    """
 
     field: One[T]
     value: T
@@ -165,7 +263,12 @@ class OneValue[T]:
 
 @dataclass(frozen=True, kw_only=True)
 class ManyValues[T]:
-    """A chunk's values for a Many field, each checked; in order, possibly none."""
+    """A chunk's values for a `Many` field, built by `Many.value`.
+
+    Attributes:
+        field: The field the values are for.
+        values: The values, each checked against the field, in order; possibly none.
+    """
 
     field: Many[T]
     values: tuple[T, ...]
@@ -177,15 +280,28 @@ type FieldValue = OneValue[Any] | ManyValues[Any]
 
 
 class Schema:
-    """Base class for a schema: declare One or Many fields in the class body.
+    """Base class for a schema: the fields every chunk of an index holds.
 
-    Fields come only from the class body and from Schema bases; a field in a plain mixin
-    is not part of the schema, so shared fields belong in a Schema preset.
+    Declare `One` and `Many` fields in the class body. Fields come only from the class
+    body and from `Schema` bases. A field in a plain mixin isn't part of the schema, so
+    shared fields belong in a `Schema` preset.
+
+    Example:
+        class KbChunks(Schema):
+            document_id = One(UUID, indexed=True)
+            headings = Many(str)
+            groups = Many(UUID, indexed=True)
     """
 
     _fields: Mapping[str, Field[Any]] = MappingProxyType({})
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
+        """Collect the subclass's fields, inherited ones first.
+
+        Raises:
+            SchemaError: Two bases give different fields one name, the class body
+                hides an inherited field, or a field takes a name `Schema` uses.
+        """
         super().__init_subclass__(**kwargs)
         fields: dict[str, Field[Any]] = {}
         for base in cls.__bases__:
@@ -214,5 +330,9 @@ class Schema:
 
     @classmethod
     def fields(cls) -> Mapping[str, Field[Any]]:
-        """Return the schema's fields by name, inherited ones first, in declaration order."""
+        """Return the schema's fields by name.
+
+        Returns:
+            A read-only mapping, inherited fields first, each in declaration order.
+        """
         return cls._fields

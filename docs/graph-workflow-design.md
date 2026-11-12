@@ -1,7 +1,14 @@
 # Retrieval as a graph of stages
 
-Status: build step 1 in progress (section 10): fields, schemas, field values and the first
-filters (`eq`, `any_of`) are built. Branch: `features/retrieval-redesign`.
+Status: build step 1 in progress (section 10). Branch: `features/retrieval-redesign`.
+
+- Built, in `packages/retrieval` (`salemdex_retrieval`), with tests:
+  - `schema.py`: `One` / `Many` fields, `Schema` with presets, `OneValue` / `ManyValues`,
+    the value checks;
+  - `filters.py`: `Equals` (`eq`) and `AnyOf` (`any_of`);
+  - `chunks.py`: `Chunk`, and `Chunk.check_fits(schema)` raising `SchemaMismatchError`.
+- Next: the AND / OR / NOT combinators, the in-memory index (which calls `check_fits` in
+  `add`), and `chunk.get(field)` for typed reads.
 
 The project is named **Salemdex**. This engine is its first package under that name,
 `salemdex-retrieval` (section 10).
@@ -161,9 +168,28 @@ built-in concept of document, access or reference.
 Chunk
   id             UUID, unique across the whole index
   text           what is shown and returned; never changed
-  embedded_text  None → text is embedded
-  values         {field: value}, checked against the schema
+  embedded_text  what the model embeds; the text itself unless one is given
+  field_values   {field: value}, keyed by the field object; read-only
 ```
+
+- **Built with keywords only.** Why: `text` and `embedded_text` are both strings, and swapped
+  by position, search would return the context as the source's words.
+- **`embedded_text` is optional to give, always a string to read.** Left out, the constructor
+  fills in the text. Why: no reader handles `None`, and nobody has to know what it means.
+- **Text stays out of `repr`** (`field(repr=False)`). Why: a chunk in a log line or an error
+  would otherwise print restricted text.
+- **Values are keyed by the `Field` object, not its name.** Why: `KbChunks.document_id` and
+  `Entries.document_id` share a name but are different fields; only identity tells them
+  apart. It commits `Field` to never defining `__eq__` (so no `==` filter sugar): a dict
+  would compare keys with it.
+- **Two values with one name are refused when the chunk is built** (`ValueError`): the same
+  field twice, or fields from two schemas. No schema has two fields with one name, so such a
+  chunk can't fit anywhere.
+- **`chunk.check_fits(schema)`** checks a value for every field of the schema and no other,
+  comparing fields as objects; an empty `Many` counts as a value. It raises one
+  `SchemaMismatchError` (a `ValueError`) naming the chunk id and every extra and missing
+  field. Why a separate error from `SchemaError`: the schema is fine, the data doesn't fit it,
+  so a caller (the worker) can treat it as permanent.
 
 - **The id is unique across the index**, not only within a document. The app derives it
   deterministically, e.g. `uuid5(document_id, version, position)`. Why: Qdrant takes UUIDs
@@ -187,11 +213,11 @@ typed handle on one chunk value. Its type `T` is checked wherever the field is u
 
 ```python
 class KbChunks(Schema):
-    document_id = One(UUID, indexed=True)          # One[UUID]
-    version     = One(int, indexed=True)           # One[int]
-    position    = One(int)
-    headings    = Many(str)                        # Many[str]: several values, maybe none
-    groups      = Many(UUID, indexed=True)
+    document_id = One(UUID, indexed=True)  # One[UUID]
+    version = One(int, indexed=True)  # One[int]
+    position = One(int)
+    headings = Many(str)  # Many[str]: several values, maybe none
+    groups = Many(UUID, indexed=True)
 ```
 
 **Two field kinds: `One[T]` (a single value) and `Many[T]` (several values).** Why not a
@@ -259,11 +285,15 @@ the operations differ: `eq` and ranges fit one value, `any_of` / `all_of` fit se
 **Writing chunks: typed fields plus a value builder.**
 
 ```python
-Chunk(id=…, text=…, values=[KbChunks.document_id.value(doc_id), KbChunks.version.value(3), …])
+Chunk(
+    id=…,
+    text=…,
+    field_values=[KbChunks.document_id.value(doc_id), KbChunks.version.value(3), …],
+)
 ```
 
 - Every field-value pair is type-checked. A missing field is caught at run time, when the
-  index checks the write against its schema.
+  index calls `chunk.check_fits(schema)` on the write.
 - **Two value classes, like the two field kinds:** `One.value` returns `OneValue[T]` (`value:
   T`) and `Many.value` returns `ManyValues[T]` (`values: tuple[T, ...]`).
   `type FieldValue = OneValue[Any] | ManyValues[Any]` names either, and a backend matches on
@@ -534,7 +564,7 @@ stage kinds afterwards is cheap.
 **Build order.** Each layer is tested before the next one depends on it.
 
 1. **Schema, chunk, filter expressions**, plus the in-memory index that translates them. All of
-   it is testable without Qdrant.
+   it is testable without Qdrant. **(in progress: schema, chunk, `eq` and `any_of` built)**
 2. **The Qdrant backend:** translating filters, creating payload indexes from the schema, the
    startup check, `add` / `replace` / `delete`.
 3. **Statements and the executor** with retrieve, merge, rerank and take, plus the session, the

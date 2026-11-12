@@ -210,7 +210,9 @@ class FileStore(Protocol):
 
     def open(self, key: str) -> BinaryIO: ...  # missing → FileNotFoundError
     def exists(self, key: str) -> bool: ...  # files only
-    def delete(self, key: str) -> None: ...  # one file; missing → nothing; a folder → ValueError
+    def delete(
+        self, key: str
+    ) -> None: ...  # one file; missing → nothing; a folder → ValueError
     def delete_folder(self, folder: str) -> int: ...  # every key under folder + "/"
 ```
 

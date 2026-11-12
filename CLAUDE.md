@@ -88,8 +88,18 @@ the worker gets torch, the model and the Qdrant client.
 - Return early instead of nesting.
 - Use types to rule out wrong states: frozen dataclasses, `Literal`, `uuid.UUID` for ids.
   Check input where it enters, then trust it.
-- Docstrings give the contract (first line: what it does or returns). Comments explain
-  why, on their own line above the code. Rewrite a docstring when copying a function.
+- Docstrings give the contract, in Google style:
+  - a one-line summary: functions in the imperative ("Return …"), classes and properties
+    as a noun phrase ("A field holding …");
+  - a blank line, then details where needed, then the sections that apply: `Args:`,
+    `Returns:`, `Raises:` for public functions; `Attributes:` for classes; `Example:`
+    when a usage sketch helps;
+  - types stay in the signature, never repeated in the docstring;
+  - private helpers need only the summary, plus `Raises:` when they raise.
+
+  Older code (framework, server) still uses one-line prose docstrings; convert a module
+  when you work in it. Comments explain why, on their own line above the code. Rewrite a
+  docstring when copying a function.
 - Catch narrowly; raise where you know what's wrong, with a message a person can act on.
 - Order files like a newspaper: public names first, helpers below in calling order.
 - Test names are sentences describing behaviour.
