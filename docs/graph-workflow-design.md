@@ -132,7 +132,7 @@ stages can only use what earlier stages kept, so a candidate keeps its history:
 
 ```text
 Candidate
-  chunk   the chunk (id, text, column values)
+  chunk   the chunk (id, text, field values)
   score   the current score: the last trail entry's
   trail   one entry per stage that touched it:
           stage, score or rank, found through (which source, or which generated entry)
@@ -161,7 +161,7 @@ Chunk
   id             UUID, unique across the whole index
   text           what is shown and returned; never changed
   embedded_text  None → text is embedded
-  values         {column: value}, checked against the schema
+  values         {field: value}, checked against the schema
 ```
 
 - **The id is unique across the index**, not only within a document. The app derives it
@@ -173,72 +173,105 @@ Chunk
   is the reason it can differ from `text`.
 - **Vectors aren't part of the chunk.** Vector names (dense, sparse) and the embedder belong to
   the index's configuration.
-- **Everything else is a column:** document id, version, position, headings, reference keys,
+- **Everything else is a field:** document id, version, position, headings, reference keys,
   access groups.
 - **"Faithful" narrows.** The framework guarantees only that `text` comes back exactly as it
-  was indexed. Where it came from is the app's columns.
+  was indexed. Where it came from is the app's fields.
 
 ### The schema
 
-Like SQLAlchemy's `Table` / `Column`: columns are declared once, with their types and whether
-they are indexed. Each column is a typed handle on one chunk value. Its type `T` is checked
-wherever the column is used.
+Declared like SQLAlchemy's `Table` / `Column`, but called fields: a chunk isn't a table row.
+Fields are declared once, with their types and whether they are indexed. Each field is a
+typed handle on one chunk value. Its type `T` is checked wherever the field is used.
 
 ```python
 class KbChunks(Schema):
     document_id = One(UUID, indexed=True)          # One[UUID]
     version     = One(int, indexed=True)           # One[int]
     position    = One(int)
-    retired_on  = One(datetime, required=False)    # One[datetime | None]
-    headings    = Many(str)                        # Many[str]: several values
+    headings    = Many(str)                        # Many[str]: several values, maybe none
     groups      = Many(UUID, indexed=True)
 ```
 
-**Two column kinds: `One[T]` (a single value) and `Many[T]` (several values).** Why not a
-single `Column[T]`: mypy can't infer `T` from `tuple[str, ...]`, only from a real class. Also,
+**Two field kinds: `One[T]` (a single value) and `Many[T]` (several values).** Why not a
+single `Field[T]`: mypy can't infer `T` from `tuple[str, ...]`, only from a real class. Also,
 the operations differ: `eq` and ranges fit one value, `any_of` / `all_of` fit several.
 
 - `T` is one of `str`, `int`, `float`, `bool`, `UUID`, `datetime`: what every backend can store.
-- `required=False` makes a column optional: `One(UUID, required=False)` is `One[UUID | None]`.
+  `One.__init__` checks this and names the allowed types. It compares classes exactly, not with
+  `issubclass`, because `bool` is a subclass of `int`.
+- `One(UUID)` is the call; `One[UUID]` is the type mypy infers from it. The type is passed as an
+  argument because the run time needs it too (checking and encoding values, choosing backend
+  index types), and generic parameters are erased at run time.
+
+**Every field is required; there are no optional fields (for now).**
+
+- Every chunk has a value for every field. A `Many` field may hold no values (`[]`), and that
+  is how "none" is said for multi-valued data: no tags, no groups.
+- Why: "missing" would need rules in every filter, like SQL's `NULL`, and both backends would
+  have to apply them the same way. A `not_(…)` filter lets chunks without the field through (in
+  Qdrant, `must_not` matches them), so a missing value could fail open. It also keeps `T` free
+  of `None`, and `One` needs no overloads.
+- **A missing or `null` value is a data error, caught at three points:**
+
+  | Where | What happens |
+  |---|---|
+  | writes | every chunk is checked against the schema before it's sent; a missing value raises, naming the chunk id and field. An empty `Many` is written as `[]`, never left out |
+  | the index opening | for each field, count the chunks where it's missing or `null` (in Qdrant, `is_empty` / `is_null` counts); if any exist, refuse to start: "412 chunks lack `version`; backfill or re-index" |
+  | reads | a hit that still lacks a value raises a typed error naming the chunk id and field. No half-filled chunk, no guessed default |
+
+  Why refuse to start: filters then only ever run over chunks that keep the promise. Why raise
+  on reads rather than skip: skipping also fails safe, but data would vanish from results without
+  anyone noticing.
+- **No sentinel values** (`0`, `""`, an epoch date) to stand in for "missing". They quietly take
+  part in filters: `page.lt(5)` would match every chunk whose page is the `0` sentinel. A field
+  that would need one is the signal that optional fields are due.
+- **When optional fields come:** with the first genuinely sparse, kind-specific field (a page,
+  a sender, a sheet name). Adding them later breaks no existing declaration. Two rules come with
+  them, so "missing" never matches by accident:
+  - fields used by the guarantee slots (access, validity) must be required; the compile step
+    checks it;
+  - `not_` over an optional field is rejected unless the filter says what happens to missing
+    values (`is_missing()` / `is_present()`).
 
 **What `T` buys at each use:**
 
 | Use | Example | What mypy catches |
 |---|---|---|
 | filter | `KbChunks.document_id.eq(doc_id)` | `eq("abc")`: a `str` where a `UUID` is expected |
-| ordered filters | `KbChunks.version.ge(2)` | `ge` on a `UUID` column. It exists only for int, float, datetime (a self-type on the method) |
+| ordered filters | `KbChunks.version.ge(2)` | `ge` on a `UUID` field. It exists only for int, float, datetime (a self-type on the method) |
 | multi-valued | `KbChunks.groups.any_of(ids)` | `eq` on a `Many`, `any_of` on a `One` |
 | read | `chunk.get(KbChunks.document_id)` → `UUID` | no `str` or `Any` coming back. It's generic: `get(col: One[T]) -> T` |
-| stage settings | `expand(order_by=KbChunks.position)` | `order_by` takes only ordered `One` columns |
+| stage settings | `expand(order_by=KbChunks.position)` | `order_by` takes only ordered `One` fields |
 
-**Writing chunks: typed columns plus a value builder.**
+**Writing chunks: typed fields plus a value builder.**
 
 ```python
 Chunk(id=…, text=…, values=[KbChunks.document_id.value(doc_id), KbChunks.version.value(3), …])
 ```
 
-- Every column-value pair is type-checked. A missing required column is caught at run time, when
-  the index checks the write against its schema.
+- Every field-value pair is type-checked. A missing field is caught at run time, when the
+  index checks the write against its schema.
 - Why this level: chunks are built in one place (the index handler), while filters and reads are
   spread everywhere, and those are fully typed.
 - Possible later: the SQLAlchemy 2.0 style. The schema class is also a typed record
   (`dataclass_transform` plus descriptors), so mypy catches missing fields too. It needs a small
   experiment to see how well mypy handles it. Filters and reads wouldn't change.
 - Rejected: a plain dataclass with `Annotated` metadata. Writes would be typed, but filters
-  would name columns by string and lose their typing.
+  would name fields by string and lose their typing.
 
 **Each index owns its schema; the engine reads it from the index (`index.schema`).**
 
 - Why: one source of truth. Two copies, one on the index and one on the engine, could drift.
-  The compile step would then approve a filter on a column the index doesn't have.
+  The compile step would then approve a filter on a field the index doesn't have.
 - There is more than one schema (chunks, generated entries), each with its own index.
-- The compile step checks that every column in a statement belongs to the schema of the index it
-  runs against. A chunk column can't filter the entries index.
+- The compile step checks that every field in a statement belongs to the schema of the index it
+  runs against. A chunk field can't filter the entries index.
 - **The index checks its stored data when it opens:** it compares the schema with the backend
   (e.g. Qdrant payload indexes), then creates what's missing or fails with a clear message.
   Why: otherwise filters run slowly or wrongly without saying so.
 - Not now: statements generic over their schema (`Candidates[KbChunks]`), which would let mypy
-  catch cross-schema columns. The compile check is enough to start with.
+  catch cross-schema fields. The compile check is enough to start with.
 
 **Other uses of the schema:**
 
@@ -250,16 +283,16 @@ Chunk(id=…, text=…, values=[KbChunks.document_id.value(doc_id), KbChunks.ver
   `index.delete(where=…)`, `index.replace(where=KbChunks.document_id.eq(x), with_=new_chunks)`.
   The framework needs no document concept even for index upkeep, and
   `replace_document(id, [], [])` disappears.
-- **Stages that need meaning take columns as settings:**
+- **Stages that need meaning take fields as settings:**
   `expand(neighbours, order_by=KbChunks.position, within=KbChunks.document_id)`,
-  `prune(dedupe, by=KbChunks.document_id)`. The compile step checks that those columns exist
+  `prune(dedupe, by=KbChunks.document_id)`. The compile step checks that those fields exist
   and have the right types.
 - A **standard schema preset** (document id, position, headings) is offered as a convenience,
   never as a requirement. Why: without one, every app would rebuild the basics.
 
 ### Filter expressions
 
-- **AND / OR / NOT over schema columns and chunk ids.** One mechanism for every filter. Why:
+- **AND / OR / NOT over schema fields and chunk ids.** One mechanism for every filter. Why:
   today's fixed fields plus `attributes` can't OR across fields.
 - **Methods are the API:** `KbChunks.document_id.eq(x)`, `any_of(…)`. Why: they read plainly and
   type-check under strict mypy. Operator overloading (`==`, `|`) may come later as sugar over
@@ -271,7 +304,7 @@ Chunk(id=…, text=…, values=[KbChunks.document_id.value(doc_id), KbChunks.ver
 ### Generated entries
 
 An entry's text isn't the source's words, so it can't be a chunk's `text`. Entries get their
-own schema with a column that points to chunk ids. A source stage searches the entries and
+own schema with a field that points to chunk ids. A source stage searches the entries and
 returns the chunks they lead to, recording "found through" in each candidate's history. They
 become a separate source, not a special case inside the index.
 
@@ -283,9 +316,9 @@ fixed **slots**, and the app fills them:
 ```text
 framework (generic)                         app (server) fills
 ─────────────────────────────────────────   ─────────────────────────────────────
-schema: declared columns, types, indexes  ← document_id, version, groups, collection…
-chunk = id + text + column values
-filter expressions over columns
+schema: declared fields, types, indexes  ← document_id, version, groups, collection…
+chunk = id + text + field values
+filter expressions over fields
 access slot:   a filter, given per session ← "shares a group OR manages the collection"
 validity slot: candidates → kept ones      ← "document active, last indexed version"
 stages, executor, plan, gates
@@ -296,8 +329,8 @@ stages, executor, plan, gates
 - The executor still decides *where* the slots apply: the access filter goes into every source
   and expand stage, and the validity check runs before rerank and again at the final gate.
 - **What access means is the app's design, not the framework's.** The framework only requires
-  the access slot to be a filter expression. How the app builds it (which columns,
-  combinators or a denormalised column) is decided in the app.
+  the access slot to be a filter expression. How the app builds it (which fields,
+  combinators or a denormalised field) is decided in the app.
 
 ### How the slots plug in
 
@@ -433,8 +466,29 @@ filter expression and the executor's frame. Add rewrite, expand, prune and the c
 something uses them. Why: the type-state structure is the costly part to get right; adding
 stage kinds afterwards is cheap.
 
-**Package:** the engine is a new uv workspace member in this repo, the distribution
-`salemdex-retrieval`.
+**Package:** the engine is a new uv workspace member in this repo: the distribution
+`salemdex-retrieval`, imported as `salemdex_retrieval`. Why not a namespace package
+(`salemdex.retrieval`): it needs special care in hatch and mypy, and no member could have a
+`salemdex/__init__.py`. Pydantic does the same with `pydantic_core`.
+
+- **Folder:** `packages/retrieval/` at the repo root. Libraries go in `packages/`, deployables
+  (server, CLI) in `apps/`.
+- **Scope: storing and finding chunks.**
+
+  | In `salemdex_retrieval` | Why here |
+  |---|---|
+  | schema, chunks, filter expressions | the data being retrieved and the language for selecting it |
+  | index backends, reads and writes (`add`, `replace`, `delete`) | the index is what retrieval reads; writing it is the other half (as SQLAlchemy has `insert` beside `select`) |
+  | embedders, rerankers | used by both writes and searches |
+  | statements, stages, executor, session, gates | retrieval itself |
+
+  | In a later package (e.g. `salemdex_agents`) | Why separate |
+  |---|---|
+  | the controller, agent loops, LLM tools | the controller sits above the executor (section 8); a package boundary makes that layering real |
+  | answer generation, LLM providers | separate dependencies; retrieval stays usable without an LLM |
+
+  Why the split also helps safety: an agents package can only use retrieval's public API, so
+  agents must go through a session with the user's access. The package boundary enforces it.
 
 - It never imports `document_processor`. An import-boundary check in CI enforces it. Why: the
   engine is generic; turning `chunking.Chunk` into an index chunk (today's `ingest` and
@@ -442,7 +496,18 @@ stage kinds afterwards is cheap.
 - Its extras hold the backends and models: `qdrant`, `huggingface` (embedder, reranker).
 - A separate repo waits until the engine needs its own releases.
 - The family follows later, one rename per commit: `salemdex-ingest` (today's
-  `document_processor`), `salemdex-server` (today's `kb_server`), and the repo itself.
+  `document_processor`, moving to `packages/ingest/`) and `salemdex-server` (today's
+  `kb_server`). The GitHub repo is already `salemdex`.
+
+**Build order.** Each layer is tested before the next one depends on it.
+
+1. **Schema, chunk, filter expressions**, plus the in-memory index that translates them. All of
+   it is testable without Qdrant.
+2. **The Qdrant backend:** translating filters, creating payload indexes from the schema, the
+   startup check, `add` / `replace` / `delete`.
+3. **Statements and the executor** with retrieve, merge, rerank and take, plus the session, the
+   access filter and the validity check.
+4. **Port the server's indexing handlers** to the new API, then build search on it.
 
 **Migration:** build the new API alongside the old one, port the callers (server indexing
 handlers, search, evaluation, tests), then delete the old API.
@@ -457,9 +522,7 @@ executor records each stage's duration in the session's trace.
 
 ## 11. Open questions
 
-- **The import name:** `salemdex_retrieval`, or a namespace package `salemdex.retrieval` shared by
-  the family? And the folder: `packages/retrieval/`?
-- **The standard schema preset:** which columns it holds.
+- **The standard schema preset:** which fields it holds.
 - **The agent step API** (later, with the controller):
   - How a statement starts from earlier candidates. A likely shape: the LLM sees short handles
     (`p2`), and the controller maps them back; an invented handle doesn't resolve. Earlier

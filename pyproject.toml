@@ -33,17 +33,19 @@ build-backend = "hatchling.build"
 packages = ["src/document_processor"]
 
 [tool.ruff]
-src = ["src", "apps/server/src", "apps/cli/src"]
+src = ["src", "apps/server/src", "apps/cli/src", "packages/retrieval/src"]
 
 [tool.mypy]
 plugins = ["pydantic.mypy"]
+strict = true
 enable_error_code = ["possibly-undefined"]
-mypy_path = ["src", "apps/server/src", "apps/cli/src"]
+mypy_path = ["src", "apps/server/src", "apps/cli/src", "packages/retrieval/src"]
 
 [tool.uv.workspace]
 members = [
     "apps/server",
     "apps/cli",
+    "packages/retrieval",
 ]
 
 [dependency-groups]
