@@ -1,12 +1,20 @@
+import dataclasses
 import enum
 import re
 import uuid
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 import pytest
 
-from salemdex_retrieval.schema import Field, Many, One, Schema, SchemaError
+from salemdex_retrieval.schema import (
+    Field,
+    FieldValue,
+    Many,
+    One,
+    Schema,
+    SchemaError,
+)
 
 
 class Level(int):
@@ -228,3 +236,105 @@ def test_an_inherited_field_cannot_be_hidden_by_a_method() -> None:
 def test_a_field_cannot_take_a_name_the_schema_uses(name: str) -> None:
     with pytest.raises(SchemaError, match=f"'{name}' is .*reserved"):
         type("Chunks", (Schema,), {name: Many(str)})
+
+
+class Record(Schema):
+    count = One(int)
+    score = One(float)
+    title = One(str)
+    indexed_at = One(datetime)
+    headings = Many(str)
+    groups = Many(uuid.UUID)
+    seen_at = Many(datetime)
+
+
+HR = uuid.UUID("00000000-0000-0000-0000-00000000000a")
+LEGAL = uuid.UUID("00000000-0000-0000-0000-00000000000b")
+NEW_YEAR = datetime(2026, 1, 1, tzinfo=UTC)
+NAIVE_NEW_YEAR = datetime(2026, 1, 1)
+
+
+def test_one_value_pairs_the_field_with_the_value() -> None:
+    assert Record.title.value("Scope") == FieldValue(field=Record.title, value="Scope")
+
+
+@pytest.mark.parametrize(
+    ("field", "wrong", "message"),
+    [
+        pytest.param(Record.count, True, "count is 'bool', expected int", id="bool"),
+        pytest.param(
+            Record.title, Colour.RED, "title is 'Colour', expected str", id="StrEnum"
+        ),
+        pytest.param(
+            Record.title, None, "title is 'NoneType', expected str", id="None"
+        ),
+        pytest.param(
+            Record.score, True, "score is 'bool', expected float", id="bool for float"
+        ),
+        pytest.param(
+            Record.indexed_at,
+            date(2026, 1, 1),
+            "indexed_at is 'date', expected datetime",
+            id="date",
+        ),
+    ],
+)
+def test_one_value_rejects_a_value_not_exactly_of_the_field_type(
+    field: One[Any], wrong: Any, message: str
+) -> None:
+    with pytest.raises(TypeError, match=re.escape(message)):
+        field.value(wrong)
+
+
+def test_one_value_widens_an_int_to_float_for_a_float_field() -> None:
+    stored = Record.score.value(3).value
+
+    assert stored == 3.0
+    assert type(stored) is float
+
+
+def test_one_value_accepts_a_datetime_with_a_timezone() -> None:
+    assert Record.indexed_at.value(NEW_YEAR).value == NEW_YEAR
+
+
+def test_one_value_rejects_a_datetime_without_a_timezone() -> None:
+    with pytest.raises(TypeError, match="indexed_at is missing a timezone"):
+        Record.indexed_at.value(NAIVE_NEW_YEAR)
+
+
+def test_many_value_keeps_the_order_and_repeats_as_a_tuple() -> None:
+    field_value = Record.headings.value(["Part 1", "Scope", "Part 1"])
+
+    assert field_value == FieldValue(
+        field=Record.headings, value=("Part 1", "Scope", "Part 1")
+    )
+
+
+def test_many_value_accepts_no_values() -> None:
+    assert Record.groups.value([]).value == ()
+
+
+def test_many_value_accepts_any_iterable_such_as_a_generator() -> None:
+    assert Record.groups.value(g for g in [HR, LEGAL]).value == (HR, LEGAL)
+
+
+def test_many_value_names_the_position_of_a_value_of_the_wrong_type() -> None:
+    with pytest.raises(TypeError, match=re.escape("groups[1] is 'str', expected UUID")):
+        Record.groups.value([HR, "legal"])  # type: ignore[list-item]
+
+
+def test_many_value_names_the_position_of_a_datetime_without_a_timezone() -> None:
+    with pytest.raises(TypeError, match=re.escape("seen_at[1] is missing a timezone")):
+        Record.seen_at.value([NEW_YEAR, NAIVE_NEW_YEAR])
+
+
+def test_many_value_rejects_a_single_string_and_suggests_a_list() -> None:
+    with pytest.raises(TypeError, match=re.escape("use value(['intro'])")):
+        Record.headings.value("intro")
+
+
+def test_a_field_value_cannot_be_changed_after_it_is_built() -> None:
+    field_value = Record.title.value("Scope")
+
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        field_value.value = "Other"  # type: ignore[misc]

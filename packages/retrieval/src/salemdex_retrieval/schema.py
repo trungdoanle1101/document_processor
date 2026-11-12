@@ -1,8 +1,9 @@
 import uuid
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from datetime import datetime
 from types import MappingProxyType
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from salemdex_retrieval.filters import AnyOf, Equals, Filter
 
@@ -45,9 +46,41 @@ class Field[T]:
             )
         return self._name
 
+    def _check(self, value: object, *, position: int | None = None) -> T:
+        """Return `value` if it has exactly this field's type, an int widened to float.
+
+        Raises TypeError naming the field (and `position` within a Many), or when a
+        datetime has no timezone.
+        """
+        if type(value) is not self.value_type:
+            if type(value) is int and self.value_type is float:
+                return cast(T, float(value))
+            raise TypeError(
+                f"{self._label(position)} is {type(value).__name__!r}, "
+                f"expected {self.value_type.__name__}"
+            )
+        if isinstance(value, datetime) and value.utcoffset() is None:
+            raise TypeError(f"{self._label(position)} is missing a timezone")
+        return value
+
+    def _label(self, position: int | None) -> str:
+        return self.name + (f"[{position}]" if position is not None else "")
+
+
+@dataclass(frozen=True, kw_only=True)
+class FieldValue:
+    """A field paired with a chunk's checked value for it: one value, or a tuple."""
+
+    field: Field[Any]
+    value: object
+
 
 class One[T](Field[T]):
     """A field holding exactly one value per chunk."""
+
+    def value(self, value: T) -> FieldValue:
+        """Return this field's value for a chunk, checked against the field's type."""
+        return FieldValue(field=self, value=self._check(value))
 
     def eq(self, value: T) -> Filter:
         """Return a filter matching chunks whose value for this field equals `value`."""
@@ -56,6 +89,24 @@ class One[T](Field[T]):
 
 class Many[T](Field[T]):
     """A field holding any number of values per chunk, possibly none."""
+
+    def value(self, values: Iterable[T]) -> FieldValue:
+        """Return this field's values for a chunk, each checked against the field's type.
+
+        Order and repeats are kept; no values is allowed.
+        """
+        if isinstance(values, str):
+            raise TypeError(
+                f"{self.name} needs a collection of values, not one string; "
+                f"use value([{values!r}])"
+            )
+
+        return FieldValue(
+            field=self,
+            value=tuple(
+                self._check(value, position=i) for i, value in enumerate(values)
+            ),
+        )
 
     def any_of(self, values: Iterable[T]) -> Filter:
         """Return a filter matching chunks with at least one value in `values`.
@@ -101,6 +152,6 @@ class Schema:
         cls._fields = MappingProxyType(fields)
 
     @classmethod
-    def fields(cls) -> Mapping[str, Field]:
+    def fields(cls) -> Mapping[str, Field[Any]]:
         """Return the schema's fields by name, inherited ones first, in declaration order."""
         return cls._fields
