@@ -25,6 +25,9 @@ TEXT = "text"
 EMBEDDED_TEXT = "embedded_text"
 FIELD_VALUES = "field_values"
 
+# What one stored value becomes: a UUID or a datetime is stored as a string.
+type _JsonScalar = str | int | float | bool
+
 # Each top-level key, the type its value must have, and that type as a message says it.
 _PAYLOAD_KEYS: tuple[tuple[str, type, str], ...] = (
     (TEXT, str, "a string"),
@@ -105,7 +108,9 @@ def decode_payload(
     return chunk
 
 
-def _encode_field_value(field: Field[Any], value: Any) -> Any:
+def _encode_field_value(
+    field: Field[Any], value: Any
+) -> _JsonScalar | list[_JsonScalar]:
     """Return a field's value as JSON: one value for a `One`, a list for a `Many`.
 
     Raises:
@@ -122,15 +127,22 @@ def _encode_field_value(field: Field[Any], value: Any) -> Any:
             )
 
 
-def _encode_value(value: Any) -> Any:
-    """Return one value as JSON: a `UUID` as its string, a `datetime` as ISO 8601."""
+def _encode_value(value: object) -> _JsonScalar:
+    """Return one value as JSON: a `UUID` as its string, a `datetime` as ISO 8601.
+
+    Raises:
+        TypeError: `value` isn't of a type a field can hold.
+    """
     match value:
         case uuid.UUID():
             return str(value)
         case datetime():
             return value.isoformat()
-        case _:
+        # A bool is an int, and is stored as itself.
+        case str() | int() | float():
             return value
+        case _:
+            raise TypeError(f"no JSON form for {type(value).__name__}")
 
 
 def _decode_field_values(
@@ -142,7 +154,7 @@ def _decode_field_values(
         SchemaMismatchError: A key isn't one of the schema's fields, or a value can't
             be decoded; the message names the point id and the key.
     """
-    field_values_dict: dict[str, Any] = payload[FIELD_VALUES]
+    field_values_dict: Mapping[str, object] = payload[FIELD_VALUES]
     schema_fields = schema.fields()
     field_values: list[FieldValue] = []
     mismatched = [key for key in field_values_dict if schema_fields.get(key) is None]
@@ -156,12 +168,12 @@ def _decode_field_values(
     for key, raw in field_values_dict.items():
         try:
             field_values.append(_decode_field_value(schema_fields[key], raw))
-        except (TypeError, ValueError, AttributeError) as error:
+        except (TypeError, ValueError) as error:
             raise SchemaMismatchError(f"point {point_id}: {key}: {error}") from error
     return field_values
 
 
-def _decode_field_value(field: Field[Any], raw: Any) -> FieldValue:
+def _decode_field_value(field: Field[Any], raw: object) -> FieldValue:
     """Return `field`'s value built from its stored JSON, through `field.value()`.
 
     Raises:
@@ -186,17 +198,19 @@ def _decode_field_value(field: Field[Any], raw: Any) -> FieldValue:
             )
 
 
-def _decode_value(raw: Any, *, value_type: type) -> Any:
+def _decode_value(raw: object, *, value_type: type) -> object:
     """Return one stored JSON value as `value_type`: the reverse of `_encode_value`.
 
+    Other types come back as stored; the field's `value()` checks them.
+
     Raises:
+        TypeError: A `UUID` or `datetime` isn't stored as a string.
         ValueError: A `UUID` or `datetime` string is malformed.
-        AttributeError: A `UUID` is stored as something other than a string.
-        TypeError: A `datetime` is stored as something other than a string.
     """
+    if value_type not in (uuid.UUID, datetime):
+        return raw
+    if not isinstance(raw, str):
+        raise TypeError(f"expected a string, got {type(raw).__name__}")
     if value_type is uuid.UUID:
         return uuid.UUID(raw)
-    if value_type is datetime:
-        return datetime.fromisoformat(raw)
-
-    return raw
+    return datetime.fromisoformat(raw)

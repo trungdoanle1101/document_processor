@@ -15,7 +15,7 @@ The fields aren't checked against a schema here; the index does that first.
 
 import uuid
 from datetime import datetime
-from typing import Any, assert_never
+from typing import assert_never
 
 from qdrant_client import models
 
@@ -51,7 +51,7 @@ def build_qdrant_filter(where: Filter) -> models.Filter:
             assert_never(where)
 
 
-def _build_any_of(where: AnyOf[Any]) -> models.Filter:
+def _build_any_of[T](where: AnyOf[T]) -> models.Filter:
     """Return a filter matching chunks with any of the values, or nothing if none."""
     if not where.values:
         return _MATCHES_NOTHING
@@ -59,22 +59,26 @@ def _build_any_of(where: AnyOf[Any]) -> models.Filter:
     return models.Filter(should=conditions)
 
 
-def _build_equals_condition(field: Field[Any], value: Any) -> models.FieldCondition:
+def _build_equals_condition[T](field: Field[T], value: T) -> models.FieldCondition:
     """Return a condition matching a stored value of `field` equal to `value`.
 
     Raises:
-        TypeError: The field's value type has no condition here.
+        TypeError: The value's type has no condition here.
     """
     key = f"{FIELD_VALUES}.{field.name}"
-    value_type = field.value_type
-    if value_type is uuid.UUID:
-        return models.FieldCondition(key=key, match=models.MatchValue(value=str(value)))
-    if value_type in (str, int, bool):
-        return models.FieldCondition(key=key, match=models.MatchValue(value=value))
-    if value_type is float:
-        return models.FieldCondition(key=key, range=models.Range(gte=value, lte=value))
-    if value_type is datetime:
-        return models.FieldCondition(
-            key=key, range=models.DatetimeRange(gte=value, lte=value)
-        )
-    raise TypeError(f"no Qdrant condition for value type {value_type.__name__}")
+    match value:
+        case uuid.UUID():
+            match_uuid = models.MatchValue(value=str(value))
+            return models.FieldCondition(key=key, match=match_uuid)
+        # A bool is an int, and MatchValue takes it as one.
+        case str() | int():
+            return models.FieldCondition(key=key, match=models.MatchValue(value=value))
+        # A float field never holds an int: the field turns ints into floats.
+        case float():
+            same_float = models.Range(gte=value, lte=value)
+            return models.FieldCondition(key=key, range=same_float)
+        case datetime():
+            same_instant = models.DatetimeRange(gte=value, lte=value)
+            return models.FieldCondition(key=key, range=same_instant)
+        case _:
+            raise TypeError(f"no Qdrant condition for {type(value).__name__}")

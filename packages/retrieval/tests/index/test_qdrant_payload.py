@@ -193,7 +193,11 @@ DAMAGED = [
     pytest.param(
         set_field("document_id", "not-a-uuid"), "document_id:", id="malformed uuid"
     ),
-    pytest.param(set_field("document_id", 7), "document_id:", id="uuid as int"),
+    pytest.param(
+        set_field("document_id", 7),
+        "document_id: expected a string, got int",
+        id="uuid as int",
+    ),
     pytest.param(set_field("groups", ["x"]), "groups:", id="malformed uuid in many"),
     pytest.param(set_field("version", "2"), "version:", id="int as str"),
     pytest.param(set_field("version", True), "version:", id="bool for int"),
@@ -203,7 +207,11 @@ DAMAGED = [
         "indexed_at: indexed_at is missing a timezone",
         id="naive datetime",
     ),
-    pytest.param(set_field("indexed_at", 1767225600), "indexed_at:", id="datetime int"),
+    pytest.param(
+        set_field("indexed_at", 1767225600),
+        "indexed_at: expected a string, got int",
+        id="datetime int",
+    ),
 ]
 
 
