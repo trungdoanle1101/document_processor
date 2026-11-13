@@ -1,11 +1,17 @@
+"""The behaviour every index backend must have, run against each backend in turn.
+
+Backends come from the `new_index` fixture in conftest.py.
+"""
+
 import uuid
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from typing import Protocol
 
 import pytest
 
 from salemdex_retrieval.chunks import Chunk, SchemaMismatchError
 from salemdex_retrieval.filters import Filter, and_, not_, or_
-from salemdex_retrieval.in_memory import InMemoryIndex
+from salemdex_retrieval.index import Index
 from salemdex_retrieval.schema import Many, One, Schema
 
 
@@ -61,10 +67,20 @@ def unfit_chunk() -> Chunk:
     )
 
 
-def index_with(*chunks: Chunk) -> InMemoryIndex:
-    index = InMemoryIndex(schema=Chunks)
-    index.put(chunks)
-    return index
+class IndexWith(Protocol):
+    def __call__(self, *chunks: Chunk) -> Index: ...
+
+
+@pytest.fixture
+def index_with(new_index: Callable[[type[Schema]], Index]) -> IndexWith:
+    """Return a function opening an index of Chunks holding the given chunks."""
+
+    def open_with(*chunks: Chunk) -> Index:
+        index = new_index(Chunks)
+        index.put(chunks)
+        return index
+
+    return open_with
 
 
 def ids(chunks: Iterable[Chunk]) -> set[uuid.UUID]:
@@ -77,21 +93,21 @@ EVERYTHING = or_(Chunks.version.eq(1), not_(Chunks.version.eq(1)))
 # The schema
 
 
-def test_an_index_exposes_its_schema() -> None:
-    assert InMemoryIndex(schema=Chunks).schema is Chunks
+def test_an_index_exposes_its_schema(index_with: IndexWith) -> None:
+    assert index_with().schema is Chunks
 
 
 # Storing and finding
 
 
-def test_find_returns_the_chunks_a_filter_matches() -> None:
+def test_find_returns_the_chunks_a_filter_matches(index_with: IndexWith) -> None:
     first, second = chunk(position=0), chunk(document=OTHER_DOCUMENT)
     index = index_with(first, second)
 
     assert ids(index.find(where=Chunks.document_id.eq(DOCUMENT))) == {first.id}
 
 
-def test_find_returns_the_chunk_as_it_was_stored() -> None:
+def test_find_returns_the_chunk_as_it_was_stored(index_with: IndexWith) -> None:
     stored = chunk(text="Article 1. Scope")
     index = index_with(stored)
 
@@ -101,21 +117,21 @@ def test_find_returns_the_chunk_as_it_was_stored() -> None:
     assert found.text == "Article 1. Scope"
 
 
-def test_find_returns_nothing_when_no_chunk_matches() -> None:
+def test_find_returns_nothing_when_no_chunk_matches(index_with: IndexWith) -> None:
     index = index_with(chunk())
 
     assert index.find(where=Chunks.document_id.eq(OTHER_DOCUMENT)) == []
 
 
-def test_put_accepts_any_iterable_such_as_a_generator() -> None:
-    index = InMemoryIndex(schema=Chunks)
+def test_put_accepts_any_iterable_such_as_a_generator(index_with: IndexWith) -> None:
+    index = index_with()
 
     index.put(chunk(position=p) for p in range(3))
 
     assert len(index.find(where=EVERYTHING)) == 3
 
 
-def test_putting_the_same_chunks_again_changes_nothing() -> None:
+def test_putting_the_same_chunks_again_changes_nothing(index_with: IndexWith) -> None:
     chunks = [chunk(position=0), chunk(position=1)]
     index = index_with(*chunks)
 
@@ -124,7 +140,7 @@ def test_putting_the_same_chunks_again_changes_nothing() -> None:
     assert ids(index.find(where=EVERYTHING)) == ids(chunks)
 
 
-def test_put_overwrites_a_stored_chunk_with_the_same_id() -> None:
+def test_put_overwrites_a_stored_chunk_with_the_same_id(index_with: IndexWith) -> None:
     index = index_with(chunk(text="old"))
 
     index.put([chunk(text="new")])
@@ -133,8 +149,10 @@ def test_put_overwrites_a_stored_chunk_with_the_same_id() -> None:
     assert found.text == "new"
 
 
-def test_put_stores_nothing_when_one_chunk_does_not_fit_the_schema() -> None:
-    index = InMemoryIndex(schema=Chunks)
+def test_put_stores_nothing_when_one_chunk_does_not_fit_the_schema(
+    index_with: IndexWith,
+) -> None:
+    index = index_with()
 
     with pytest.raises(SchemaMismatchError):
         index.put([chunk(position=0), chunk(position=1), unfit_chunk()])
@@ -142,8 +160,8 @@ def test_put_stores_nothing_when_one_chunk_does_not_fit_the_schema() -> None:
     assert index.find(where=EVERYTHING) == []
 
 
-def test_put_stores_nothing_when_two_chunks_share_an_id() -> None:
-    index = InMemoryIndex(schema=Chunks)
+def test_put_stores_nothing_when_two_chunks_share_an_id(index_with: IndexWith) -> None:
+    index = index_with()
     repeated = chunk()
 
     with pytest.raises(ValueError, match=str(repeated.id)):
@@ -155,14 +173,16 @@ def test_put_stores_nothing_when_two_chunks_share_an_id() -> None:
 # What each filter matches
 
 
-def test_eq_matches_chunks_whose_value_is_equal() -> None:
+def test_eq_matches_chunks_whose_value_is_equal(index_with: IndexWith) -> None:
     v1, v2 = chunk(version=1), chunk(version=2)
     index = index_with(v1, v2)
 
     assert ids(index.find(where=Chunks.version.eq(2))) == {v2.id}
 
 
-def test_any_of_matches_chunks_sharing_at_least_one_value() -> None:
+def test_any_of_matches_chunks_sharing_at_least_one_value(
+    index_with: IndexWith,
+) -> None:
     hr_and_legal = chunk(position=0, groups=[HR, LEGAL])
     finance = chunk(position=1, groups=[FINANCE])
     index = index_with(hr_and_legal, finance)
@@ -173,19 +193,19 @@ def test_any_of_matches_chunks_sharing_at_least_one_value() -> None:
     )
 
 
-def test_any_of_with_no_values_matches_no_chunk() -> None:
+def test_any_of_with_no_values_matches_no_chunk(index_with: IndexWith) -> None:
     index = index_with(chunk(position=0, groups=[HR]), chunk(position=1, groups=[]))
 
     assert index.find(where=Chunks.groups.any_of([])) == []
 
 
-def test_any_of_does_not_match_a_chunk_with_no_values() -> None:
+def test_any_of_does_not_match_a_chunk_with_no_values(index_with: IndexWith) -> None:
     index = index_with(chunk(groups=[]))
 
     assert index.find(where=Chunks.groups.any_of([HR])) == []
 
 
-def test_and_matches_chunks_every_filter_matches() -> None:
+def test_and_matches_chunks_every_filter_matches(index_with: IndexWith) -> None:
     wanted = chunk(version=2)
     index = index_with(
         wanted, chunk(version=1), chunk(document=OTHER_DOCUMENT, version=2)
@@ -196,7 +216,7 @@ def test_and_matches_chunks_every_filter_matches() -> None:
     assert ids(index.find(where=where)) == {wanted.id}
 
 
-def test_or_matches_chunks_any_filter_matches() -> None:
+def test_or_matches_chunks_any_filter_matches(index_with: IndexWith) -> None:
     hr, legal = chunk(position=0, groups=[HR]), chunk(position=1, groups=[LEGAL])
     index = index_with(hr, legal, chunk(position=2, groups=[FINANCE]))
 
@@ -205,14 +225,14 @@ def test_or_matches_chunks_any_filter_matches() -> None:
     assert ids(index.find(where=where)) == ids([hr, legal])
 
 
-def test_not_matches_the_chunks_its_filter_does_not() -> None:
+def test_not_matches_the_chunks_its_filter_does_not(index_with: IndexWith) -> None:
     v1, v2 = chunk(version=1), chunk(version=2)
     index = index_with(v1, v2)
 
     assert ids(index.find(where=not_(Chunks.version.eq(2)))) == {v1.id}
 
 
-def test_not_any_of_matches_chunks_with_no_values() -> None:
+def test_not_any_of_matches_chunks_with_no_values(index_with: IndexWith) -> None:
     no_groups = chunk(position=0, groups=[])
     index = index_with(no_groups, chunk(position=1, groups=[HR]))
 
@@ -236,6 +256,7 @@ FOREIGN_FILTERS = [
 @pytest.mark.parametrize("where", FOREIGN_FILTERS)
 def test_delete_with_a_field_from_another_schema_raises_and_removes_nothing(
     where: Filter,
+    index_with: IndexWith,
 ) -> None:
     index = index_with(chunk(position=0), chunk(position=1))
 
@@ -248,12 +269,15 @@ def test_delete_with_a_field_from_another_schema_raises_and_removes_nothing(
 @pytest.mark.parametrize("where", FOREIGN_FILTERS)
 def test_a_field_from_another_schema_is_rejected_even_in_an_empty_index(
     where: Filter,
+    index_with: IndexWith,
 ) -> None:
     with pytest.raises(SchemaMismatchError):
-        InMemoryIndex(schema=Chunks).find(where=where)
+        index_with().find(where=where)
 
 
-def test_the_error_says_when_a_foreign_field_shares_a_name_with_the_schema() -> None:
+def test_the_error_says_when_a_foreign_field_shares_a_name_with_the_schema(
+    index_with: IndexWith,
+) -> None:
     with pytest.raises(SchemaMismatchError, match="'version' \\(another schema's"):
         index_with(chunk()).find(where=Entries.version.eq(2))
 
@@ -261,7 +285,9 @@ def test_the_error_says_when_a_foreign_field_shares_a_name_with_the_schema() -> 
 # Deleting
 
 
-def test_delete_removes_only_the_chunks_the_filter_matches() -> None:
+def test_delete_removes_only_the_chunks_the_filter_matches(
+    index_with: IndexWith,
+) -> None:
     kept = chunk(document=OTHER_DOCUMENT)
     index = index_with(chunk(position=0), chunk(position=1), kept)
 
@@ -270,7 +296,9 @@ def test_delete_removes_only_the_chunks_the_filter_matches() -> None:
     assert ids(index.find(where=EVERYTHING)) == {kept.id}
 
 
-def test_delete_after_a_new_version_keeps_only_that_version() -> None:
+def test_delete_after_a_new_version_keeps_only_that_version(
+    index_with: IndexWith,
+) -> None:
     v1 = [chunk(version=1, position=p) for p in range(2)]
     v2 = [chunk(version=2, position=p) for p in range(3)]
     other = chunk(document=OTHER_DOCUMENT, version=1)
@@ -283,7 +311,7 @@ def test_delete_after_a_new_version_keeps_only_that_version() -> None:
     assert ids(index.find(where=EVERYTHING)) == ids([*v2, other])
 
 
-def test_delete_matching_nothing_keeps_every_chunk() -> None:
+def test_delete_matching_nothing_keeps_every_chunk(index_with: IndexWith) -> None:
     index = index_with(chunk(position=0), chunk(position=1))
 
     index.delete(where=Chunks.document_id.eq(OTHER_DOCUMENT))
@@ -294,7 +322,9 @@ def test_delete_matching_nothing_keeps_every_chunk() -> None:
 # Replacing
 
 
-def test_replace_swaps_the_matched_chunks_for_the_new_ones() -> None:
+def test_replace_swaps_the_matched_chunks_for_the_new_ones(
+    index_with: IndexWith,
+) -> None:
     old = [chunk(position=p) for p in range(3)]
     other = chunk(document=OTHER_DOCUMENT)
     new = [chunk(version=2, position=p) for p in range(2)]
@@ -305,7 +335,9 @@ def test_replace_swaps_the_matched_chunks_for_the_new_ones() -> None:
     assert ids(index.find(where=EVERYTHING)) == ids([*new, other])
 
 
-def test_replace_accepts_new_chunks_that_do_not_match_its_filter() -> None:
+def test_replace_accepts_new_chunks_that_do_not_match_its_filter(
+    index_with: IndexWith,
+) -> None:
     v1 = chunk(version=1)
     v2 = chunk(version=2)
     index = index_with(v1)
@@ -317,7 +349,7 @@ def test_replace_accepts_new_chunks_that_do_not_match_its_filter() -> None:
     assert ids(index.find(where=EVERYTHING)) == {v2.id}
 
 
-def test_repeating_a_replace_gives_the_same_chunks() -> None:
+def test_repeating_a_replace_gives_the_same_chunks(index_with: IndexWith) -> None:
     new = [chunk(version=2, position=p) for p in range(2)]
     index = index_with(chunk(version=1))
     where = Chunks.document_id.eq(DOCUMENT)
@@ -328,7 +360,9 @@ def test_repeating_a_replace_gives_the_same_chunks() -> None:
     assert ids(index.find(where=EVERYTHING)) == ids(new)
 
 
-def test_replace_changes_nothing_when_a_new_chunk_does_not_fit_the_schema() -> None:
+def test_replace_changes_nothing_when_a_new_chunk_does_not_fit_the_schema(
+    index_with: IndexWith,
+) -> None:
     old = [chunk(position=p) for p in range(2)]
     index = index_with(*old)
 
@@ -341,7 +375,9 @@ def test_replace_changes_nothing_when_a_new_chunk_does_not_fit_the_schema() -> N
     assert ids(index.find(where=EVERYTHING)) == ids(old)
 
 
-def test_replace_changes_nothing_when_two_new_chunks_share_an_id() -> None:
+def test_replace_changes_nothing_when_two_new_chunks_share_an_id(
+    index_with: IndexWith,
+) -> None:
     old = chunk(version=1)
     index = index_with(old)
 
@@ -354,7 +390,9 @@ def test_replace_changes_nothing_when_two_new_chunks_share_an_id() -> None:
     assert ids(index.find(where=EVERYTHING)) == {old.id}
 
 
-def test_replace_changes_nothing_when_its_filter_uses_a_foreign_field() -> None:
+def test_replace_changes_nothing_when_its_filter_uses_a_foreign_field(
+    index_with: IndexWith,
+) -> None:
     old = chunk(version=1)
     index = index_with(old)
 

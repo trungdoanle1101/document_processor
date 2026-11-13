@@ -7,7 +7,7 @@ Status: build step 1 done; step 2 next (section 10). Branch: `features/retrieval
     the value checks;
   - `filters.py`: `Equals` (`eq`), `AnyOf` (`any_of`), and `and_` / `or_` / `not_`;
   - `chunks.py`: `Chunk`, and `Chunk.check_fits(schema)` raising `SchemaMismatchError`;
-  - `in_memory.py`: `InMemoryIndex` with `put`, `find`, `delete` and `replace`.
+  - `index/in_memory.py`: `InMemoryIndex` with `put`, `find`, `delete` and `replace`.
 - Next: build step 2, the Qdrant backend, matching the in-memory index's behaviour, and the
   `Index` protocol the two share.
 - Later, when a caller needs it: `chunk.get(field)` for typed reads (step 3 or 4), `in_` on
