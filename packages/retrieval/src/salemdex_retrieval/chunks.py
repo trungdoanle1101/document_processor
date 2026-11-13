@@ -10,10 +10,11 @@ from salemdex_retrieval.schema import Field, FieldValue, ManyValues, OneValue, S
 
 
 class SchemaMismatchError(ValueError):
-    """Raised when a chunk's field values don't match the schema it's checked against.
+    """Raised when a chunk or a filter doesn't fit the schema it's checked against.
 
-    The schema itself is fine (that would be a `SchemaError`): the data doesn't fit it,
-    so retrying the same chunk can't help.
+    A chunk's field values don't match the schema's fields, or a filter uses a field
+    that isn't one of them. The schema itself is fine (that would be a `SchemaError`),
+    so retrying the same chunk or filter can't help.
     """
 
 

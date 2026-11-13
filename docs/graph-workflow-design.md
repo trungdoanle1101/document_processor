@@ -1,14 +1,17 @@
 # Retrieval as a graph of stages
 
-Status: build step 1 in progress (section 10). Branch: `features/retrieval-redesign`.
+Status: build step 1 done; step 2 next (section 10). Branch: `features/retrieval-redesign`.
 
 - Built, in `packages/retrieval` (`salemdex_retrieval`), with tests:
   - `schema.py`: `One` / `Many` fields, `Schema` with presets, `OneValue` / `ManyValues`,
     the value checks;
-  - `filters.py`: `Equals` (`eq`) and `AnyOf` (`any_of`);
-  - `chunks.py`: `Chunk`, and `Chunk.check_fits(schema)` raising `SchemaMismatchError`.
-- Next: the AND / OR / NOT combinators, the in-memory index (which calls `check_fits` in
-  `add`), and `chunk.get(field)` for typed reads.
+  - `filters.py`: `Equals` (`eq`), `AnyOf` (`any_of`), and `and_` / `or_` / `not_`;
+  - `chunks.py`: `Chunk`, and `Chunk.check_fits(schema)` raising `SchemaMismatchError`;
+  - `in_memory.py`: `InMemoryIndex` with `put`, `find`, `delete` and `replace`.
+- Next: build step 2, the Qdrant backend, matching the in-memory index's behaviour, and the
+  `Index` protocol the two share.
+- Later, when a caller needs it: `chunk.get(field)` for typed reads (step 3 or 4), `in_` on
+  `One`, filtering by chunk ids.
 
 The project is named **Salemdex**. This engine is its first package under that name,
 `salemdex-retrieval` (section 10).
@@ -319,6 +322,12 @@ Chunk(
 - Why: one source of truth. Two copies, one on the index and one on the engine, could drift.
   The compile step would then approve a filter on a field the index doesn't have.
 - There is more than one schema (chunks, generated entries), each with its own index.
+- **One index, one schema.** Why: `check_fits`, the filter check and the startup check all
+  compare against a single schema; with two, a filter on one schema would run over the other's
+  chunks, and `not_` would turn "matches nothing" into "matches everything". Several kinds of
+  records are several indexes, combined by a merge stage. Two logical indexes sharing one Qdrant
+  collection is a backend detail; each still has one schema. A schema that changes over time is
+  a migration (backfill or re-index), not a second schema.
 - The compile step checks that every field in a statement belongs to the schema of the index it
   runs against. A chunk field can't filter the entries index.
 - **The index checks its stored data when it opens:** it compares the schema with the backend
@@ -341,10 +350,35 @@ Chunk(
   without an error. Reserving names instead would make every payload key the framework adds
   later a breaking change for existing schemas, and would put one backend's layout into the
   schema's rules.
-- **Writes are filter-based**, like SQL's `DELETE … WHERE`: `index.add(chunks)`,
+- **Writes are filter-based**, like SQL's `DELETE … WHERE`: `index.put(chunks)`,
   `index.delete(where=…)`, `index.replace(where=KbChunks.document_id.eq(x), with_=new_chunks)`.
   The framework needs no document concept even for index upkeep, and
   `replace_document(id, [], [])` disappears.
+  - **`put` is an upsert:** a stored chunk with the same id is overwritten. Why: a retried job
+    writes the same deterministic ids again and must succeed (idempotent consumer); Qdrant's
+    upsert works the same way. Named `put`, not `add`, because "add" reads as an insert and
+    hides the overwrite.
+  - **Every write is checked in full before anything is stored:** each chunk fits the schema,
+    and no two share an id. Why: a batch failing halfway would leave part of a version beside
+    the old one, the mix "Current" rules out.
+  - **`replace` is SQL's `DELETE … WHERE` then `INSERT`:** the new chunks needn't match `where`
+    ("replace v1 with v2" doesn't). Retrying it is safe because the ids are deterministic.
+  - **Every field in a filter must belong to the index's schema, checked before any chunk is
+    read or changed.** Why: `delete(where=not_(Entries.version.eq(2)))` on the chunks index
+    would otherwise match nothing inside the `not_`, so everything, and empty the index.
+  - **Writes are methods, not statements.** They come from the indexing worker, which has no
+    asker, so nothing needs to sit between the caller and the index. Searches are statements
+    (section 5) because the session must add the access filter to every one. Revisit if writes
+    need a unit of work, a trace or a dry run.
+  - **`index.find(where=…)` reads without any access filter**, like a raw database
+    connection: only indexing code, tests and the engine may call it, never anything serving a
+    user.
+- **The in-memory index** (`InMemoryIndex`) is the reference behaviour every backend must match,
+  for tests and single-process local runs. It is single-threaded and promises no more than
+  Qdrant: no locks, so `replace` isn't made atomic there either (in Qdrant it is two requests).
+  Why: the API and the worker are separate processes, so production needs Qdrant anyway, and a
+  stronger in-memory index would let tests pass on guarantees Qdrant doesn't give. Vectors come
+  with retrieve stages (build step 3).
 - **Stages that need meaning take fields as settings:**
   `expand(neighbours, order_by=KbChunks.position, within=KbChunks.document_id)`,
   `prune(dedupe, by=KbChunks.document_id)`. The compile step checks that those fields exist
@@ -359,9 +393,24 @@ Chunk(
 - **Methods are the API:** `KbChunks.document_id.eq(x)`, `any_of(…)`. Why: they read plainly and
   type-check under strict mypy. Operator overloading (`==`, `|`) may come later as sugar over
   the methods, only if they prove ugly.
+- **Combinators are functions, the nodes frozen dataclasses:** `and_(…)`, `or_(…)`, `not_(…)`
+  build `And`, `Or`, `Not` (trailing underscores because `and`, `or`, `not` are keywords, as in
+  SQLAlchemy). `type Filter = Equals[Any] | AnyOf[Any] | And | Or | Not` refers to itself.
+  - **The checks live in the nodes' `__post_init__`**, so a node built directly is checked too.
+    The functions only turn their arguments into a tuple.
+  - **`and_` and `or_` need at least one filter.** Why: an empty AND matches everything, so
+    `delete(where=and_(*conditions))` with an empty list would empty the index (the old
+    `ChunkFilter()` problem). One filter is allowed: it's harmless, and lists of conditions
+    vary in length.
+  - **Each argument must be a filter**, checked at run time. Why: fields don't define `__eq__`,
+    so `KbChunks.version == 2` is `False`, not an error; filters built at run time arrive as
+    `Any`. The check reads its classes from the `Filter` alias, so a new node can't be missed.
 - **Each backend compiles the expression tree:** Qdrant into must / should / must_not, the
-  in-memory index into a predicate. A construct the backend can't run fails at compile time,
-  before any work.
+  in-memory index into a predicate. A construct the backend can't run, or a field outside the
+  index's schema, fails at compile time, before any work. The children are compiled first, so
+  the whole tree is checked even where `or_` would stop early.
+- Not yet: filtering by chunk ids (first caller: re-checking earlier candidates, step 3) and
+  `in_` on `One` (first caller: scoping a search to collections or documents).
 
 ### Generated entries
 
@@ -442,7 +491,7 @@ re-index (minutes on CPU), and for good if the new version fails to index.
    copy, switch one pointer, remove the old copy.
 
    ```text
-   handler   index.add(v2 chunks)                     v1 still served: indexed_version = 1
+   handler   index.put(v2 chunks)                     v1 still served: indexed_version = 1
    worker    commit indexed_version = 2                the switch: one row, atomic
    after     index.delete(where=document is x AND version isn't 2)
    ```
@@ -540,7 +589,7 @@ stage kinds afterwards is cheap.
   | In `salemdex_retrieval` | Why here |
   |---|---|
   | schema, chunks, filter expressions | the data being retrieved and the language for selecting it |
-  | index backends, reads and writes (`add`, `replace`, `delete`) | the index is what retrieval reads; writing it is the other half (as SQLAlchemy has `insert` beside `select`) |
+  | index backends, reads and writes (`put`, `replace`, `delete`) | the index is what retrieval reads; writing it is the other half (as SQLAlchemy has `insert` beside `select`) |
   | embedders, rerankers | used by both writes and searches |
   | statements, stages, executor, session, gates | retrieval itself |
 
@@ -564,9 +613,10 @@ stage kinds afterwards is cheap.
 **Build order.** Each layer is tested before the next one depends on it.
 
 1. **Schema, chunk, filter expressions**, plus the in-memory index that translates them. All of
-   it is testable without Qdrant. **(in progress: schema, chunk, `eq` and `any_of` built)**
+   it is testable without Qdrant. **(done)**
 2. **The Qdrant backend:** translating filters, creating payload indexes from the schema, the
-   startup check, `add` / `replace` / `delete`.
+   startup check, `put` / `find` / `replace` / `delete`, with the in-memory index's tests run
+   against it too. Extract the `Index` protocol the two share. **(next)**
 3. **Statements and the executor** with retrieve, merge, rerank and take, plus the session, the
    access filter and the validity check.
 4. **Port the server's indexing handlers** to the new API, then build search on it.
