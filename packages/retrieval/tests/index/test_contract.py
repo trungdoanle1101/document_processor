@@ -5,6 +5,7 @@ Backends come from the `new_index` fixture in conftest.py.
 
 import uuid
 from collections.abc import Callable, Iterable
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Protocol
 
 import pytest
@@ -170,6 +171,25 @@ def test_put_stores_nothing_when_two_chunks_share_an_id(index_with: IndexWith) -
     assert index.find(where=EVERYTHING) == []
 
 
+def test_put_with_no_chunks_keeps_the_stored_ones(index_with: IndexWith) -> None:
+    stored = chunk()
+    index = index_with(stored)
+
+    index.put([])
+
+    assert ids(index.find(where=EVERYTHING)) == {stored.id}
+
+
+def test_find_returns_every_match_however_many_there_are(
+    index_with: IndexWith,
+) -> None:
+    # More than one page of a backend that reads in pages (Qdrant: 1,000 at a time).
+    many = [chunk(position=p) for p in range(2_500)]
+    index = index_with(*many)
+
+    assert ids(index.find(where=Chunks.document_id.eq(DOCUMENT))) == ids(many)
+
+
 # What each filter matches
 
 
@@ -237,6 +257,105 @@ def test_not_any_of_matches_chunks_with_no_values(index_with: IndexWith) -> None
     index = index_with(no_groups, chunk(position=1, groups=[HR]))
 
     assert ids(index.find(where=not_(Chunks.groups.any_of([HR])))) == {no_groups.id}
+
+
+# Values of every type: a backend may store some in another form (Qdrant: a UUID or
+# a datetime as a string), and must still match and return them exactly.
+
+
+class Typed(Schema):
+    flag = One(bool)
+    score = One(float)
+    at = One(datetime)
+    labels = Many(str)
+
+
+NOON = datetime(2026, 1, 1, 12, tzinfo=UTC)
+
+
+def typed_chunk(
+    position: int,
+    *,
+    flag: bool = False,
+    score: float = 0.0,
+    at: datetime = NOON,
+    labels: Iterable[str] = (),
+) -> Chunk:
+    """Return a chunk of Typed, its id derived from `position`."""
+    return Chunk(
+        id=uuid.UUID(int=position + 1),
+        text="Scope of application",
+        field_values=[
+            Typed.flag.value(flag),
+            Typed.score.value(score),
+            Typed.at.value(at),
+            Typed.labels.value(labels),
+        ],
+    )
+
+
+@pytest.fixture
+def typed_index_with(new_index: Callable[[type[Schema]], Index]) -> IndexWith:
+    """Return a function opening an index of Typed holding the given chunks."""
+
+    def open_with(*chunks: Chunk) -> Index:
+        index = new_index(Typed)
+        index.put(chunks)
+        return index
+
+    return open_with
+
+
+def test_find_returns_values_of_every_type_as_they_were_stored(
+    typed_index_with: IndexWith,
+) -> None:
+    stored = typed_chunk(
+        0, flag=True, score=0.1, at=NOON + timedelta(microseconds=1), labels=["a"]
+    )
+    index = typed_index_with(stored)
+
+    assert index.find(where=Typed.flag.eq(True)) == [stored]
+
+
+def test_eq_tells_true_from_false(typed_index_with: IndexWith) -> None:
+    yes, no = typed_chunk(0, flag=True), typed_chunk(1, flag=False)
+    index = typed_index_with(yes, no)
+
+    assert ids(index.find(where=Typed.flag.eq(True))) == {yes.id}
+    assert ids(index.find(where=Typed.flag.eq(False))) == {no.id}
+
+
+def test_eq_matches_a_float_exactly(typed_index_with: IndexWith) -> None:
+    # 0.1 + 0.2 is 0.30000000000000004: close to 0.3, but not equal.
+    exact, close = typed_chunk(0, score=0.3), typed_chunk(1, score=0.1 + 0.2)
+    index = typed_index_with(exact, close)
+
+    assert ids(index.find(where=Typed.score.eq(0.3))) == {exact.id}
+
+
+def test_eq_matches_the_same_instant_written_with_another_offset(
+    typed_index_with: IndexWith,
+) -> None:
+    noon = typed_chunk(0, at=NOON)
+    index = typed_index_with(noon, typed_chunk(1, at=NOON + timedelta(hours=1)))
+
+    seven_pm_in_hanoi = NOON.astimezone(timezone(timedelta(hours=7)))
+
+    assert ids(index.find(where=Typed.at.eq(seven_pm_in_hanoi))) == {noon.id}
+
+
+def test_eq_tells_instants_a_microsecond_apart(typed_index_with: IndexWith) -> None:
+    noon = typed_chunk(0, at=NOON)
+    index = typed_index_with(noon, typed_chunk(1, at=NOON + timedelta(microseconds=1)))
+
+    assert ids(index.find(where=Typed.at.eq(NOON))) == {noon.id}
+
+
+def test_any_of_matches_strings(typed_index_with: IndexWith) -> None:
+    tagged = typed_chunk(0, labels=["scope", "hr"])
+    index = typed_index_with(tagged, typed_chunk(1, labels=["finance"]))
+
+    assert ids(index.find(where=Typed.labels.any_of(["hr", "legal"]))) == {tagged.id}
 
 
 # Filters on fields the index doesn't hold
@@ -358,6 +477,26 @@ def test_repeating_a_replace_gives_the_same_chunks(index_with: IndexWith) -> Non
     index.replace(where=where, with_=new)
 
     assert ids(index.find(where=EVERYTHING)) == ids(new)
+
+
+def test_replace_keeps_a_new_chunk_that_overwrites_a_matched_one(
+    index_with: IndexWith,
+) -> None:
+    index = index_with(chunk(text="old"))
+
+    index.replace(where=Chunks.document_id.eq(DOCUMENT), with_=[chunk(text="new")])
+
+    [found] = index.find(where=EVERYTHING)
+    assert found.text == "new"
+
+
+def test_replace_with_no_chunks_removes_the_matched_ones(index_with: IndexWith) -> None:
+    other = chunk(document=OTHER_DOCUMENT)
+    index = index_with(chunk(position=0), chunk(position=1), other)
+
+    index.replace(where=Chunks.document_id.eq(DOCUMENT), with_=[])
+
+    assert ids(index.find(where=EVERYTHING)) == {other.id}
 
 
 def test_replace_changes_nothing_when_a_new_chunk_does_not_fit_the_schema(

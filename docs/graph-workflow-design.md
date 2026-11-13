@@ -9,12 +9,17 @@ Status: build step 1 done; step 2 in progress (section 10). Branch:
   - `filters.py`: `Equals` (`eq`), `AnyOf` (`any_of`), and `and_` / `or_` / `not_`;
   - `chunks.py`: `Chunk`, and `Chunk.check_fits(schema)` raising `SchemaMismatchError`;
   - `index/in_memory.py`: `InMemoryIndex` with `put`, `find`, `delete` and `replace`;
-  - `index/protocol.py`: the `Index` protocol and `check_batch`, shared by every backend;
-    `tests/index/test_contract.py` runs the behaviour tests against each backend;
-  - `index/qdrant/payload.py`: encoding a chunk as a Qdrant payload and decoding it strictly.
-- Next, in step 2: compiling filters to Qdrant (`index/qdrant/filters.py`), then
-  `QdrantIndex` (payload indexes from the schema, the startup check, the four operations),
-  added to the contract tests' backends.
+  - `index/protocol.py`: the `Index` protocol, `check_batch` and `check_filter`, shared by
+    every backend; `tests/index/test_contract.py` runs the behaviour tests against each
+    backend: in memory, Qdrant's local mode, and a Qdrant server when `KB_TEST_QDRANT_URL` is
+    set;
+  - `index/qdrant/payload.py`: encoding a chunk as a Qdrant payload and decoding it strictly;
+  - `index/qdrant/filters.py`: compiling filters to Qdrant's must / should / must_not;
+  - `index/qdrant/index.py`: `QdrantIndex` with `put`, `find`, `delete` and `replace`, behind
+    the `qdrant` extra.
+- Next, in step 2: payload indexes from the schema's `indexed=True` fields, and the startup
+  check that creates the collection and what's missing, or refuses to start (section 6, "The
+  schema"). Until then the caller creates the collection.
 - Later, when a caller needs it: `chunk.get(field)` for typed reads (step 3 or 4), `in_` on
   `One`, filtering by chunk ids.
 
@@ -419,6 +424,23 @@ Chunk(
   Why: the API and the worker are separate processes, so production needs Qdrant anyway, and a
   stronger in-memory index would let tests pass on guarantees Qdrant doesn't give. Vectors come
   with retrieve stages (build step 3).
+- **The Qdrant index** (`QdrantIndex`) passes the same contract tests. Its points have no
+  vectors yet; the embedder comes with search.
+  - **`put` sends one `upsert` request**, not `upload_points`. Why: `upload_points` splits a
+    write into batches of 64, so a failure partway leaves part of a version stored. A
+    document's chunks fit in one request (Qdrant's default limit is 32 MB). An empty write
+    sends nothing, because Qdrant refuses an update with no points.
+  - **`replace` writes first, then deletes what's left over:** the points `where` matches,
+    minus the ids just written. Why: in the other order, a reader between the two requests
+    finds none of the chunks; this way they may briefly see old and new together, never
+    neither. A failure between the two leaves both stored, and repeating the call finishes it.
+    The server's version switch doesn't rely on this: it splits `put` and `delete` around a
+    commit ("Currency" below).
+  - **`find` reads every page** of `scroll`, 1,000 points at a time. Why: one page would
+    silently drop the chunks of a large document.
+  - **A point with an integer id is refused when read** (`SchemaMismatchError`). Qdrant allows
+    integer ids, but this index only writes UUIDs, so such a point was written by something
+    else.
 - **Stages that need meaning take fields as settings:**
   `expand(neighbours, order_by=KbChunks.position, within=KbChunks.document_id)`,
   `prune(dedupe, by=KbChunks.document_id)`. The compile step checks that those fields exist
@@ -449,6 +471,13 @@ Chunk(
   in-memory index into a predicate. A construct the backend can't run, or a field outside the
   index's schema, fails at compile time, before any work. The children are compiled first, so
   the whole tree is checked even where `or_` would stop early.
+  - **The schema check is shared:** `check_filter` walks the tree once, before either backend
+    compiles it, and compares each field with the schema's as an object, not by name.
+  - **Two Qdrant conditions don't map one to one.** Floats and datetimes match by a range
+    from the value to itself. Why: Qdrant can't match a float exactly, and a datetime stored
+    as a string would miss the same instant written with another offset. An `any_of` with no
+    values becomes a filter matching nothing. Why: Qdrant reads an empty `should` as no
+    constraint and matches every point.
 - Not yet: filtering by chunk ids (first caller: re-checking earlier candidates, step 3) and
   `in_` on `One` (first caller: scoping a search to collections or documents).
 
@@ -656,7 +685,9 @@ stage kinds afterwards is cheap.
    it is testable without Qdrant. **(done)**
 2. **The Qdrant backend:** translating filters, creating payload indexes from the schema, the
    startup check, `put` / `find` / `replace` / `delete`, with the in-memory index's tests run
-   against it too. Extract the `Index` protocol the two share. **(next)**
+   against it too. Extract the `Index` protocol the two share. **(in progress)** The
+   protocol, filters and the four operations are built; payload indexes and the startup
+   check are next.
 3. **Statements and the executor** with retrieve, merge, rerank and take, plus the session, the
    access filter and the validity check.
 4. **Port the server's indexing handlers** to the new API, then build search on it.

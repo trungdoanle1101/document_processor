@@ -2466,6 +2466,15 @@ name = "salemdex-retrieval"
 version = "0.1.0"
 source = { editable = "packages/retrieval" }
 
+[package.optional-dependencies]
+qdrant = [
+    { name = "qdrant-client" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "qdrant-client", marker = "extra == 'qdrant'", specifier = ">=1.20.0" }]
+provides-extras = ["qdrant"]
+
 [[package]]
 name = "scikit-learn"
 version = "1.9.1"

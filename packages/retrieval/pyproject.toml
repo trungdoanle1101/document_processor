@@ -12,3 +12,6 @@ dependencies = []
 [build-system]
 requires = ["uv_build>=0.10.2,<0.11.0"]
 build-backend = "uv_build"
+
+[project.optional-dependencies]
+qdrant = ["qdrant-client>=1.20.0"]

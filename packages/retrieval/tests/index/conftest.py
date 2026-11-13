@@ -1,24 +1,74 @@
-"""Fixtures shared by the index tests: the backends every contract test runs against."""
+"""Fixtures shared by the index tests: the backends every contract test runs against.
 
-from collections.abc import Callable
+Qdrant always runs in the client's in-memory mode, and against a server too when
+KB_TEST_QDRANT_URL is set (e.g. http://localhost:6333 after
+`docker compose -f docker/docker-compose.yml up -d qdrant`).
+"""
+
+import os
+import uuid
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 
 import pytest
+from qdrant_client import QdrantClient
 
 from salemdex_retrieval.index import Index, InMemoryIndex
+from salemdex_retrieval.index.qdrant import QdrantIndex
 from salemdex_retrieval.schema import Schema
 
+type OpenIndex = Callable[[type[Schema]], Index]
 
-def _in_memory(schema: type[Schema]) -> Index:
-    return InMemoryIndex(schema=schema)
+QDRANT_URL = os.environ.get("KB_TEST_QDRANT_URL")
 
-
-# One entry per backend. A backend needing a server or cleanup (Qdrant) turns
-# `new_index` into a yielding fixture that opens and drops its collections.
-BACKENDS = [pytest.param(_in_memory, id="in-memory")]
+# One entry per backend.
+BACKENDS = [
+    pytest.param("in-memory", id="in-memory"),
+    pytest.param("qdrant-local", id="qdrant-local"),
+    pytest.param(
+        "qdrant-server",
+        id="qdrant-server",
+        marks=pytest.mark.skipif(
+            QDRANT_URL is None, reason="KB_TEST_QDRANT_URL is not set"
+        ),
+    ),
+]
 
 
 @pytest.fixture(params=BACKENDS)
-def new_index(request: pytest.FixtureRequest) -> Callable[[type[Schema]], Index]:
+def new_index(request: pytest.FixtureRequest) -> Iterator[OpenIndex]:
     """Return a function opening an empty index of a schema, once per backend."""
-    open_index: Callable[[type[Schema]], Index] = request.param
-    return open_index
+    match request.param:
+        case "in-memory":
+            yield lambda schema: InMemoryIndex(schema=schema)
+        case "qdrant-local":
+            with _opening_qdrant_indexes(QdrantClient(":memory:")) as open_index:
+                yield open_index
+        case "qdrant-server":
+            with _opening_qdrant_indexes(QdrantClient(url=QDRANT_URL)) as open_index:
+                yield open_index
+        case other:
+            raise ValueError(f"unknown backend {other!r}")
+
+
+@contextmanager
+def _opening_qdrant_indexes(client: QdrantClient) -> Iterator[OpenIndex]:
+    """Yield a function opening Qdrant indexes, each in a new collection.
+
+    The collections are dropped and the client closed afterwards, so tests sharing a
+    server never see each other's chunks.
+    """
+    collections: list[str] = []
+
+    def open_index(schema: type[Schema]) -> Index:
+        collection = f"test_{uuid.uuid4().hex}"
+        client.create_collection(collection, vectors_config={})
+        collections.append(collection)
+        return QdrantIndex(schema=schema, client=client, collection=collection)
+
+    try:
+        yield open_index
+    finally:
+        for collection in collections:
+            client.delete_collection(collection)
+        client.close()

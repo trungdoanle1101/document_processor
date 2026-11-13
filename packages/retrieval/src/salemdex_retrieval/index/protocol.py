@@ -6,10 +6,10 @@ Each backend (in memory, Qdrant) must behave as `Index` describes; the shared te
 
 import uuid
 from collections.abc import Iterable
-from typing import Protocol
+from typing import Protocol, assert_never
 
-from salemdex_retrieval.chunks import Chunk
-from salemdex_retrieval.filters import Filter
+from salemdex_retrieval.chunks import Chunk, SchemaMismatchError
+from salemdex_retrieval.filters import And, AnyOf, Equals, Filter, Not, Or
 from salemdex_retrieval.schema import Schema
 
 
@@ -71,7 +71,8 @@ class Index(Protocol):
 
         Like SQL's DELETE … WHERE then INSERT: the new chunks needn't match `where`.
         A stored chunk with a new chunk's id is overwritten, as in `put`. A backend
-        that can't make the two steps atomic (Qdrant) may let a reader see the gap.
+        that can't make the two steps atomic (Qdrant) writes the new chunks first: a
+        reader may briefly see old and new chunks together, but never neither.
 
         Example:
             index.replace(where=KbChunks.document_id.eq(doc_id), with_=new_chunks)
@@ -113,3 +114,39 @@ def check_batch(chunks: Iterable[Chunk], *, schema: type[Schema]) -> list[Chunk]
         chunk.check_fits(schema)
         seen.add(chunk.id)
     return batch
+
+
+def check_filter(where: Filter, *, schema: type[Schema]) -> None:
+    """Check that every field `where` uses is one of `schema`'s fields.
+
+    Every backend calls it before reading or changing anything, so a wrong filter
+    changes nothing. Fields are compared as objects, not by name, as in
+    `Chunk.check_fits`. Values aren't checked again: `eq()` and `any_of()` checked them
+    against their field when the filter was built.
+
+    Args:
+        where: The filter about to be run.
+        schema: The schema of the index it runs on.
+
+    Raises:
+        SchemaMismatchError: `where` uses a field that isn't in `schema`, or another
+            schema's field with the same name. The message names the first one found.
+    """
+    schema_fields = schema.fields()
+    match where:
+        case Equals(field=field) | AnyOf(field=field):
+            if schema_fields.get(field.name) is field:
+                return
+            in_another = (
+                " (another schema's field)" if field.name in schema_fields else ""
+            )
+            raise SchemaMismatchError(
+                f"field {field.name!r}{in_another} not in schema {schema.__name__}"
+            )
+        case And(filters=filters) | Or(filters=filters):
+            for f in filters:
+                check_filter(f, schema=schema)
+        case Not(filter=inner):
+            check_filter(inner, schema=schema)
+        case _:
+            assert_never(where)

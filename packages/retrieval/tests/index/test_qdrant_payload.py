@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
 import pytest
+from qdrant_client import models
 
 from salemdex_retrieval.chunks import Chunk, SchemaMismatchError
 from salemdex_retrieval.index.qdrant.payload import decode_payload, encode_payload
@@ -68,7 +69,9 @@ def stored(chunk: Chunk) -> dict[str, Any]:
     return loaded
 
 
-def read(payload: dict[str, Any], *, point_id: str = str(CHUNK_ID)) -> Chunk:
+def read(
+    payload: dict[str, Any], *, point_id: models.ExtendedPointId = str(CHUNK_ID)
+) -> Chunk:
     return decode_payload(point_id=point_id, payload=payload, schema=Chunks)
 
 
@@ -225,9 +228,19 @@ def test_a_damaged_payload_raises_one_error_naming_the_point(
     assert str(CHUNK_ID) in str(raised.value)
 
 
+def test_a_point_id_given_as_a_uuid_reads_back_as_the_chunk_id() -> None:
+    assert read(stored(build()), point_id=CHUNK_ID).id == CHUNK_ID
+
+
 def test_a_malformed_point_id_raises_naming_it() -> None:
     with pytest.raises(SchemaMismatchError, match="point not-a-uuid: id is not"):
         read(stored(build()), point_id="not-a-uuid")
+
+
+def test_an_integer_point_id_raises_naming_it() -> None:
+    # Qdrant also allows integer ids; a point with one wasn't written by this index.
+    with pytest.raises(SchemaMismatchError, match="point 7: id is an integer"):
+        read(stored(build()), point_id=7)
 
 
 def test_a_point_of_another_schema_does_not_read_as_this_one() -> None:

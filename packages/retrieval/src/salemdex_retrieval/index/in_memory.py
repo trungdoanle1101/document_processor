@@ -6,12 +6,12 @@ selects and writes chunks.
 
 import uuid
 from collections.abc import Callable, Iterable
-from typing import Any, Final, assert_never
+from typing import Final, assert_never
 
-from salemdex_retrieval.chunks import Chunk, SchemaMismatchError
+from salemdex_retrieval.chunks import Chunk
 from salemdex_retrieval.filters import And, AnyOf, Equals, Filter, Not, Or
-from salemdex_retrieval.index.protocol import check_batch
-from salemdex_retrieval.schema import Field, Schema
+from salemdex_retrieval.index.protocol import check_batch, check_filter
+from salemdex_retrieval.schema import Schema
 
 
 class InMemoryIndex:
@@ -38,11 +38,13 @@ class InMemoryIndex:
 
     def find(self, *, where: Filter) -> list[Chunk]:
         """Return the stored chunks that `where` matches (`Index.find`)."""
+        check_filter(where, schema=self.schema)
         matches = self._build_matcher(where)
         return [chunk for chunk in self._chunks.values() if matches(chunk)]
 
     def delete(self, *, where: Filter) -> None:
         """Remove the stored chunks that `where` matches (`Index.delete`)."""
+        check_filter(where, schema=self.schema)
         matches = self._build_matcher(where)
         self._chunks = {
             chunk_id: chunk
@@ -52,6 +54,7 @@ class InMemoryIndex:
 
     def replace(self, *, where: Filter, with_: Iterable[Chunk]) -> None:
         """Swap the chunks `where` matches for `with_` (`Index.replace`)."""
+        check_filter(where, schema=self.schema)
         matches = self._build_matcher(where)
         chunks = check_batch(with_, schema=self.schema)
         self._chunks = {
@@ -66,15 +69,13 @@ class InMemoryIndex:
     def _build_matcher(self, where: Filter) -> Callable[[Chunk], bool]:
         """Return a function telling whether a chunk matches `where`.
 
-        Raises:
-            SchemaMismatchError: `where` uses a field that isn't in the schema.
+        `where` must already be checked by `check_filter`: a field outside the schema
+        would raise `KeyError` on the first chunk.
         """
         match where:
             case Equals(field=field, value=value):
-                self._check_in_schema(field)
                 return lambda chunk: chunk.field_values[field] == value
             case AnyOf(field=field, values=values):
-                self._check_in_schema(field)
                 return lambda chunk: not values.isdisjoint(chunk.field_values[field])
             case And(filters=filters):
                 parts = [self._build_matcher(f) for f in filters]
@@ -87,18 +88,3 @@ class InMemoryIndex:
                 return lambda chunk: not part(chunk)
             case _:
                 assert_never(where)
-
-    def _check_in_schema(self, field: Field[Any]) -> None:
-        """Check that `field` is one of the schema's fields, as an object, not a name.
-
-        Raises:
-            SchemaMismatchError: `field` isn't in the schema, or is another schema's
-                field with the same name.
-        """
-        schema_fields = self.schema.fields()
-        if schema_fields.get(field.name) is field:
-            return
-        in_another = " (another schema's field)" if field.name in schema_fields else ""
-        raise SchemaMismatchError(
-            f"field {field.name!r}{in_another} not in schema {self.schema.__name__}"
-        )

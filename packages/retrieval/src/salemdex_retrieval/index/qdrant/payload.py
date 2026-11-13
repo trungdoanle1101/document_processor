@@ -18,6 +18,8 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 
+from qdrant_client import models
+
 from salemdex_retrieval.chunks import Chunk, SchemaMismatchError
 from salemdex_retrieval.schema import Field, FieldValue, Many, One, Schema
 
@@ -56,7 +58,10 @@ def encode_payload(chunk: Chunk) -> dict[str, Any]:
 
 
 def decode_payload(
-    *, point_id: str, payload: Mapping[str, Any], schema: type[Schema]
+    *,
+    point_id: models.ExtendedPointId,
+    payload: Mapping[str, Any],
+    schema: type[Schema],
 ) -> Chunk:
     """Return the chunk a stored point holds, checked as strictly as a new write.
 
@@ -76,12 +81,7 @@ def decode_payload(
         SchemaMismatchError: A key is missing or unknown, or a value has the wrong
             type or form. The message names the point id and the key.
     """
-    try:
-        id_as_uuid = uuid.UUID(point_id)
-    except ValueError as error:
-        raise SchemaMismatchError(
-            f"point {point_id}: id is not a valid UUID"
-        ) from error
+    id_as_uuid = _decode_point_id(point_id)
 
     missing = [key for key, _, _ in _PAYLOAD_KEYS if key not in payload]
     if missing:
@@ -96,7 +96,7 @@ def decode_payload(
                 f"got {type(payload[key]).__name__}"
             )
 
-    field_values = _decode_field_values(payload, schema=schema, point_id=point_id)
+    field_values = _decode_field_values(payload, schema=schema, point_id=id_as_uuid)
 
     chunk = Chunk(
         id=id_as_uuid,
@@ -146,7 +146,7 @@ def _encode_value(value: object) -> _JsonScalar:
 
 
 def _decode_field_values(
-    payload: Mapping[str, Any], *, schema: type[Schema], point_id: str
+    payload: Mapping[str, Any], *, schema: type[Schema], point_id: uuid.UUID
 ) -> list[FieldValue]:
     """Return the field values stored under `field_values`, each checked by its field.
 
@@ -214,3 +214,23 @@ def _decode_value(raw: object, *, value_type: type) -> object:
     if value_type is uuid.UUID:
         return uuid.UUID(raw)
     return datetime.fromisoformat(raw)
+
+
+def _decode_point_id(point_id: models.ExtendedPointId) -> uuid.UUID:
+    """Return the chunk id a point id holds
+
+    Raises:
+        SchemaMismatchError: The id is an integer or a malformed UUID string
+    """
+    match point_id:
+        case uuid.UUID():
+            return point_id
+        case str():
+            try:
+                return uuid.UUID(point_id)
+            except ValueError as error:
+                raise SchemaMismatchError(
+                    f"point {point_id}: id is not a valid UUID"
+                ) from error
+        case int():
+            raise SchemaMismatchError(f"point {point_id}: id is an integer, not a UUID")

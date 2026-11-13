@@ -70,7 +70,8 @@ def _build_equals_condition[T](field: Field[T], value: T) -> models.FieldConditi
         case uuid.UUID():
             match_uuid = models.MatchValue(value=str(value))
             return models.FieldCondition(key=key, match=match_uuid)
-        # A bool is an int, and MatchValue takes it as one.
+        # int() also matches a bool (a subclass); MatchValue keeps it a bool, so it
+        # matches the stored JSON true or false.
         case str() | int():
             return models.FieldCondition(key=key, match=models.MatchValue(value=value))
         # A float field never holds an int: the field turns ints into floats.
