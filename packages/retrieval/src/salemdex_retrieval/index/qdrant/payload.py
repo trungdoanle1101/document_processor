@@ -21,6 +21,17 @@ from typing import Any
 from salemdex_retrieval.chunks import Chunk, SchemaMismatchError
 from salemdex_retrieval.schema import Field, FieldValue, Many, One, Schema
 
+TEXT = "text"
+EMBEDDED_TEXT = "embedded_text"
+FIELD_VALUES = "field_values"
+
+# Each top-level key, the type its value must have, and that type as a message says it.
+_PAYLOAD_KEYS: tuple[tuple[str, type, str], ...] = (
+    (TEXT, str, "a string"),
+    (EMBEDDED_TEXT, str, "a string"),
+    (FIELD_VALUES, Mapping, "a mapping"),
+)
+
 
 def encode_payload(chunk: Chunk) -> dict[str, Any]:
     """Return the payload storing `chunk`, made only of JSON values.
@@ -32,9 +43,9 @@ def encode_payload(chunk: Chunk) -> dict[str, Any]:
         The text, the embedded text and the field values, keyed by field name.
     """
     return {
-        "text": chunk.text,
-        "embedded_text": chunk.embedded_text,
-        "field_values": {
+        TEXT: chunk.text,
+        EMBEDDED_TEXT: chunk.embedded_text,
+        FIELD_VALUES: {
             field.name: _encode_field_value(field, value)
             for field, value in chunk.field_values.items()
         },
@@ -69,38 +80,25 @@ def decode_payload(
             f"point {point_id}: id is not a valid UUID"
         ) from error
 
-    missing = [
-        key for key in ("text", "embedded_text", "field_values") if key not in payload
-    ]
+    missing = [key for key, _, _ in _PAYLOAD_KEYS if key not in payload]
     if missing:
         raise SchemaMismatchError(
             f"point {point_id}: payload is missing {', '.join(missing)}"
         )
 
-    if not isinstance(payload["text"], str):
-        raise SchemaMismatchError(
-            f"point {point_id}: text is not a string, "
-            f"got {type(payload['text']).__name__}"
-        )
-
-    if not isinstance(payload["embedded_text"], str):
-        raise SchemaMismatchError(
-            f"point {point_id}: embedded_text is not a string, "
-            f"got {type(payload['embedded_text']).__name__}"
-        )
-
-    if not isinstance(payload["field_values"], Mapping):
-        raise SchemaMismatchError(
-            f"point {point_id}: field_values is not a mapping, "
-            f"got {type(payload['field_values']).__name__}"
-        )
+    for key, expected_type, described_as in _PAYLOAD_KEYS:
+        if not isinstance(payload[key], expected_type):
+            raise SchemaMismatchError(
+                f"point {point_id}: {key} is not {described_as}, "
+                f"got {type(payload[key]).__name__}"
+            )
 
     field_values = _decode_field_values(payload, schema=schema, point_id=point_id)
 
     chunk = Chunk(
         id=id_as_uuid,
-        text=payload["text"],
-        embedded_text=payload["embedded_text"],
+        text=payload[TEXT],
+        embedded_text=payload[EMBEDDED_TEXT],
         field_values=field_values,
     )
     chunk.check_fits(schema)
@@ -144,7 +142,7 @@ def _decode_field_values(
         SchemaMismatchError: A key isn't one of the schema's fields, or a value can't
             be decoded; the message names the point id and the key.
     """
-    field_values_dict: dict[str, Any] = payload["field_values"]
+    field_values_dict: dict[str, Any] = payload[FIELD_VALUES]
     schema_fields = schema.fields()
     field_values: list[FieldValue] = []
     mismatched = [key for key in field_values_dict if schema_fields.get(key) is None]
