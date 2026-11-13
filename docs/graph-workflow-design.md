@@ -1,15 +1,20 @@
 # Retrieval as a graph of stages
 
-Status: build step 1 done; step 2 next (section 10). Branch: `features/retrieval-redesign`.
+Status: build step 1 done; step 2 in progress (section 10). Branch:
+`features/retrieval-redesign`.
 
 - Built, in `packages/retrieval` (`salemdex_retrieval`), with tests:
   - `schema.py`: `One` / `Many` fields, `Schema` with presets, `OneValue` / `ManyValues`,
     the value checks;
   - `filters.py`: `Equals` (`eq`), `AnyOf` (`any_of`), and `and_` / `or_` / `not_`;
   - `chunks.py`: `Chunk`, and `Chunk.check_fits(schema)` raising `SchemaMismatchError`;
-  - `index/in_memory.py`: `InMemoryIndex` with `put`, `find`, `delete` and `replace`.
-- Next: build step 2, the Qdrant backend, matching the in-memory index's behaviour, and the
-  `Index` protocol the two share.
+  - `index/in_memory.py`: `InMemoryIndex` with `put`, `find`, `delete` and `replace`;
+  - `index/protocol.py`: the `Index` protocol and `check_batch`, shared by every backend;
+    `tests/index/test_contract.py` runs the behaviour tests against each backend;
+  - `index/qdrant/payload.py`: encoding a chunk as a Qdrant payload and decoding it strictly.
+- Next, in step 2: compiling filters to Qdrant (`index/qdrant/filters.py`), then
+  `QdrantIndex` (payload indexes from the schema, the startup check, the four operations),
+  added to the contract tests' backends.
 - Later, when a caller needs it: `chunk.get(field)` for typed reads (step 3 or 4), `in_` on
   `One`, filtering by chunk ids.
 
@@ -342,14 +347,49 @@ Chunk(
   `QDRANT_INDEXED_ATTRIBUTES`.
 - Values are encoded to the backend's format and decoded back (`UUID`, `datetime`). Why: that
   removes the need for the private `_payload` module.
-- **Field values sit under their own payload key**, apart from the chunk's own parts:
-  `{"text": …, "embedded_text": …, "fields": {"document_id": …, "groups": […]}}`. Only the
-  Qdrant backend knows this layout; it turns `KbChunks.document_id` into the key
-  `fields.document_id` for filters and payload indexes (Qdrant handles dotted keys). Why: in a
-  flat payload, a field named `text` would overwrite the chunk's text and break "faithful"
-  without an error. Reserving names instead would make every payload key the framework adds
-  later a breaking change for existing schemas, and would put one backend's layout into the
-  schema's rules.
+- **The Qdrant payload layout:**
+
+  ```python
+  {
+      "text": "…",
+      "embedded_text": "…",
+      "field_values": {"document_id": "3f2a…", "version": 2, "groups": ["…"], "headings": []},
+  }
+  ```
+
+  - **Only the Qdrant backend knows it.** Encoding and decoding are functions in
+    `index/qdrant/payload.py`, not methods on `Chunk`. Why: the layout and encodings are
+    Qdrant's choices (another backend would encode differently), and decoding needs the schema
+    to know each field's type, which a chunk doesn't carry.
+  - **The chunk id is the point id**, not a payload key; Qdrant takes UUIDs natively.
+  - **Field values sit under their own key, `field_values`**, apart from the chunk's own parts.
+    The backend turns `KbChunks.document_id` into the key `field_values.document_id` for
+    filters and payload indexes (Qdrant handles dotted keys). Why a separate key: in a flat
+    payload, a field named `text` would overwrite the chunk's text and break "faithful"
+    without an error. Reserving names instead would make every payload key the framework adds
+    later a breaking change for existing schemas, and would put one backend's layout into the
+    schema's rules. Why this name: it's the same idea as `Chunk.field_values` (values keyed by
+    field), and "fields" already means the declarations (`Schema.fields()`).
+  - **No layout number yet.** Strict decoding already turns a changed layout into a loud error
+    (a renamed key is missing, a changed encoding fails the value checks), so old points can't
+    be misread silently. What keeps the layout from changing by accident is a golden test
+    (`tests/index/test_qdrant_payload.py`): it compares one chunk's payload with the stored
+    layout written out in full, so any change fails CI, where a version number would rely on
+    someone remembering to bump it. When the layout first really changes, add a `layout` key:
+    a point without one is layout 1, so old points need no migration to be recognised.
+    Changing the layout means re-indexing.
+  - **`embedded_text` is always stored**, even when it equals the text. Why: re-embedding with
+    a new model needs it without re-chunking, and a missing key always means a corrupt point,
+    so decoding stays strict. The duplicated text is small next to the vectors.
+  - **Encodings:** `str`, `int`, `float`, `bool` as they are; `UUID` as its string (Qdrant's
+    `uuid` payload index); `datetime` as ISO 8601 with its offset (what Qdrant's `datetime`
+    index parses); a `Many` as a list, `[]` when empty, never left out.
+  - **Decoding is strict** (the "reads" checkpoint): a malformed point id, a missing key, an
+    unknown key under `field_values`, a wrong type or a malformed value raises one error,
+    `SchemaMismatchError`, naming the point id and the key, so callers (a search, the startup
+    check) catch a single type. Every value goes back through `field.value()`, so the
+    write-time checks run again, and `check_fits` confirms the chunk has exactly the schema's
+    fields.
 - **Writes are filter-based**, like SQL's `DELETE … WHERE`: `index.put(chunks)`,
   `index.delete(where=…)`, `index.replace(where=KbChunks.document_id.eq(x), with_=new_chunks)`.
   The framework needs no document concept even for index upkeep, and
