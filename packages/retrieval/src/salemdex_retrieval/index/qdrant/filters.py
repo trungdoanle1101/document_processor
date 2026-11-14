@@ -20,7 +20,7 @@ from typing import assert_never
 from qdrant_client import models
 
 from salemdex_retrieval.filters import And, AnyOf, Equals, Filter, Not, Or
-from salemdex_retrieval.index.qdrant.payload import FIELD_VALUES
+from salemdex_retrieval.index.qdrant.payload import field_key
 from salemdex_retrieval.schema import Field
 
 # Not everything: a filter with no conditions matches every chunk, so negate it.
@@ -65,7 +65,7 @@ def _build_equals_condition[T](field: Field[T], value: T) -> models.FieldConditi
     Raises:
         TypeError: The value's type has no condition here.
     """
-    key = f"{FIELD_VALUES}.{field.name}"
+    key = field_key(field)
     match value:
         case uuid.UUID():
             match_uuid = models.MatchValue(value=str(value))

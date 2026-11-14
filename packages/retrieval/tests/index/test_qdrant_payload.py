@@ -95,6 +95,17 @@ def test_the_payload_has_the_stored_layout() -> None:
             "groups": ["00000000-0000-0000-0000-00000000000a"],
             "seen_at": ["2026-01-02T09:30:00+07:00"],
         },
+        "written_fields": [
+            "document_id:uuid:one",
+            "groups:uuid:many",
+            "headings:str:many",
+            "indexed_at:datetime:one",
+            "is_draft:bool:one",
+            "score:float:one",
+            "seen_at:datetime:many",
+            "title:str:one",
+            "version:int:one",
+        ],
     }
 
 
@@ -112,6 +123,24 @@ def test_the_embedded_text_is_stored_even_when_it_is_the_text() -> None:
 
 def test_a_many_with_no_values_is_stored_as_an_empty_list() -> None:
     assert encode_payload(build(headings=[]))["field_values"]["headings"] == []
+
+
+def test_a_many_with_no_values_is_still_recorded_as_written() -> None:
+    # The startup check tells a valid empty list from a missing one by this entry.
+    assert "headings:str:many" in encode_payload(build(headings=[]))["written_fields"]
+
+
+def test_the_written_fields_do_not_depend_on_the_order_of_the_values() -> None:
+    chunk = build()
+    reordered = Chunk(
+        id=chunk.id,
+        text=chunk.text,
+        field_values=[
+            f.value(v) for f, v in reversed(list(chunk.field_values.items()))
+        ],
+    )
+
+    assert encode_payload(reordered) == encode_payload(chunk)
 
 
 # Reading back
@@ -161,6 +190,14 @@ def set_field(key: str, raw: Any) -> Callable[[dict[str, Any]], None]:
     return lambda payload: payload["field_values"].__setitem__(key, raw)
 
 
+def swap_written(old: str, new: str) -> Callable[[dict[str, Any]], None]:
+    def change(payload: dict[str, Any]) -> None:
+        payload["written_fields"].remove(old)
+        payload["written_fields"].append(new)
+
+    return change
+
+
 DAMAGED = [
     pytest.param(lambda p: p.pop("text"), "missing text", id="no text"),
     pytest.param(
@@ -181,6 +218,36 @@ DAMAGED = [
         lambda p: p.__setitem__("field_values", "abc"),
         "field_values is not a mapping",
         id="field values a string",
+    ),
+    pytest.param(
+        lambda p: p.pop("written_fields"),
+        "missing written_fields",
+        id="no written fields",
+    ),
+    pytest.param(
+        lambda p: p.__setitem__("written_fields", "abc"),
+        "written_fields is not a list",
+        id="written fields a string",
+    ),
+    pytest.param(
+        lambda p: p["written_fields"].remove("version:int:one"),
+        "missing: version:int:one",
+        id="field not recorded as written",
+    ),
+    pytest.param(
+        swap_written("version:int:one", "version:str:one"),
+        "extra: version:str:one",
+        id="field written with another type",
+    ),
+    pytest.param(
+        swap_written("headings:str:many", "headings:str:one"),
+        "extra: headings:str:one",
+        id="many written as a one",
+    ),
+    pytest.param(
+        lambda p: p["written_fields"].append(1),
+        "written_fields",
+        id="written field not a string",
     ),
     pytest.param(
         lambda p: p["field_values"].__setitem__("extra", 1),

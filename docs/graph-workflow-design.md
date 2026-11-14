@@ -1,6 +1,6 @@
 # Retrieval as a graph of stages
 
-Status: build step 1 done; step 2 in progress (section 10). Branch:
+Status: build steps 1 and 2 done; step 3 next (section 10). Branch:
 `features/retrieval-redesign`.
 
 - Built, in `packages/retrieval` (`salemdex_retrieval`), with tests:
@@ -16,10 +16,12 @@ Status: build step 1 done; step 2 in progress (section 10). Branch:
   - `index/qdrant/payload.py`: encoding a chunk as a Qdrant payload and decoding it strictly;
   - `index/qdrant/filters.py`: compiling filters to Qdrant's must / should / must_not;
   - `index/qdrant/index.py`: `QdrantIndex` with `put`, `find`, `delete` and `replace`, behind
-    the `qdrant` extra.
-- Next, in step 2: payload indexes from the schema's `indexed=True` fields, and the startup
-  check that creates the collection and what's missing, or refuses to start (section 6, "The
-  schema"). Until then the caller creates the collection.
+    the `qdrant` extra, and `QdrantIndex.open`, the startup check: it creates the collection
+    and the payload indexes it lacks (one per `indexed=True` field, plus `written_fields`),
+    and refuses to open on an index of the wrong type or on points that don't fit the schema
+    (section 6, "The schema"); `tests/index/test_qdrant_open.py` tests it, the payload
+    indexes against a server only.
+- Next, step 3: statements and the executor.
 - Later, when a caller needs it: `chunk.get(field)` for typed reads (step 3 or 4), `in_` on
   `One`, filtering by chunk ids.
 
@@ -268,7 +270,7 @@ the operations differ: `eq` and ranges fit one value, `any_of` / `all_of` fit se
   | Where | What happens |
   |---|---|
   | writes | every chunk is checked against the schema before it's sent; a missing value raises, naming the chunk id and field. An empty `Many` is written as `[]`, never left out |
-  | the index opening | for each field, count the chunks where it's missing or `null` (in Qdrant, `is_empty` / `is_null` counts); if any exist, refuse to start: "412 chunks lack `version`; backfill or re-index" |
+  | the index opening | count, for each field, the chunks not written with it, and find entries the schema doesn't define (in Qdrant, one facet over `written_fields`, below); if any exist, refuse to start: "412 points lack `version:int:one`; re-index into a new collection" |
   | reads | a hit that still lacks a value raises a typed error naming the chunk id and field. No half-filled chunk, no guessed default |
 
   Why refuse to start: filters then only ever run over chunks that keep the promise. Why raise
@@ -359,6 +361,7 @@ Chunk(
       "text": "…",
       "embedded_text": "…",
       "field_values": {"document_id": "3f2a…", "version": 2, "groups": ["…"], "headings": []},
+      "written_fields": ["document_id:uuid:one", "groups:uuid:many", "headings:str:many", "version:int:one"],
   }
   ```
 
@@ -389,8 +392,22 @@ Chunk(
   - **Encodings:** `str`, `int`, `float`, `bool` as they are; `UUID` as its string (Qdrant's
     `uuid` payload index); `datetime` as ISO 8601 with its offset (what Qdrant's `datetime`
     index parses); a `Many` as a list, `[]` when empty, never left out.
+  - **`written_fields` records the fields a point was written with**, sorted, each as
+    `name:type:one|many`, with the type from a fixed table of stored names (`uuid`, `str`,
+    `bool`, `int`, `float`, `datetime`), not Qdrant's index types or Python's class names.
+    Why: Qdrant can't tell a missing list from `[]` (`is_empty` and `values_count` match
+    both), so the opening check couldn't find a `Many` that's missing without reading every
+    point with an empty list. With the entries, `open` counts in one facet request over a
+    keyword payload index on `written_fields`: an expected entry on fewer points than the
+    collection holds is missing somewhere, and an entry the schema doesn't define comes from
+    another schema or an older one. A changed type or `One`/`Many` changes the entry, so it's
+    caught too. Why our types: the entry describes how the value was encoded, and Qdrant's
+    index types would merge types the decoder keeps apart. `indexed=True` isn't part of the
+    entry: turning an index on doesn't change what's stored. What it can't catch: a value
+    removed by hand while its entry stays; strict decoding still raises on read.
   - **Decoding is strict** (the "reads" checkpoint): a malformed point id, a missing key, an
-    unknown key under `field_values`, a wrong type or a malformed value raises one error,
+    unknown key under `field_values`, `written_fields` not recording exactly the schema's
+    fields, a wrong type or a malformed value raises one error,
     `SchemaMismatchError`, naming the point id and the key, so callers (a search, the startup
     check) catch a single type. Every value goes back through `field.value()`, so the
     write-time checks run again, and `check_fits` confirms the chunk has exactly the schema's
@@ -685,9 +702,7 @@ stage kinds afterwards is cheap.
    it is testable without Qdrant. **(done)**
 2. **The Qdrant backend:** translating filters, creating payload indexes from the schema, the
    startup check, `put` / `find` / `replace` / `delete`, with the in-memory index's tests run
-   against it too. Extract the `Index` protocol the two share. **(in progress)** The
-   protocol, filters and the four operations are built; payload indexes and the startup
-   check are next.
+   against it too. Extract the `Index` protocol the two share. **(done)**
 3. **Statements and the executor** with retrieve, merge, rerank and take, plus the session, the
    access filter and the validity check.
 4. **Port the server's indexing handlers** to the new API, then build search on it.

@@ -6,11 +6,18 @@ The layout (the chunk id is the point id, not part of the payload):
         "text": "…",
         "embedded_text": "…",
         "field_values": {"document_id": "3f2a…", "version": 2, "groups": ["…"]},
+        "written_fields": ["document_id:uuid:one", "groups:uuid:many", "version:int:one"],
     }
 
 Field values sit under their own key so that a field named `text` can't overwrite the
 chunk's text. A `UUID` is stored as its string, a `datetime` as ISO 8601 with its
-offset, a `Many` as a list. Changing any of this breaks existing indexes: re-index them.
+offset, a `Many` as a list.
+
+`written_fields` records, sorted, each field the point was written with, as
+`name:type:one|many`. Qdrant can't tell a missing list from an empty one, so this is
+how `QdrantIndex.open` counts the points that lack a field without reading them.
+
+Changing any of this breaks existing indexes: re-index them.
 """
 
 import uuid
@@ -26,6 +33,7 @@ from salemdex_retrieval.schema import Field, FieldValue, Many, One, Schema
 TEXT = "text"
 EMBEDDED_TEXT = "embedded_text"
 FIELD_VALUES = "field_values"
+WRITTEN_FIELDS = "written_fields"
 
 # What one stored value becomes: a UUID or a datetime is stored as a string.
 type _JsonScalar = str | int | float | bool
@@ -35,7 +43,30 @@ _PAYLOAD_KEYS: tuple[tuple[str, type, str], ...] = (
     (TEXT, str, "a string"),
     (EMBEDDED_TEXT, str, "a string"),
     (FIELD_VALUES, Mapping, "a mapping"),
+    (WRITTEN_FIELDS, list, "a list"),
 )
+
+# The payload index for each value type, matching how `_encode_value` stores it: a UUID
+# as its string in a `uuid` index, a datetime as ISO 8601 in a `datetime` index.
+_INDEX_TYPES: Mapping[type, models.PayloadSchemaType] = {
+    uuid.UUID: models.PayloadSchemaType.UUID,
+    str: models.PayloadSchemaType.KEYWORD,
+    bool: models.PayloadSchemaType.BOOL,
+    int: models.PayloadSchemaType.INTEGER,
+    float: models.PayloadSchemaType.FLOAT,
+    datetime: models.PayloadSchemaType.DATETIME,
+}
+
+# The type part of each `written_fields` entry. It's stored in every point, so renaming
+# one means re-indexing; it doesn't follow Python's class names for that reason.
+_STORED_TYPE_NAMES: Mapping[type, str] = {
+    uuid.UUID: "uuid",
+    str: "str",
+    bool: "bool",
+    int: "int",
+    float: "float",
+    datetime: "datetime",
+}
 
 
 def encode_payload(chunk: Chunk) -> dict[str, Any]:
@@ -45,8 +76,10 @@ def encode_payload(chunk: Chunk) -> dict[str, Any]:
         chunk: A chunk already checked against the index's schema.
 
     Returns:
-        The text, the embedded text and the field values, keyed by field name.
+        The text, the embedded text, the field values keyed by field name, and the
+        sorted `written_fields` entries of the chunk's fields.
     """
+
     return {
         TEXT: chunk.text,
         EMBEDDED_TEXT: chunk.embedded_text,
@@ -54,6 +87,7 @@ def encode_payload(chunk: Chunk) -> dict[str, Any]:
             field.name: _encode_field_value(field, value)
             for field, value in chunk.field_values.items()
         },
+        WRITTEN_FIELDS: sorted(written_field(field) for field in chunk.field_values),
     }
 
 
@@ -78,8 +112,9 @@ def decode_payload(
         The chunk, equal to the one that was written.
 
     Raises:
-        SchemaMismatchError: A key is missing or unknown, or a value has the wrong
-            type or form. The message names the point id and the key.
+        SchemaMismatchError: A key is missing or unknown, a value has the wrong
+            type or form, or `written_fields` doesn't record exactly the schema's
+            fields. The message names the point id and the key.
     """
     id_as_uuid = _decode_point_id(point_id)
 
@@ -96,6 +131,8 @@ def decode_payload(
                 f"got {type(payload[key]).__name__}"
             )
 
+    _check_written_fields(payload[WRITTEN_FIELDS], schema=schema, point_id=id_as_uuid)
+
     field_values = _decode_field_values(payload, schema=schema, point_id=id_as_uuid)
 
     chunk = Chunk(
@@ -106,6 +143,104 @@ def decode_payload(
     )
     chunk.check_fits(schema)
     return chunk
+
+
+def field_key(field: Field[Any]) -> str:
+    """Return the payload key holding `field`'s values, as filters and indexes name it.
+
+    Args:
+        field: A field of the index's schema.
+
+    Returns:
+        The dotted key under `field_values`, e.g. `field_values.document_id`.
+    """
+    return f"{FIELD_VALUES}.{field.name}"
+
+
+def written_field(field: Field[Any]) -> str:
+    """Return the entry recording in `written_fields` that a point holds `field`.
+
+    The entry names the field, its stored type and whether it's a `One` or a `Many`,
+    so a point written before any of those changed no longer matches.
+
+    Args:
+        field: A field of the index's schema.
+
+    Returns:
+        The entry, e.g. `groups:uuid:many`.
+
+    Raises:
+        TypeError: `field` is neither a `One` nor a `Many`.
+    """
+    name = field.name
+    stored_type = _STORED_TYPE_NAMES[field.value_type]
+    match field:
+        case One():
+            field_type = "one"
+        case Many():
+            field_type = "many"
+        case _:
+            raise TypeError(
+                f"unknown field type {type(field).__name__!r}; must be One or Many"
+            )
+
+    return f"{name}:{stored_type}:{field_type}"
+
+
+def written_fields_of(schema: type[Schema]) -> set[str]:
+    """Return the `written_fields` entries every point of `schema` must record.
+
+    Args:
+        schema: The schema of the index.
+
+    Returns:
+        One entry per field of `schema`, as `written_field` spells it.
+    """
+    return {written_field(f) for f in schema.fields().values()}
+
+
+def payload_schema_type(field: Field[Any]) -> models.PayloadSchemaType:
+    """Return the type of payload index that fits how `field`'s values are stored.
+
+    A `Many` gets the same type as a `One` of its value type: Qdrant indexes each value
+    of a list.
+
+    Args:
+        field: A field of the index's schema.
+
+    Returns:
+        The payload index type, e.g. `uuid` for a `UUID` field.
+    """
+    return _INDEX_TYPES[field.value_type]
+
+
+def _check_written_fields(
+    written_fields: list[object], *, schema: type[Schema], point_id: uuid.UUID
+) -> None:
+    """Check a point's `written_fields` record exactly the fields of `schema`.
+
+    Raises:
+        SchemaMismatchError: An entry isn't a string, or an entry is missing or
+            extra; the message names the point id and every such entry.
+    """
+    actual: set[str] = set()
+    for entry in written_fields:
+        if not isinstance(entry, str):
+            raise SchemaMismatchError(
+                f"point {point_id}: "
+                f"{WRITTEN_FIELDS} contains a non-string: {written_fields}"
+            )
+        actual.add(entry)
+    expected = written_fields_of(schema)
+    missing = expected - actual
+    extra = actual - expected
+    if extra or missing:
+        message = f"point {point_id}: {WRITTEN_FIELDS} don't match against schema {schema.__name__}"
+        if extra:
+            message += "\n" + "extra: " + ", ".join(sorted(extra))
+        if missing:
+            message += "\n" + "missing: " + ", ".join(sorted(missing))
+        raise SchemaMismatchError(message)
 
 
 def _encode_field_value(

@@ -21,6 +21,18 @@ type OpenIndex = Callable[[type[Schema]], Index]
 
 QDRANT_URL = os.environ.get("KB_TEST_QDRANT_URL")
 
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Silence the local client's warning that payload indexes do nothing there.
+
+    `QdrantIndex.open` creates them on every backend; only the server uses them.
+    """
+    config.addinivalue_line(
+        "filterwarnings",
+        "ignore:Payload indexes have no effect in the local Qdrant:UserWarning",
+    )
+
+
 # One entry per backend.
 BACKENDS = [
     pytest.param("in-memory", id="in-memory"),
@@ -62,9 +74,8 @@ def _opening_qdrant_indexes(client: QdrantClient) -> Iterator[OpenIndex]:
 
     def open_index(schema: type[Schema]) -> Index:
         collection = f"test_{uuid.uuid4().hex}"
-        client.create_collection(collection, vectors_config={})
         collections.append(collection)
-        return QdrantIndex(schema=schema, client=client, collection=collection)
+        return QdrantIndex.open(schema=schema, client=client, collection=collection)
 
     try:
         yield open_index
